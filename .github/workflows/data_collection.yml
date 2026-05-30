@@ -1,0 +1,70 @@
+name: Daily Flight & Weather Data Collection
+
+on:
+  schedule:
+    # 毎日日本時間 21:00 (UTC 12:00) に自動実行
+    # 最終便の運航ステータス確定後にデータを回収します
+    - cron: '0 12 * * *'
+  workflow_dispatch:
+    # GitHubのWeb画面から手動でいつでも即時起動できるボタンを有効化
+    # 動作確認や過去データの手動回収時に便利です
+
+jobs:
+  collect-data:
+    runs-on: ubuntu-latest
+    
+    # リポジトリへの自動プッシュを許可するための権限設定
+    permissions:
+      contents: write
+
+    steps:
+      # 1. リポジトリのコードを取得
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          # 最新の変更を反映してプッシュするために履歴を全取得
+          fetch-depth: 0
+
+      # 2. Python環境のセットアップ
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip' # pipのキャッシュを有効化して高速化
+
+      # 3. 依存ライブラリのインストール
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      # 4. データ収集スクリプトの実行
+      # GitHub Secrets に登録した ODPT_API_KEY を環境変数に渡します
+      - name: Run data collector
+        env:
+          ODPT_API_KEY: ${{ secrets.ODPT_API_KEY }}
+        run: |
+          python data_collector.py
+
+      # 5. データベースファイルの自動コミット & プッシュ
+      # .gitignoreで flights.db は除外されていますが、GitHub上でのみ共有・蓄積するため
+      # git add -f で強制的に追加して自動コミットします
+      - name: Commit and push changes
+        run: |
+          # データベースファイルの変更を確認
+          if git status --porcelain | grep -q "flights.db"; then
+            echo "データベースの変更を検知しました。コミット＆プッシュを実行します。"
+            
+            # Gitユーザー情報の設定
+            git config --local user.email "action@github.com"
+            git config --local user.name "GitHub Action [Bot]"
+            
+            # データベースを強制ステージング
+            git add -f flights.db
+            
+            # コミットとプッシュ
+            git commit -m "data: [Auto] $(date +'%Y-%m-%d')の運航・気象データを自動蓄積"
+            git push origin main
+          else
+            echo "データベースに変更はありませんでした。"
+          fi
