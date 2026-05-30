@@ -1,0 +1,16 @@
+# Python virtual environment
+.venv/
+
+# Local databases
+*.db
+flights.db-journal
+
+# Environment variables (Credentials)
+.env
+
+# Python cache files
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.pytest_cache/
