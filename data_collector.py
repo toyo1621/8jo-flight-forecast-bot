@@ -42,10 +42,20 @@ def init_db():
         wind_speed REAL,
         wind_gusts REAL,
         cloud_cover_low REAL,
+        visibility REAL,
         created_at TEXT DEFAULT CURRENT_TIMESTAMP,
         UNIQUE(date, flight_number)
     )
     """)
+    
+    # 既存のDBがある場合の自動マイグレーション (visibilityカラムの追加)
+    try:
+        cursor.execute("ALTER TABLE flight_weather_logs ADD COLUMN visibility REAL")
+        conn.commit()
+        print("既存のデータベースに visibility (視程) カラムを追加しました。")
+    except sqlite3.OperationalError:
+        # すでにカラムが存在する場合は無視
+        pass
     
     conn.commit()
     return conn
@@ -79,7 +89,7 @@ def get_weather_data(date_str, scheduled_time_str):
     params = {
         "latitude": HACHIJOJIMA_LAT,
         "longitude": HACHIJOJIMA_LON,
-        "hourly": "wind_speed_10m,wind_direction_10m,wind_gusts_10m,cloud_cover_low",
+        "hourly": "wind_speed_10m,wind_direction_10m,wind_gusts_10m,cloud_cover_low,visibility",
         "timezone": "Asia/Tokyo",
         "start_date": date_str,
         "end_date": date_str
@@ -109,15 +119,20 @@ def get_weather_data(date_str, scheduled_time_str):
         # ※Open-Meteoはデフォルトで風速が km/h なので、気象情報の一般的な単位 m/s に変換しておくと扱いやすい
         wind_speed_kmh = hourly_data["wind_speed_10m"][idx]
         wind_gusts_kmh = hourly_data["wind_gusts_10m"][idx]
+        visibility_m = hourly_data["visibility"][idx] if "visibility" in hourly_data else None
         
         wind_speed_ms = round(wind_speed_kmh / 3.6, 2) if wind_speed_kmh is not None else None
         wind_gusts_ms = round(wind_gusts_kmh / 3.6, 2) if wind_gusts_kmh is not None else None
+        
+        # 視程をメートル (m) からキロメートル (km) に変換して丸める
+        visibility_km = round(visibility_m / 1000.0, 2) if visibility_m is not None else None
         
         return {
             "wind_direction": hourly_data["wind_direction_10m"][idx],
             "wind_speed": wind_speed_ms,
             "wind_gusts": wind_gusts_ms,
-            "cloud_cover_low": hourly_data["cloud_cover_low"][idx]
+            "cloud_cover_low": hourly_data["cloud_cover_low"][idx],
+            "visibility": visibility_km
         }
         
     except Exception as e:
@@ -127,7 +142,8 @@ def get_weather_data(date_str, scheduled_time_str):
             "wind_direction": None,
             "wind_speed": None,
             "wind_gusts": None,
-            "cloud_cover_low": None
+            "cloud_cover_low": None,
+            "visibility": None
         }
 
 def get_flight_data_odpt(api_key):
@@ -225,8 +241,8 @@ def save_flight_weather_logs(conn, flights_with_weather):
             cursor.execute("""
             INSERT INTO flight_weather_logs (
                 date, flight_number, scheduled_time, status, 
-                wind_direction, wind_speed, wind_gusts, cloud_cover_low
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                wind_direction, wind_speed, wind_gusts, cloud_cover_low, visibility
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(date, flight_number) DO UPDATE SET
                 scheduled_time=excluded.scheduled_time,
                 status=excluded.status,
@@ -234,6 +250,7 @@ def save_flight_weather_logs(conn, flights_with_weather):
                 wind_speed=excluded.wind_speed,
                 wind_gusts=excluded.wind_gusts,
                 cloud_cover_low=excluded.cloud_cover_low,
+                visibility=excluded.visibility,
                 created_at=CURRENT_TIMESTAMP
             """, (
                 item["date"],
@@ -243,7 +260,8 @@ def save_flight_weather_logs(conn, flights_with_weather):
                 item["wind_direction"],
                 item["wind_speed"],
                 item["wind_gusts"],
-                item["cloud_cover_low"]
+                item["cloud_cover_low"],
+                item.get("visibility")
             ))
             saved_count += 1
         except sqlite3.Error as e:
@@ -292,13 +310,13 @@ def main():
     print("\n--- 保存された最新のデータ (最大5件) ---")
     cursor = conn.cursor()
     cursor.execute("""
-        SELECT date, flight_number, scheduled_time, status, wind_direction, wind_speed, wind_gusts, cloud_cover_low 
+        SELECT date, flight_number, scheduled_time, status, wind_direction, wind_speed, wind_gusts, cloud_cover_low, visibility 
         FROM flight_weather_logs 
         ORDER BY date DESC, scheduled_time DESC LIMIT 5
     """)
     rows = cursor.fetchall()
     for row in rows:
-        print(f"日付: {row[0]} | 便名: {row[1]} | 定刻: {row[2]} | 結果: {row[3]} | 風向: {row[4]}° | 風速: {row[5]} m/s | 突風: {row[6]} m/s | 雲量: {row[7]}%")
+        print(f"日付: {row[0]} | 便名: {row[1]} | 定刻: {row[2]} | 結果: {row[3]} | 風向: {row[4]}° | 風速: {row[5]} m/s | 突風: {row[6]} m/s | 雲量: {row[7]}% | 視程: {row[8]} km")
         
     conn.close()
     print("データ自動収集処理が完了しました。")
