@@ -160,7 +160,7 @@ def get_flight_data_odpt(api_key):
     url = "https://api.odpt.org/api/v4/odpt:FlightInformationArrival"
     params = {
         "odpt:operator": "odpt.Operator:ANA",
-        "odpt:arrivalAirport": "odpt.Airport:RJTH",  # 八丈島空港
+        "odpt:arrivalAirport": "odpt.Airport:HAC",  # 八丈島空港 (IATAコード)
         "acl:consumerKey": api_key
     }
     
@@ -171,15 +171,22 @@ def get_flight_data_odpt(api_key):
         
         result_flights = []
         for f in flights:
-            # 羽田発 (RJTT) のみに対象を絞る
-            dep_airport = f.get("odpt:departureAirport")
-            if dep_airport != "odpt.Airport:RJTT":
+            # 羽田発 (HND) のみに対象を絞る (APIのフィールド名は odpt:originAirport)
+            dep_airport = f.get("odpt:originAirport")
+            if dep_airport != "odpt.Airport:HND":
                 continue
                 
             # 各種情報のパース
-            # 便名 (例: "1891" -> "ANA1891")
-            flight_num_raw = f.get("odpt:flightNumber", "")
-            flight_number = f"ANA{flight_num_raw}" if flight_num_raw else "ANA-Unknown"
+            # 便名 (例: ["NH1891"] -> "ANA1891")
+            flight_nums = f.get("odpt:flightNumber", [])
+            flight_num_raw = flight_nums[0] if isinstance(flight_nums, list) and flight_nums else ""
+            if not flight_num_raw and isinstance(flight_nums, str):
+                flight_num_raw = flight_nums
+                
+            if flight_num_raw.startswith("NH"):
+                flight_number = flight_num_raw.replace("NH", "ANA", 1)
+            else:
+                flight_number = f"ANA{flight_num_raw}" if flight_num_raw else "ANA-Unknown"
             
             # 定刻 (HH:MM)
             scheduled_time = f.get("odpt:scheduledArrivalTime", "")
