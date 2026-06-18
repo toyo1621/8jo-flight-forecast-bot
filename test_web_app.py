@@ -86,6 +86,7 @@ def test_index_renders_forecast():
     assert "ざっくりした仕組み" in response.get_data(as_text=True)
     assert "気象業務法への配慮" in response.get_data(as_text=True)
     assert "予報業務の許可について" in response.get_data(as_text=True)
+    assert "6時間ごと" in response.get_data(as_text=True)
 
 
 def test_index_handles_weather_api_error():
