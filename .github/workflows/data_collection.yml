@@ -51,13 +51,19 @@ jobs:
           ODPT_API_KEY: ${{ secrets.ODPT_API_KEY }}
         run: |
           python data_collector.py
+          
+      # 6. NULLの気象カラムをOpen-Meteoから補完
+      # 補完結果を data/flights_dump.sql に含めるため、必ずエクスポート前に実行します。
+      - name: Backfill missing weather columns
+        run: |
+          python backfill_missing_weather.py
 
-      # 6. SQLite DBをレビュー可能なSQLテキストへエクスポート
+      # 7. SQLite DBをレビュー可能なSQLテキストへエクスポート
       - name: Export database SQL snapshot
         run: |
           python db_snapshot.py export
 
-      # 7. SQLスナップショットの自動コミット & プッシュ
+      # 8. SQLスナップショットの自動コミット & プッシュ
       - name: Commit and push database snapshot
         run: |
           git config --local user.email "action@github.com"
