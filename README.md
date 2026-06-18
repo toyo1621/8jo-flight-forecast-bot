@@ -1,142 +1,211 @@
-# 羽田→八丈島便 就航確率予測システム ✈️🏝️
-(Haneda to Hachijojima Flight Forecast System)
+# 羽田発・八丈島行き フライト就航確率
 
-ANAの羽田発・八丈島着便における「過去の運航実績」と「その当時の気象予報・実況データ」を自動的に蓄積・分析し、未来の気象予報から「過去の類似条件での就航確率」を算出・可視化するためのシステムです。
+羽田空港から八丈島空港へ向かうANA便について、過去の運航実績と気象情報、現在の気象予報を組み合わせ、就航確率の参考値を表示するプロジェクトです。
+
+**公開サイト:** [八丈島フライト予報](https://toyo1621.github.io/8jo-flight-forecast-bot/)
 
 > [!IMPORTANT]
-> **気象業務法（予報業務許可）への配慮について**
-> 本システムは「独自の天気予報」を行うものではありません。気象庁等の公式予報および実況数値に基づき、「過去の同一・類似条件下での運航実績（統計データ）」を紐解き、**客観的な就航確率として可視化するシステム**という立て付けにすることで、日本の気象業務法をクリアします。
+> 表示する確率は、過去の類似事例に基づく試験的な統計値です。航空会社による実際の運航判断や公式な気象予報を示すものではありません。旅行・安全上の判断には、気象庁等の公式情報とANAの最新運航情報を利用してください。
 
----
+## なぜ作ったのか
 
-## 🛠️ システムのデータソース（完全無料枠）
+八丈島便は、風や視程などの気象条件によって条件付き運航や欠航になることがあります。公式の運航判断が出る前にも、現在の予報が過去のどのような運航状況に近いのかを把握し、予定を考える際の参考にできる情報を作ることが目的です。
 
-1. **運航データ**  
-   [公共交通オープンデータセンター (ODPT API)](https://www.odpt.org/) から、ANAのリアルタイム運航ステータス（通常、条件付き、欠航、引き返し等）を取得します。
-2. **気象データ**  
-   [Open-Meteo API](https://open-meteo.com/) を使用し、八丈島空港（緯度: 33.115, 経度: 139.782）の指定日時の風向・風速・突風・低層雲量・視程を取得します（APIキー不要）。
-3. **データベース**  
-   軽量・高速でサーバーレスな **SQLite** を採用し、同一ワークスペース内に永続化データ（貯金箱）を構築します。
+## 主な機能
 
----
+- ANA1891・ANA1893・ANA1895の7日分の就航確率を表示
+- 風向、風速、最大瞬間風速、低層雲量、視程を考慮
+- 過去の類似気象条件における運航実績から確率を算出
+- GFS・ECMWFアンサンブル予報による予測信頼度A〜Eを表示
+- PC・スマートフォン対応のシンプルなWeb UI
+- GitHub Pagesで公開し、6時間ごとに自動更新
+- Open-Meteo障害時のエラー表示と信頼度の暫定評価
 
-## 🚀 主な機能
+## システム構成
 
-* **高精度なデータ統合**: フライト予定時刻に最も近い時間帯（1時間単位）の気象情報をマッピング。
-* **風速の自動単位変換**: Open-Meteoのデフォルト値である `km/h` を、日本の航空気象や予報でなじみ深い `m/s` に自動変換。
-* **視程 (visibility) データの自動蓄積**: 八丈島特有の「霧による欠航」を分析するため、1時間ごとの視程データ (km単位) を自動取得して保存。
-* **強固な重複排除 (UPSERT)**: データベース側で `(date, flight_number)` の複合ユニーク制約を設け、同一フライトのデータが重複登録されないように設計。何度実行しても安全に更新されます。
-* **デモモード搭載**: ODPT APIキーを持っていない、あるいは設定前の状態でも、模擬フライト予定と本物の気象データを連動させて動作を確認できます。
+```mermaid
+flowchart LR
+    O[ODPT API] --> C[運航・気象データ収集]
+    M[Open-Meteo] --> C
+    C --> S[(SQLite / SQL snapshot)]
+    S --> P[就航確率エンジン]
+    M --> P
+    P --> B[静的サイト生成]
+    B --> G[GitHub Pages]
+```
 
----
+GitHub Actionsが次の処理を行います。
 
-## 📂 データベース設計 (SQLite)
+1. `data/flights_dump.sql`からSQLiteデータベースを復元
+2. Open-Meteoから通常予報とアンサンブル予報を取得
+3. 過去の運航実績を使って就航確率と信頼度を計算
+4. `build_static.py`でHTMLとCSSを`dist/`へ生成
+5. GitHub Pagesへデプロイ
 
-データベースファイル: `flights.db`  
-テーブル名: `flight_weather_logs`
+`.github/workflows/pages.yml`は6時間ごとに実行されます。GitHub Actionsのスケジュール実行は混雑状況により遅れる場合があります。
 
-`flights.db` は実行時にリポジトリ直下へ復元・生成されるSQLiteファイルです。PRではSQLiteバイナリを直接レビューできないため、GitHubには `data/flights_dump.sql` というSQLテキストのスナップショットをコミットして蓄積します。GitHub ActionsではこのSQLから `flights.db` を復元し、収集後に再度SQLへエクスポートします。
+## データソース
 
-| カラム名 | 型 | 制約 | 説明 |
-| :--- | :--- | :--- | :--- |
-| `id` | INTEGER | PRIMARY KEY AUTOINCREMENT | レコードID |
-| `date` | TEXT | NOT NULL | 運航日付 (YYYY-MM-DD) |
-| `flight_number` | TEXT | NOT NULL | 便名 (例: `ANA1891`) |
-| `scheduled_time` | TEXT | | 定刻到着時刻 (HH:MM) |
-| `status` | TEXT | | 運航結果ステータス (例: 通常/欠航/条件付き運航/引き返しなど) |
-| `wind_direction` | REAL | | 地上風向 (度: 0-360) |
-| `wind_speed` | REAL | | 地上風速 (m/s) |
-| `wind_gusts` | REAL | | 突風 (m/s) |
-| `cloud_cover_low` | REAL | | 低層雲量 (%) |
-| `visibility` | REAL | | 視程 (km) |
-| `created_at` | TEXT | DEFAULT CURRENT_TIMESTAMP | レコード生成日時 |
+### 運航情報
 
-※ `(date, flight_number)` に `UNIQUE` 制約が適用されています。
+[公共交通オープンデータセンター（ODPT）](https://www.odpt.org/)から、対象便の運航ステータスを取得します。ODPT APIの利用にはAPIキーが必要です。
 
----
+### 気象情報
 
-## ⚙️ 環境構築・セットアップ
+[Open-Meteo](https://open-meteo.com/en/docs)から、八丈島空港周辺（緯度33.115、経度139.782）の次のデータを取得します。
 
-Python 3.8以上がインストールされている環境を想定しています。
+- 風向
+- 風速
+- 最大瞬間風速
+- 低層雲量
+- 視程
+- GFS・ECMWFアンサンブル予報
 
-### 1. リポジトリのクローンと移動
+### 過去データ
+
+過去の運航実績と対応する気象情報をSQLiteの`flight_weather_logs`テーブルへ保存します。バイナリDBはGit管理せず、レビュー可能な`data/flights_dump.sql`をスナップショットとして管理します。
+
+## 就航確率の計算
+
+`forecast_engine.py`は、予報された風向・風速に近い過去レコードを段階的に検索します。
+
+1. 風向差30度以内、風速差3 m/s以内
+2. 該当データが5件未満なら、風向差45度以内、風速差5 m/s以内
+3. それでも5件未満なら全履歴を使用
+
+運航結果を次の重みで集計します。
+
+| 運航結果 | 重み |
+| --- | ---: |
+| 通常・遅延 | 1.00 |
+| 条件付き運航 | 0.75 |
+| 欠航・引き返し・その他 | 0.00 |
+
+さらに視程不良、低層雲、強風・突風の条件で確率を補正します。航空会社都合や機材繰りなど気象以外の要因を考慮し、表示上限は95%です。
+
+## 予測信頼度A〜E
+
+Open-MeteoのGFS・ECMWFアンサンブル予報を使い、複数の気象シナリオごとに就航確率を再計算します。その中央80%に含まれる確率の幅が狭いほど、予測信頼度を高く表示します。
+
+| 信頼度 | 就航確率の予測幅 | 意味 |
+| --- | ---: | --- |
+| A | 5ポイント以内 | 高い |
+| B | 10ポイント以内 | やや高い |
+| C | 20ポイント以内 | 標準 |
+| D | 30ポイント以内 | 低め |
+| E | 30ポイント超 | 低い |
+
+これはモデル間の一致度を示す指標であり、実際の運航を保証する精度評価ではありません。
+
+## 気象業務法への配慮
+
+本プロジェクトは、気象現象そのものを独自に予報することを目的としていません。第三者が提供する気象予報データを入力とし、過去の運航実績との類似性から就航確率の参考値を統計的に表示する試験的な取り組みです。
+
+気象庁は、数値予報モデルの結果について、加工や表示方法によっては独自の予報と見なされる可能性があると案内しています。本サイトでは、公式予報や航空会社の判断と誤認されないよう、データ出典、算出方法、参考値であることを明示しています。
+
+この説明は法的助言や適法性の保証ではありません。機能、対象範囲、利用目的、商用化方針を変更する際は、必要に応じて気象庁等へ確認します。
+
+- [気象庁「予報業務の許可について」](https://www.jma.go.jp/jma/kishou/minkan/kyoka.html)
+- [気象庁「予報業務許可についてよくお寄せいただくご質問」](https://www.jma.go.jp/jma/kishou/minkan/q_a_m.html)
+
+## ローカル環境のセットアップ
+
+Python 3.10以上を推奨します。
+
 ```bash
 git clone https://github.com/toyo1621/8jo-flight-forecast-bot.git
 cd 8jo-flight-forecast-bot
+python -m venv .venv
 ```
 
-### 2. 仮想環境の構築とライブラリのインストール
-```bash
-# 仮想環境 venv の作成
-python3 -m venv .venv
+Windows PowerShell:
 
-# 仮想環境の有効化 (Mac / Linux)
-source .venv/bin/activate
-
-# 依存パッケージのインストール
+```powershell
+.\.venv\Scripts\Activate.ps1
 pip install -r requirements.txt
 ```
 
-### 3. 環境変数の設定
-`.env.example` をコピーして `.env` を作成し、ODPT APIキーを設定します。
+macOS / Linux:
 
 ```bash
-cp .env.example .env
+source .venv/bin/activate
+pip install -r requirements.txt
 ```
 
-`.env` ファイルを開き、取得したAPIキーを入力します：
+## Webサイトの実行
+
+Flask開発サーバーを起動します。
+
+```bash
+flask --app web_app run
+```
+
+ブラウザで<http://127.0.0.1:5000/>を開きます。
+
+GitHub Pagesと同じ静的サイトを生成する場合:
+
+```bash
+python build_static.py
+```
+
+生成結果は`dist/index.html`へ出力されます。
+
+## 運航データの収集
+
+`.env.example`を`.env`へコピーし、ODPT APIキーを設定します。
+
 ```ini
-ODPT_API_KEY=あなたのODPT_API_KEY
+ODPT_API_KEY=your_odpt_api_key_here
 ```
 
----
+デモモード:
 
-## 💻 使い方 (Usage)
-
-### デモモードでテスト実行する (APIキー設定なしでOK)
-実際の Open-Meteo API を利用しつつ、デモデータを用いてデータの取得・結合・保存の流れをテストします。
 ```bash
 python data_collector.py --demo
 ```
 
-### 通常モードで実行する (実データ収集)
-`.env` に正しい `ODPT_API_KEY` を設定した上で実行します。
+通常収集:
+
 ```bash
 python data_collector.py
 ```
 
-通常モードでは、ODPT APIから取得できた便だけでなく、固定ダイヤの `ANA1891` / `ANA1893` / `ANA1895` の3便分を必ず保存対象にします。ODPTで当日の運航結果がまだ取れない便は `未取得` として保存され、次回以降の実行で同じ `(date, flight_number)` の行が更新されます。
+過去のCSVを取り込む場合:
 
-### 過去データをCSVから取り込む
-`user_raw_data.csv` の過去運航実績に Open-Meteo Archive API の過去気象データを付与して、同じ `flights.db` にUPSERTします。既存テーブルは削除せず、同じ `(date, flight_number)` の行だけ更新します。
-```bash
-python import_user_csv.py
-```
-
-別のCSVを取り込む場合は `--csv` で指定できます。
 ```bash
 python import_user_csv.py --csv path/to/past_flights.csv
 ```
 
-### 蓄積されたデータの確認
-SQLiteデータベースを直接クエリしてデータを確認できます。
+## テスト
+
 ```bash
-sqlite3 flights.db "SELECT * FROM flight_weather_logs ORDER BY date DESC LIMIT 5"
+python -m pytest -q
 ```
 
----
+Web表示、信頼度計算、外部API障害時の表示、ヘルスチェックを検証します。
 
-## 🔮 今後の開発ロードマップ
+## 主なファイル
 
-1. **データ自動収集の定期化**:
-   - `cron` 等を用いて1日数回スクリプトを自動実行し、運航結果と気象データを自動的に蓄積し続けます。
-2. **就航予測統計エンジンの作成**:
-   - [予測・表示仕様書 (docs/forecast_spec.md)](docs/forecast_spec.md) に基づき、風向・風速だけでなく、「霧（視界不良）」「台風時の警報アラート」「航空会社都合（機材繰り等）を考慮した上限95%制限」などを加味した就航確率算出アルゴリズムを構築します。
-3. **可視化ダッシュボードの構築**:
-   - 未来の気象予報（数日先まで）を取得し、過去の類似条件の運航実績・就航確率をパーセント表示するWeb UIの作成。
+| パス | 役割 |
+| --- | --- |
+| `web_app.py` | Flaskアプリ、気象予報取得、信頼度計算 |
+| `forecast_engine.py` | 過去実績に基づく就航確率計算 |
+| `build_static.py` | GitHub Pages用の静的HTML生成 |
+| `data_collector.py` | 当日の運航・気象情報の収集 |
+| `import_user_csv.py` | 過去運航実績の取り込み |
+| `db_snapshot.py` | SQLiteとSQLスナップショットの変換 |
+| `templates/index.html` | WebページのHTML |
+| `static/styles.css` | Webページのスタイル |
+| `.github/workflows/pages.yml` | 6時間ごとのPages更新 |
+| `.github/workflows/data_collection.yml` | 日次のデータ収集 |
 
----
+## 現在の制約と今後の予定
 
-## 📄 ライセンス
+- 確率は蓄積済みデータの量と品質に依存します。
+- 気象以外の機材繰り、乗員、空港運用などは予測できません。
+- Open-MeteoやODPTの仕様変更・障害の影響を受けます。
+- 現在はSQLiteを使用しています。将来的には過去の運航・気象データをBigQueryへ移行する計画です。
 
-本プロジェクトは [MIT License](LICENSE) のもとで公開されています。
+## ライセンス
+
+[MIT License](LICENSE)
