@@ -60,6 +60,37 @@
       {% endfor %}
     </div>
 
+    <section class="about" aria-labelledby="about-title">
+      <h2 id="about-title">このサイトについて</h2>
+
+      <article class="about-block">
+        <p class="about-label">WHY</p>
+        <h3>なぜ作ったのか</h3>
+        <p>八丈島便は、風や視程などの気象条件によって条件付き運航や欠航になることがあります。旅行や仕事の予定を考えるとき、公式の運航判断が出る前にも「いまの予報は過去のどんな状況に近いか」を知るための参考情報がほしい、という思いから作りました。</p>
+      </article>
+
+      <article class="about-block">
+        <p class="about-label">HOW</p>
+        <h3>ざっくりした仕組み</h3>
+        <ol class="system-flow">
+          <li><a href="https://open-meteo.com/en/docs" rel="noreferrer">Open-Meteo</a>から八丈島空港周辺の気象予報を取得します。</li>
+          <li>蓄積した過去の運航実績と、その便に対応する過去の気象情報を照合します。</li>
+          <li>風向・風速・突風・低層雲・視程が近い事例から、就航確率の参考値を算出します。</li>
+          <li>GFSとECMWFのアンサンブル予報を比較し、予測のばらつきを信頼度A〜Eで示します。</li>
+        </ol>
+        <p>GitHub Actionsが3時間ごとに計算し直し、静的なWebページとして公開しています。</p>
+      </article>
+
+      <article class="about-block about-block--notice">
+        <p class="about-label">NOTICE</p>
+        <h3>気象業務法への配慮</h3>
+        <p>本サイトは、気象現象そのものを独自に予報することを目的としたサービスではありません。第三者が提供する気象予報データを入力として、過去の運航実績との類似性から「就航確率の参考値」を統計的に表示する試験的な取り組みです。</p>
+        <p>気象庁は、数値予報モデルの結果について、加工や表示方法によっては独自の予報と見なされる可能性があると案内しています。そのため本サイトでは、公式の気象予報や航空会社の運航判断と誤認されないよう、データの出典と参考値であることを明示しています。</p>
+        <p>掲載内容は安全上の判断や旅行判断を保証するものではありません。必ず気象庁等の公式な気象情報と、ANAの最新の運航情報をご確認ください。機能・公開範囲・利用目的を変更する場合は、必要に応じて気象庁へ確認します。</p>
+        <p class="reference-link"><a href="https://www.jma.go.jp/jma/kishou/minkan/kyoka.html" rel="noreferrer">気象庁「予報業務の許可について」</a></p>
+      </article>
+    </section>
+
     <footer>
       <p>過去の運航実績と気象予報から算出した参考値です。実際の運航情報はANA公式サイトでご確認ください。</p>
       <p>予測信頼度はアンサンブル予報の中央80%における就航確率の幅から算出します。A: 5ポイント以内、B: 10以内、C: 20以内、D: 30以内、E: 30超。</p>
