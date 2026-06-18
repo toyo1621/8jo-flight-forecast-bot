@@ -32,5 +32,5 @@ its health-check path.
 ## GitHub Pages
 
 The `Deploy forecast site to Pages` workflow builds a static copy of the forecast
-every three hours and deploys `dist/` to GitHub Pages. In the repository settings,
+every six hours and deploys `dist/` to GitHub Pages. In the repository settings,
 select **Settings > Pages > Build and deployment > Source > GitHub Actions** once.
