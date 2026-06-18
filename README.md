@@ -103,6 +103,19 @@ python data_collector.py --demo
 python data_collector.py
 ```
 
+通常モードでは、ODPT APIから取得できた便だけでなく、固定ダイヤの `ANA1891` / `ANA1893` / `ANA1895` の3便分を必ず保存対象にします。ODPTで当日の運航結果がまだ取れない便は `未取得` として保存され、次回以降の実行で同じ `(date, flight_number)` の行が更新されます。
+
+### 過去データをCSVから取り込む
+`user_raw_data.csv` の過去運航実績に Open-Meteo Archive API の過去気象データを付与して、同じ `flights.db` にUPSERTします。既存テーブルは削除せず、同じ `(date, flight_number)` の行だけ更新します。
+```bash
+python import_user_csv.py
+```
+
+別のCSVを取り込む場合は `--csv` で指定できます。
+```bash
+python import_user_csv.py --csv path/to/past_flights.csv
+```
+
 ### 蓄積されたデータの確認
 SQLiteデータベースを直接クエリしてデータを確認できます。
 ```bash
