@@ -2,10 +2,11 @@ import os
 import sqlite3
 import csv
 import requests
+import argparse
 from datetime import datetime, timedelta
 
 DB_FILE = "flights.db"
-CSV_FILE = "user_raw_data.csv"
+DEFAULT_CSV_FILE = "user_raw_data.csv"
 HACHIJOJIMA_LAT = 33.115
 HACHIJOJIMA_LON = 139.782
 
@@ -18,10 +19,8 @@ FLIGHT_MAPPING = [
 def init_db():
     conn = sqlite3.connect(DB_FILE)
     cursor = conn.cursor()
-    # テーブル再作成（またはクリア）
-    cursor.execute("DROP TABLE IF EXISTS flight_weather_logs")
     cursor.execute("""
-    CREATE TABLE flight_weather_logs (
+    CREATE TABLE IF NOT EXISTS flight_weather_logs (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         date TEXT NOT NULL,
         flight_number TEXT NOT NULL,
@@ -36,6 +35,12 @@ def init_db():
         UNIQUE(date, flight_number)
     )
     """)
+    try:
+        cursor.execute("ALTER TABLE flight_weather_logs ADD COLUMN visibility REAL")
+        conn.commit()
+        print("既存のデータベースに visibility (視程) カラムを追加しました。")
+    except sqlite3.OperationalError:
+        pass
     conn.commit()
     return conn
 
@@ -97,8 +102,12 @@ def fetch_archive_weather(start_date, end_date):
     return response.json().get("hourly", {})
 
 def main():
-    if not os.path.exists(CSV_FILE):
-        print(f"エラー: {CSV_FILE} が見つかりません。")
+    parser = argparse.ArgumentParser(description="CSVの過去運航実績にOpen-Meteoの過去気象データを付与してDBへUPSERTします")
+    parser.add_argument("--csv", default=DEFAULT_CSV_FILE, help="取り込むCSVファイルのパス")
+    args = parser.parse_args()
+
+    if not os.path.exists(args.csv):
+        print(f"エラー: {args.csv} が見つかりません。")
         return
         
     conn = init_db()
@@ -108,7 +117,7 @@ def main():
     raw_records = []
     all_dates = set()
     
-    with open(CSV_FILE, "r", encoding="utf-8") as f:
+    with open(args.csv, "r", encoding="utf-8") as f:
         reader = csv.reader(f)
         header = next(reader) # ヘッダーをスキップ
         
@@ -141,7 +150,11 @@ def main():
     
     # 気象データの取得
     try:
-        hourly_data = fetch_archive_weather(min_date, max_date)
+        try:
+            hourly_data = fetch_archive_weather(min_date, max_date)
+        except requests.RequestException as e:
+            print(f"警告: 気象データの取得に失敗しました。運航実績のみ先に登録します: {e}")
+            hourly_data = {}
         
         # 気象データをマッピング
         times = hourly_data.get("time", [])
