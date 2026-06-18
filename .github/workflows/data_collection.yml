@@ -53,6 +53,7 @@ jobs:
           python data_collector.py
 
       # 6. NULLの気象カラムをOpen-Meteoから補完
+      # 補完結果を data/flights_dump.sql に含めるため、必ずエクスポート前に実行します。
       - name: Backfill missing weather columns
         run: |
           python backfill_missing_weather.py
