@@ -1,7 +1,8 @@
 import sqlite3
 import os
+from pathlib import Path
 
-DB_FILE = "flights.db"
+DB_FILE = Path(__file__).resolve().parent / "flights.db"
 
 def predict_flight_probability(wind_direction, wind_speed, wind_gusts, cloud_cover_low, visibility):
     """
