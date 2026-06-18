@@ -150,7 +150,11 @@ def main():
     
     # 気象データの取得
     try:
-        hourly_data = fetch_archive_weather(min_date, max_date)
+        try:
+            hourly_data = fetch_archive_weather(min_date, max_date)
+        except requests.RequestException as e:
+            print(f"警告: 気象データの取得に失敗しました。運航実績のみ先に登録します: {e}")
+            hourly_data = {}
         
         # 気象データをマッピング
         times = hourly_data.get("time", [])
