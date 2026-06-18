@@ -38,7 +38,13 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
-      # 4. データ収集スクリプトの実行
+      # 4. 前回までのDBスナップショットを復元
+      # PRでレビューできるよう、SQLiteバイナリではなくSQLダンプをGit管理します。
+      - name: Restore database from SQL snapshot
+        run: |
+          python db_snapshot.py restore
+
+      # 5. データ収集スクリプトの実行
       # GitHub Secrets に登録した ODPT_API_KEY を環境変数に渡します
       - name: Run data collector
         env:
@@ -46,25 +52,24 @@ jobs:
         run: |
           python data_collector.py
 
-      # 5. データベースファイルの自動コミット & プッシュ
-      # .gitignoreで flights.db は除外されていますが、GitHub上でのみ共有・蓄積するため
-      # git add -f で強制的に追加して自動コミットします
-      - name: Commit and push changes
+      # 6. SQLite DBをレビュー可能なSQLテキストへエクスポート
+      - name: Export database SQL snapshot
         run: |
-          # データベースファイルの変更を確認
-          if git status --porcelain | grep -q "flights.db"; then
-            echo "データベースの変更を検知しました。コミット＆プッシュを実行します。"
-            
-            # Gitユーザー情報の設定
-            git config --local user.email "action@github.com"
-            git config --local user.name "GitHub Action [Bot]"
-            
-            # データベースを強制ステージング
-            git add -f flights.db
-            
-            # コミットとプッシュ
-            git commit -m "data: [Auto] $(date +'%Y-%m-%d')の運航・気象データを自動蓄積"
-            git push origin main
-          else
-            echo "データベースに変更はありませんでした。"
+          python db_snapshot.py export
+
+      # 7. SQLスナップショットの自動コミット & プッシュ
+      - name: Commit and push database snapshot
+        run: |
+          git config --local user.email "action@github.com"
+          git config --local user.name "GitHub Action [Bot]"
+
+          git add data/flights_dump.sql
+
+          if git diff --cached --quiet -- data/flights_dump.sql; then
+            echo "データベーススナップショットに変更はありませんでした。"
+            exit 0
           fi
+
+          echo "データベーススナップショットの変更を検知しました。コミット＆プッシュを実行します。"
+          git commit -m "data: [Auto] $(date +'%Y-%m-%d')の運航・気象データを自動蓄積"
+          git push origin main
