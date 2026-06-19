@@ -319,7 +319,7 @@ def main():
         """)
         rows = cursor.fetchall()
         for row in rows:
-            print(f"日付: {row[0]} | 便名: {row[1]} | 定刻: {row[2]} | 結果: {row[3]} | 風向: {row[4]}° | 風速: {row[5]} m/s | 突風: {row[6]} m/s | 雲量: {row[7]}% | 視程: {row[8]} km")
+            print(f"日付: {row[0]} | 便名: {row[1]} | 定刻: {row[2]} | 結果: {row[3]} | 風向: {row[4]}° | 風速: {row[5]} m/s | 突風: {row[6]} m/s | 低層雲量: {row[7]}% | 視程: {row[8]} km")
         conn.close()
     print("データ自動収集処理が完了しました。")
 
