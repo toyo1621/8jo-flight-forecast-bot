@@ -105,7 +105,7 @@ def get_missing_rows(conn):
     cursor = conn.cursor()
     missing_condition = " OR ".join(f"{column} IS NULL" for column in WEATHER_COLUMNS)
     cursor.execute(f"""
-        SELECT id, date, flight_number, scheduled_time
+        SELECT date, flight_number, scheduled_time
         FROM flight_weather_logs
         WHERE {missing_condition}
         ORDER BY date, scheduled_time, flight_number
@@ -118,7 +118,7 @@ def update_weather(conn, rows, weather_map):
     updated = 0
     missing_weather = 0
 
-    for row_id, date_str, flight_number, scheduled_time in rows:
+    for date_str, flight_number, scheduled_time in rows:
         hour = nearest_hour(scheduled_time)
         weather = weather_map.get((date_str, hour))
         if weather is None:
@@ -134,14 +134,15 @@ def update_weather(conn, rows, weather_map):
                 cloud_cover_low = ?,
                 visibility = ?,
                 created_at = CURRENT_TIMESTAMP
-            WHERE id = ?
+            WHERE date = ? AND flight_number = ?
         """, (
             weather["wind_direction"],
             weather["wind_speed"],
             weather["wind_gusts"],
             weather["cloud_cover_low"],
             weather["visibility"],
-            row_id,
+            date_str,
+            flight_number,
         ))
         updated += 1
 
@@ -195,3 +196,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+

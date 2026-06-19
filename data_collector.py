@@ -42,7 +42,6 @@ def init_db():
 
     cursor.execute("""
     CREATE TABLE IF NOT EXISTS flight_weather_logs (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
         date TEXT NOT NULL,
         flight_number TEXT NOT NULL,
         scheduled_time TEXT,

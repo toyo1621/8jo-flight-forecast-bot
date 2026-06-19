@@ -1,25 +1,24 @@
 import sqlite3
 from datetime import datetime, timezone
 
-from migrate_sqlite_to_bigquery import normalize_row, read_sqlite_rows
+from migrate_sqlite_to_bigquery import SCHEMA, normalize_row, read_sqlite_rows
+
+
+BASE_SCHEMA = """CREATE TABLE flight_weather_logs (
+    date TEXT, flight_number TEXT, scheduled_time TEXT,
+    status TEXT, wind_direction REAL, wind_speed REAL,
+    wind_gusts REAL, cloud_cover_low REAL, visibility REAL,
+    created_at TEXT
+)"""
 
 
 def test_read_and_normalize_sqlite_rows(tmp_path):
     db_file = tmp_path / "flights.db"
     conn = sqlite3.connect(db_file)
+    conn.execute(BASE_SCHEMA)
     conn.execute(
-        """
-        CREATE TABLE flight_weather_logs (
-            id INTEGER, date TEXT, flight_number TEXT, scheduled_time TEXT,
-            status TEXT, wind_direction REAL, wind_speed REAL,
-            wind_gusts REAL, cloud_cover_low REAL, visibility REAL,
-            created_at TEXT
-        )
-        """
-    )
-    conn.execute(
-        "INSERT INTO flight_weather_logs VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-        (1, "2026-06-18", "ANA1891", "08:30", "通常", 204.0, 7.44, 14.61, 69.0, 13.2, "2026-06-18 14:48:45"),
+        "INSERT INTO flight_weather_logs VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        ("2026-06-18", "ANA1891", "08:30", "通常", 204.0, 7.44, 14.61, 69.0, 13.2, "2026-06-18 14:48:45"),
     )
     conn.commit()
     conn.close()
@@ -35,20 +34,16 @@ def test_read_and_normalize_sqlite_rows(tmp_path):
     assert result["visibility"] == 13.2
     assert result["status_reason"] is None
     assert result["migrated_at"] == "2026-06-19T00:00:00+00:00"
+    assert "id" not in result
+    assert "id" not in {field.name for field in SCHEMA}
 
 
 def test_migration_treats_delay_as_normal(tmp_path):
     db_file = tmp_path / "flights.db"
     conn = sqlite3.connect(db_file)
+    conn.execute(BASE_SCHEMA)
     conn.execute(
-        """CREATE TABLE flight_weather_logs (
-            id INTEGER, date TEXT, flight_number TEXT, scheduled_time TEXT,
-            status TEXT, wind_direction REAL, wind_speed REAL,
-            wind_gusts REAL, cloud_cover_low REAL, visibility REAL, created_at TEXT
-        )"""
-    )
-    conn.execute(
-        "INSERT INTO flight_weather_logs VALUES (1, '2026-01-01', 'ANA1891', '08:30', '遅延', NULL, NULL, NULL, NULL, NULL, NULL)"
+        "INSERT INTO flight_weather_logs VALUES ('2026-01-01', 'ANA1891', '08:30', '遅延', NULL, NULL, NULL, NULL, NULL, NULL)"
     )
     conn.commit()
     conn.close()
@@ -62,16 +57,9 @@ def test_migration_treats_delay_as_normal(tmp_path):
 def test_migration_preserves_status_reason(tmp_path):
     db_file = tmp_path / "flights.db"
     conn = sqlite3.connect(db_file)
+    conn.execute(BASE_SCHEMA.replace("created_at TEXT", "created_at TEXT, status_reason TEXT"))
     conn.execute(
-        """CREATE TABLE flight_weather_logs (
-            id INTEGER, date TEXT, flight_number TEXT, scheduled_time TEXT,
-            status TEXT, wind_direction REAL, wind_speed REAL,
-            wind_gusts REAL, cloud_cover_low REAL, visibility REAL,
-            created_at TEXT, status_reason TEXT
-        )"""
-    )
-    conn.execute(
-        "INSERT INTO flight_weather_logs VALUES (1, '2026-06-03', 'ANA1891', '08:30', '欠航', NULL, NULL, NULL, NULL, NULL, NULL, '台風')"
+        "INSERT INTO flight_weather_logs VALUES ('2026-06-03', 'ANA1891', '08:30', '欠航', NULL, NULL, NULL, NULL, NULL, NULL, '台風')"
     )
     conn.commit()
     conn.close()
