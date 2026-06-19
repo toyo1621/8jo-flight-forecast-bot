@@ -1,6 +1,7 @@
 from datetime import date
 from unittest.mock import patch
 
+from forecast_engine import find_similar_flights
 from web_app import (
     BASE_DIR,
     app,
@@ -47,6 +48,21 @@ def test_wind_direction_label_uses_sixteen_points():
     assert wind_direction_label(225) == "南西"
     assert wind_direction_label(359) == "北"
     assert wind_direction_label(None) is None
+
+
+def test_find_similar_flights_filters_same_flight_and_orders_by_weather():
+    history = [
+        {"date": "2026-01-01", "flight_number": "ANA1891", "status": "通常", "status_reason": None, "wind_direction": 180.0, "wind_speed": 5.0, "wind_gusts": 8.0, "cloud_cover_low": 20.0, "visibility": 10.0},
+        {"date": "2026-01-02", "flight_number": "ANA1891", "status": "欠航", "status_reason": "強風", "wind_direction": 260.0, "wind_speed": 14.0, "wind_gusts": 20.0, "cloud_cover_low": 90.0, "visibility": 5.0},
+        {"date": "2026-01-03", "flight_number": "ANA1893", "status": "通常", "status_reason": None, "wind_direction": 180.0, "wind_speed": 5.0, "wind_gusts": 8.0, "cloud_cover_low": 20.0, "visibility": 10.0},
+    ]
+    weather = {"wind_direction": 182.0, "wind_speed": 5.2, "wind_gusts": 8.0, "cloud_cover_low": 20.0, "visibility": 10.0}
+
+    with patch("forecast_engine.load_detailed_history", return_value=history):
+        result = find_similar_flights("ANA1891", weather)
+
+    assert [row["date"] for row in result] == ["2026-01-01", "2026-01-02"]
+    assert result[0]["date_label"] == "2026/01/01"
 
 
 def test_calculate_confidence_uses_ensemble_spread():
@@ -133,6 +149,8 @@ def test_index_renders_forecast():
     assert "なぜ作ったか" in body
     assert "ざっくりどういう仕組みか" in body
     assert "気象業法への配慮" in body
+    assert "予報気象情報" in body
+    assert "気象条件が近い過去の就航実績10件" in body
     assert "6ポイント以内" not in body
 
 
