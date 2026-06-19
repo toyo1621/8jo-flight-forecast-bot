@@ -239,7 +239,9 @@ def test_index_renders_forecast():
 
     assert response.status_code == 200
     body = response.get_data(as_text=True)
-    assert "八丈島フライト予報" in body
+    assert "八丈島フライト統計予想" in body
+    assert "羽田→八丈島便の就航傾向を、過去の就航実績と天気から見やすくするサイトです。" in body
+    assert "GFS(アメリカ海洋大気庁)・ECMWF(欧州中期予報センター)" in body
     assert "天候信頼度" in body
     assert "風向 南 180°" in body
     assert "低層雲量 20%" in body
