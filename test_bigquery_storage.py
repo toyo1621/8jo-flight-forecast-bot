@@ -1,7 +1,7 @@
 from unittest.mock import patch
 
 import bigquery_storage
-from data_collector import save_collected_data
+from data_collector import get_demo_flight_data, save_collected_data
 
 
 def test_normalize_item_formats_time():
@@ -27,3 +27,10 @@ def test_collector_uses_bigquery_backend(monkeypatch):
         save_collected_data(None, items)
 
     upsert.assert_called_once_with(items)
+
+
+def test_demo_data_is_only_created_explicitly():
+    flights = get_demo_flight_data()
+
+    assert len(flights) == 3
+    assert flights[1]["status"] == "条件付き運航"
