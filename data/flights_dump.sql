@@ -154,7 +154,7 @@ INSERT INTO "flight_weather_logs" VALUES('2026-02-27','ANA1895','16:40','通常'
 INSERT INTO "flight_weather_logs" VALUES('2026-02-28','ANA1891','08:30','通常',338.0,9.44,12.61,6.0,NULL,'2026-06-18 14:50:56',NULL);
 INSERT INTO "flight_weather_logs" VALUES('2026-02-28','ANA1893','13:10','通常',325.0,6.06,9.31,0.0,NULL,'2026-06-18 14:50:56',NULL);
 INSERT INTO "flight_weather_logs" VALUES('2026-02-28','ANA1895','16:40','通常',344.0,5.72,8.19,0.0,NULL,'2026-06-18 14:50:56',NULL);
-INSERT INTO "flight_weather_logs" VALUES('2026…1496 tokens truncated… 14:50:56',NULL);
+INSERT INTO "flight_weather_logs" VALUES('2026…1488 tokens truncated…,2.56,4.89,47.0,NULL,'2026-06-18 14:50:56',NULL);
 INSERT INTO "flight_weather_logs" VALUES('2026-03-15','ANA1895','16:40','通常',281.0,6.78,9.61,2.0,NULL,'2026-06-18 14:50:56',NULL);
 INSERT INTO "flight_weather_logs" VALUES('2026-03-16','ANA1891','08:30','通常',54.0,5.11,5.19,45.0,NULL,'2026-06-18 14:50:56',NULL);
 INSERT INTO "flight_weather_logs" VALUES('2026-03-16','ANA1893','13:10','通常',129.0,1.11,4.31,61.0,NULL,'2026-06-18 14:50:56',NULL);
@@ -300,6 +300,5 @@ INSERT INTO "flight_weather_logs" VALUES('2026-06-02','ANA1895','16:40','通常'
 INSERT INTO "flight_weather_logs" VALUES('2026-06-03','ANA1891','08:30','欠航',189.0,18.19,28.61,95.0,NULL,'2026-06-18 14:50:56','台風');
 INSERT INTO "flight_weather_logs" VALUES('2026-06-03','ANA1893','13:10','欠航',226.0,23.03,30.0,100.0,NULL,'2026-06-18 14:50:56','台風');
 INSERT INTO "flight_weather_logs" VALUES('2026-06-03','ANA1895','16:40','欠航',250.0,11.19,15.0,2.0,NULL,'2026-06-18 14:50:56','台風');
-DELETE FROM "sqlite_sequence";
 COMMIT;
 
