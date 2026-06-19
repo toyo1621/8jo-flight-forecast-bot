@@ -14,6 +14,8 @@ BASE_DIR = Path(__file__).resolve().parent
 FORECAST_URL = "https://api.open-meteo.com/v1/forecast"
 ENSEMBLE_URL = "https://ensemble-api.open-meteo.com/v1/ensemble"
 JST = timezone(timedelta(hours=9))
+# Open-Meteo counts today as day one; 11 days includes the date 10 days ahead.
+FORECAST_DAYS = 11
 FLIGHTS = (
     {"number": "ANA1891", "time": "08:30", "forecast_hour": 8},
     {"number": "ANA1893", "time": "13:10", "forecast_hour": 13},
@@ -30,7 +32,7 @@ def fetch_forecast():
             "hourly": "wind_speed_10m,wind_direction_10m,wind_gusts_10m,cloud_cover_low,visibility",
             "wind_speed_unit": "ms",
             "timezone": "Asia/Tokyo",
-            "forecast_days": 7,
+            "forecast_days": FORECAST_DAYS,
         },
         timeout=10,
     )
@@ -112,7 +114,7 @@ def _fetch_ensemble_model(model, variables, max_members=None):
             "models": model,
             "wind_speed_unit": "ms",
             "timezone": "Asia/Tokyo",
-            "forecast_days": 7,
+            "forecast_days": FORECAST_DAYS,
         },
         timeout=20,
     )
