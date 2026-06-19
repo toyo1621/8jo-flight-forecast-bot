@@ -250,7 +250,7 @@ footer {
   .header { padding-top: 16px; }
   .day-heading { align-items: flex-start; }
   .confidence { flex-wrap: wrap; justify-content: flex-end; max-width: 145px; }
-  .confidence-note { text-align: left; }
+  .confidence-note { text-align: right; }
   .flight { padding: 18px; }
   .about-block { padding: 22px; }
 }
