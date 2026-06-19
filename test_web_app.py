@@ -4,6 +4,7 @@ from unittest.mock import patch
 from forecast_engine import find_similar_flights, predict_flight_probability
 from web_app import (
     BASE_DIR,
+    FORECAST_DAYS,
     app,
     build_daily_forecasts,
     calculate_confidence,
@@ -42,6 +43,10 @@ def test_build_daily_forecasts():
     assert days[0]["flights"][0]["probability"] == 88.0
     assert days[0]["flights"][0]["wind_direction_label"] == "南"
     assert days[0]["confidence"]["grade"] == "B"
+
+
+def test_forecast_period_reaches_ten_days_ahead():
+    assert FORECAST_DAYS == 11
 
 
 def test_today_flight_disappears_after_arrival_plus_30_minutes():
