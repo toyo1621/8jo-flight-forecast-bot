@@ -25,6 +25,7 @@ SCHEMA = (
     bigquery.SchemaField("wind_gusts", "FLOAT"),
     bigquery.SchemaField("cloud_cover_low", "FLOAT"),
     bigquery.SchemaField("visibility", "FLOAT"),
+    bigquery.SchemaField("visibility_source", "STRING"),
     bigquery.SchemaField("status_reason", "STRING"),
     bigquery.SchemaField("created_at", "TIMESTAMP"),
     bigquery.SchemaField("migrated_at", "TIMESTAMP", mode="REQUIRED"),
@@ -46,7 +47,7 @@ def read_sqlite_rows(db_file):
             f"""
             SELECT date, flight_number, scheduled_time, status,
                    wind_direction, wind_speed, wind_gusts,
-                   cloud_cover_low, visibility, {reason_column}, created_at
+                   cloud_cover_low, visibility, NULL AS visibility_source, {reason_column}, created_at
             FROM flight_weather_logs
             ORDER BY date, flight_number
             """
@@ -73,6 +74,7 @@ def normalize_row(row, migrated_at=None):
         "wind_gusts": row["wind_gusts"],
         "cloud_cover_low": row["cloud_cover_low"],
         "visibility": row["visibility"],
+        "visibility_source": row["visibility_source"],
         "status_reason": status_reason,
         "created_at": row["created_at"],
         "migrated_at": migrated_at.isoformat(),

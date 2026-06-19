@@ -65,6 +65,7 @@ def _normalize_item(item, timestamp):
         "wind_gusts": item.get("wind_gusts"),
         "cloud_cover_low": item.get("cloud_cover_low"),
         "visibility": item.get("visibility"),
+        "visibility_source": "open_meteo_forecast" if item.get("visibility") is not None else None,
         "status_reason": item.get("status_reason"),
         "created_at": timestamp,
         "migrated_at": timestamp,
@@ -102,15 +103,16 @@ def upsert_flight_weather_logs(items):
               wind_gusts = S.wind_gusts,
               cloud_cover_low = S.cloud_cover_low,
               visibility = S.visibility,
+              visibility_source = S.visibility_source,
               status_reason = S.status_reason,
               created_at = S.created_at,
               migrated_at = S.migrated_at
             WHEN NOT MATCHED THEN INSERT
               (date, flight_number, flight_display_name, scheduled_time, status, wind_direction,
-               wind_speed, wind_gusts, cloud_cover_low, visibility, status_reason, created_at, migrated_at)
+               wind_speed, wind_gusts, cloud_cover_low, visibility, visibility_source, status_reason, created_at, migrated_at)
             VALUES
               (S.date, S.flight_number, S.flight_display_name, S.scheduled_time, S.status, S.wind_direction,
-               S.wind_speed, S.wind_gusts, S.cloud_cover_low, S.visibility, S.status_reason, S.created_at, S.migrated_at)
+               S.wind_speed, S.wind_gusts, S.cloud_cover_low, S.visibility, S.visibility_source, S.status_reason, S.created_at, S.migrated_at)
             """
         ).result()
     finally:
