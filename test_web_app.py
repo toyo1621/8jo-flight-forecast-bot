@@ -1,7 +1,7 @@
 from datetime import date, datetime, timedelta, timezone
 from unittest.mock import Mock, patch
 
-from forecast_engine import find_similar_flights, predict_flight_probability
+from forecast_engine import MAX_PROBABILITY, find_similar_flights, predict_flight_probability
 from web_app import (
     BASE_DIR,
     FORECAST_DAYS,
@@ -174,6 +174,14 @@ def test_low_cloud_warning_uses_precise_wording():
         result = predict_flight_probability(180.0, 5.0, 8.0, 100.0, 15.0)
 
     assert result["warning_msg"] == "低層雲の影響注意 (低層雲量 100.0%)"
+
+
+def test_probability_cap_is_97_percent():
+    with patch("forecast_engine.load_history", return_value=[]):
+        result = predict_flight_probability(180.0, 3.0, 5.0, 10.0, 20.0)
+
+    assert MAX_PROBABILITY == 97.0
+    assert result["probability"] == 97.0
 
 
 def test_southerly_wind_warning_includes_boundary_values():

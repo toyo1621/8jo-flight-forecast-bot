@@ -7,6 +7,7 @@ from bigquery_storage import fetch_detailed_history, fetch_history
 from flight_metadata import flight_display_name, normalize_status
 
 DB_FILE = Path(__file__).resolve().parent / "flights.db"
+MAX_PROBABILITY = 97.0
 
 
 def load_history():
@@ -142,7 +143,7 @@ def predict_flight_probability(wind_direction, wind_speed, wind_gusts, cloud_cov
     history = load_history()
     if not history:
         return {
-            "probability": 95.0,
+            "probability": MAX_PROBABILITY,
             "alert_required": False,
             "warning_msg": "過去データを取得できないため、デフォルト値を返します。",
             "data_count": 0,
@@ -171,7 +172,7 @@ def predict_flight_probability(wind_direction, wind_speed, wind_gusts, cloud_cov
         
     # ベース確率の算出
     if not matching_rows:
-        base_prob = 95.0
+        base_prob = MAX_PROBABILITY
     else:
         # 重み付け: 就航した便=1.0、欠航・引返欠航=0.0
         total = len(matching_rows)
@@ -216,7 +217,7 @@ def predict_flight_probability(wind_direction, wind_speed, wind_gusts, cloud_cov
         alert_required = True
         
     # 4. 上限キャップと下限の設定
-    final_prob = min(prob, 95.0)
+    final_prob = min(prob, MAX_PROBABILITY)
     final_prob = max(final_prob, 0.0)
     
     warning_msg = "、".join(warnings) if warnings else "特になし"
