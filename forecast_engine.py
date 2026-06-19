@@ -1,8 +1,10 @@
 import sqlite3
 import os
+from functools import lru_cache
 from pathlib import Path
 
-from bigquery_storage import fetch_history
+from bigquery_storage import fetch_detailed_history, fetch_history
+from flight_metadata import flight_display_name
 
 DB_FILE = Path(__file__).resolve().parent / "flights.db"
 
@@ -27,6 +29,68 @@ def load_history():
         ).fetchall()
     finally:
         conn.close()
+
+
+@lru_cache(maxsize=1)
+def load_detailed_history():
+    backend = os.getenv("FORECAST_DATA_BACKEND", "sqlite").lower()
+    if backend == "bigquery":
+        return fetch_detailed_history()
+    if not DB_FILE.exists():
+        return []
+
+    conn = sqlite3.connect(DB_FILE)
+    conn.row_factory = sqlite3.Row
+    try:
+        columns = {row[1] for row in conn.execute("PRAGMA table_info(flight_weather_logs)")}
+        reason_column = "status_reason" if "status_reason" in columns else "NULL AS status_reason"
+        rows = conn.execute(
+            f"""
+            SELECT date, flight_number, status, {reason_column}, wind_direction,
+                   wind_speed, wind_gusts, cloud_cover_low, visibility
+            FROM flight_weather_logs
+            WHERE status IS NOT NULL AND wind_direction IS NOT NULL AND wind_speed IS NOT NULL
+            """
+        ).fetchall()
+        return [
+            {
+                **dict(row),
+                "flight_display_name": flight_display_name(row["flight_number"]),
+            }
+            for row in rows
+        ]
+    finally:
+        conn.close()
+
+
+def find_similar_flights(flight_number, weather, limit=10):
+    candidates = []
+    for row in load_detailed_history():
+        if row["flight_number"] != flight_number:
+            continue
+        angle_diff = abs(row["wind_direction"] - weather["wind_direction"])
+        angle_diff = min(angle_diff, 360 - angle_diff)
+        score = angle_diff / 45 + abs(row["wind_speed"] - weather["wind_speed"]) / 5
+        comparisons = (
+            ("wind_gusts", 10),
+            ("cloud_cover_low", 100),
+            ("visibility", 20),
+        )
+        for field, scale in comparisons:
+            if row.get(field) is not None and weather.get(field) is not None:
+                score += abs(row[field] - weather[field]) / scale
+        candidates.append((score, row))
+
+    similar = []
+    for score, row in sorted(candidates, key=lambda item: item[0])[:limit]:
+        similar.append(
+            {
+                **row,
+                "date_label": row["date"].replace("-", "/"),
+                "similarity_score": round(score, 2),
+            }
+        )
+    return similar
 
 def predict_flight_probability(wind_direction, wind_speed, wind_gusts, cloud_cover_low, visibility):
     """

@@ -7,7 +7,7 @@ from flask import Flask, render_template
 
 from db_snapshot import restore_db
 from flight_metadata import flight_display_name
-from forecast_engine import predict_flight_probability
+from forecast_engine import find_similar_flights, predict_flight_probability
 
 
 BASE_DIR = Path(__file__).resolve().parent
@@ -251,6 +251,8 @@ def build_daily_forecasts(weather_by_time, ensembles_by_time=None, reference_dat
                     **weather,
                     **result,
                     "number": flight_display_name(flight["number"]),
+                    "raw_number": flight["number"],
+                    "similar_history": find_similar_flights(flight["number"], weather),
                     "confidence": confidence,
                     "wind_direction_label": wind_direction_label(weather["wind_direction"]),
                 }
