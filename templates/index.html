@@ -43,7 +43,7 @@
               <article class="flight{% if flight.alert_required %} flight--alert{% endif %}" role="button" tabindex="0" aria-haspopup="dialog" data-dialog="detail-{{ day.date }}-{{ flight.raw_number }}">
                 <div>
                   <p class="flight-number">{{ flight.number }}</p>
-                  <p class="flight-time">{{ flight.time }} 発</p>
+                  <p class="flight-time">{{ flight.time }} 着</p>
                 </div>
                 <p class="probability"><strong>{{ flight.probability }}</strong><span>%</span></p>
                 <div class="details">
@@ -61,7 +61,7 @@
               <dialog class="flight-dialog" id="detail-{{ day.date }}-{{ flight.raw_number }}">
                 <div class="dialog-header">
                   <div>
-                    <p class="dialog-eyebrow">{{ day.date_label }} {{ flight.time }} 発</p>
+                    <p class="dialog-eyebrow">{{ day.date_label }} {{ flight.time }} 着</p>
                     <h3>{{ flight.number }} の詳細</h3>
                   </div>
                   <button class="dialog-close" type="button" aria-label="閉じる">×</button>
