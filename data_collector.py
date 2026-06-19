@@ -291,11 +291,11 @@ def main():
     api_key = os.getenv("ODPT_API_KEY")
     today = datetime.today().strftime("%Y-%m-%d")
 
-    if args.demo or not api_key or api_key == "your_odpt_api_key_here":
-        if not args.demo and (not api_key or api_key == "your_odpt_api_key_here"):
-            print("警告: .env に ODPT_API_KEY が設定されていません。")
+    if args.demo:
         flights = get_demo_flight_data()
     else:
+        if not api_key or api_key == "your_odpt_api_key_here":
+            raise RuntimeError("ODPT_API_KEYが未設定です。実績DBへのデモデータ保存を中止します。")
         actual_flights = get_flight_data_odpt(api_key)
         flights = merge_with_daily_schedule(today, actual_flights)
 
