@@ -2,6 +2,7 @@ from unittest.mock import patch
 
 import bigquery_storage
 from data_collector import STATUS_MAPPING, get_demo_flight_data, save_collected_data
+from flight_metadata import normalize_status
 
 
 def test_normalize_item_formats_time():
@@ -35,10 +36,19 @@ def test_demo_data_is_only_created_explicitly():
     flights = get_demo_flight_data()
 
     assert len(flights) == 3
-    assert flights[1]["status"] == "条件付き運航"
+    assert flights[1]["status"] == "条件付き→就航"
 
 
 def test_odpt_arrival_statuses_count_as_operated():
     assert STATUS_MAPPING["odpt.FlightStatus:Arrived"] == "通常"
     assert STATUS_MAPPING["odpt.FlightStatus:EstimatedArrival"] == "通常"
     assert STATUS_MAPPING["odpt.FlightStatus:Delayed"] == "通常"
+    assert STATUS_MAPPING["odpt.FlightStatus:Conditional"] == "条件付き→就航"
+    assert STATUS_MAPPING["odpt.FlightStatus:Diverted"] == "条件付き→引返欠航"
+    assert STATUS_MAPPING["odpt.FlightStatus:Returned"] == "条件付き→引返欠航"
+
+
+def test_legacy_status_labels_are_normalized_for_display():
+    assert normalize_status("条件付き運航") == "条件付き→就航"
+    assert normalize_status("引き返し(出発空港着)") == "条件付き→引返欠航"
+

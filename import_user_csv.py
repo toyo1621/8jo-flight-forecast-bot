@@ -75,7 +75,7 @@ def map_status(status_str):
         return "欠航"
         
     if '条件付' in status_str:
-        return "条件付き運航"
+        return "条件付き→就航"
         
     if '遅延' in status_str:
         return "遅延"
@@ -260,3 +260,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+
