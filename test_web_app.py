@@ -1,7 +1,7 @@
 from datetime import date
 from unittest.mock import patch
 
-from forecast_engine import find_similar_flights
+from forecast_engine import find_similar_flights, predict_flight_probability
 from web_app import (
     BASE_DIR,
     app,
@@ -107,6 +107,13 @@ def test_find_similar_flights_prioritizes_matching_strong_wind_and_direction():
     assert result[0]["date"] == "2026-01-02"
 
 
+def test_low_cloud_warning_uses_precise_wording():
+    with patch("forecast_engine.load_history", return_value=[("通常", 180.0, 5.0)]):
+        result = predict_flight_probability(180.0, 5.0, 8.0, 100.0, 15.0)
+
+    assert result["warning_msg"] == "低層雲の影響注意 (低層雲量 100.0%)"
+
+
 def test_calculate_confidence_uses_ensemble_spread():
     members = [
         {
@@ -187,7 +194,8 @@ def test_index_renders_forecast():
     assert "八丈島フライト予報" in body
     assert "天候信頼度" in body
     assert "風向 南 180°" in body
-    assert "雲量 20%" in body
+    assert "低層雲量 20%" in body
+    assert ">雲量<" not in body
     assert "なぜ作ったか" in body
     assert "ざっくりどういう仕組みか" in body
     assert "気象業法への配慮" in body
