@@ -111,7 +111,7 @@ def main():
                     alert_emoji = "⚠️" if res["alert_required"] else "✅"
                     
                     print(f"✈️  便名: {f['flight_number']} (定刻 {f['scheduled_time']})")
-                    print(f"  [気象条件] 風向: {w['wind_direction']}° | 風速: {w['wind_speed']} m/s | 突風: {w['wind_gusts']} m/s | 視程: {w['visibility']} km | 雲量: {w['cloud_cover_low']}%")
+                    print(f"  [気象条件] 風向: {w['wind_direction']}° | 風速: {w['wind_speed']} m/s | 突風: {w['wind_gusts']} m/s | 視程: {w['visibility']} km | 低層雲量: {w['cloud_cover_low']}%")
                     print(f"  [就航予測] 就航確率: {prob:>5}%  [{prob_bar}]  (類似過去データ: {res['data_count']}件, ステップ {res['step_used']})")
                     print(f"  [判定状況] 状況: {alert_emoji} {res['warning_msg']}")
                     
@@ -127,3 +127,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+

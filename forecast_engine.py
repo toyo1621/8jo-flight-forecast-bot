@@ -188,14 +188,14 @@ def predict_flight_probability(wind_direction, wind_speed, wind_gusts, cloud_cov
     warnings = []
     alert_required = False
     
-    # 2. 霧・雲量による減算補正
+    # 2. 霧・低層雲量による減算補正
     if visibility is not None and visibility < 5.0:
         prob *= 0.6
         warnings.append(f"視程不良リスク ({visibility} km)")
     
     if cloud_cover_low is not None and cloud_cover_low > 90.0:
         prob *= 0.8
-        warnings.append(f"低い雲の影響あり (低層雲量 {cloud_cover_low}%)")
+        warnings.append(f"低層雲の影響注意 (低層雲量 {cloud_cover_low}%)")
         
     # 3. 台風・強風による補正
     is_windy = False

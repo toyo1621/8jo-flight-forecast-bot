@@ -69,7 +69,7 @@ def calculate_flight_probability(wind_speed, wind_direction, cloud_cover_low, vi
     # 1. ベースとなる風向・風速からの確率算出 (過去統計)
     base_prob = get_wind_historical_probability(wind_speed, wind_direction)
     
-    # 2. 霧・雲量による減算補正
+    # 2. 霧・低層雲量による減算補正
     if visibility is not None and visibility < 5.0:
         base_prob *= 0.6  # 視界不良時は確率を大幅引き下げ
     elif cloud_cover_low > 90:
