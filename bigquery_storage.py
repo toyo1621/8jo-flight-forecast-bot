@@ -5,7 +5,7 @@ from functools import lru_cache
 
 from google.cloud import bigquery
 
-from flight_metadata import flight_display_name
+from flight_metadata import flight_display_name, normalize_status
 from migrate_sqlite_to_bigquery import DEFAULT_DATASET, DEFAULT_LOCATION, DEFAULT_PROJECT, DEFAULT_TABLE, SCHEMA, ensure_destination
 
 
@@ -44,7 +44,10 @@ def fetch_detailed_history():
           AND wind_direction IS NOT NULL
           AND wind_speed IS NOT NULL
     """
-    return [dict(row.items()) for row in client.query(query).result()]
+    rows = [dict(row.items()) for row in client.query(query).result()]
+    for row in rows:
+        row["status"] = normalize_status(row["status"])
+    return rows
 
 
 def _normalize_item(item, timestamp):
@@ -57,7 +60,7 @@ def _normalize_item(item, timestamp):
         "flight_number": item["flight_number"],
         "flight_display_name": flight_display_name(item["flight_number"]),
         "scheduled_time": scheduled_time,
-        "status": item.get("status"),
+        "status": normalize_status(item.get("status")),
         "wind_direction": item.get("wind_direction"),
         "wind_speed": item.get("wind_speed"),
         "wind_gusts": item.get("wind_gusts"),
@@ -116,3 +119,4 @@ def upsert_flight_weather_logs(items):
     fetch_history.cache_clear()
     fetch_detailed_history.cache_clear()
     return len(payload)
+

@@ -4,7 +4,7 @@ from functools import lru_cache
 from pathlib import Path
 
 from bigquery_storage import fetch_detailed_history, fetch_history
-from flight_metadata import flight_display_name
+from flight_metadata import flight_display_name, normalize_status
 
 DB_FILE = Path(__file__).resolve().parent / "flights.db"
 
@@ -55,6 +55,7 @@ def load_detailed_history():
         return [
             {
                 **dict(row),
+                "status": normalize_status(row["status"]),
                 "flight_display_name": flight_display_name(row["flight_number"]),
             }
             for row in rows
@@ -172,14 +173,12 @@ def predict_flight_probability(wind_direction, wind_speed, wind_gusts, cloud_cov
     if not matching_rows:
         base_prob = 95.0
     else:
-        # 重み付け: 通常・遅延=1.0, 条件付き運航=0.75, 欠航・引き返し=0.0
+        # 重み付け: 就航した便=1.0、欠航・引返欠航=0.0
         total = len(matching_rows)
         score_sum = 0.0
         for (status,) in matching_rows:
-            if status in ["通常", "遅延"]:
+            if normalize_status(status) in ["通常", "遅延", "条件付き→就航"]:
                 score_sum += 1.0
-            elif status == "条件付き運航":
-                score_sum += 0.75
             else:
                 score_sum += 0.0
                 
