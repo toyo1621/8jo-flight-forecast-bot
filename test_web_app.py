@@ -6,6 +6,7 @@ from web_app import (
     build_daily_forecasts,
     calculate_confidence,
     fallback_confidence,
+    _select_evenly,
     wind_direction_label,
 )
 
@@ -67,6 +68,17 @@ def test_calculate_confidence_uses_ensemble_spread():
 
     assert confidence["grade"] == "D"
     assert confidence["member_count"] == 40
+
+
+def test_select_evenly_balances_ensemble_members():
+    members = list(range(51))
+
+    selected = _select_evenly(members, 31)
+
+    assert len(selected) == 31
+    assert selected[0] == 0
+    assert selected[-1] == 50
+    assert selected == sorted(set(selected))
 
 
 def test_fallback_confidence_decreases_with_lead_time():
