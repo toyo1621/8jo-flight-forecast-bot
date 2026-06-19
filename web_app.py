@@ -6,6 +6,7 @@ import requests
 from flask import Flask, render_template
 
 from db_snapshot import restore_db
+from flight_metadata import flight_display_name
 from forecast_engine import predict_flight_probability
 
 
@@ -249,6 +250,7 @@ def build_daily_forecasts(weather_by_time, ensembles_by_time=None, reference_dat
                     **flight,
                     **weather,
                     **result,
+                    "number": flight_display_name(flight["number"]),
                     "confidence": confidence,
                     "wind_direction_label": wind_direction_label(weather["wind_direction"]),
                 }
