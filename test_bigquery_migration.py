@@ -57,3 +57,27 @@ def test_migration_treats_delay_as_normal(tmp_path):
 
     assert result["status"] == "通常"
     assert result["status_reason"] == "遅延"
+
+
+def test_migration_preserves_status_reason(tmp_path):
+    db_file = tmp_path / "flights.db"
+    conn = sqlite3.connect(db_file)
+    conn.execute(
+        """CREATE TABLE flight_weather_logs (
+            id INTEGER, date TEXT, flight_number TEXT, scheduled_time TEXT,
+            status TEXT, wind_direction REAL, wind_speed REAL,
+            wind_gusts REAL, cloud_cover_low REAL, visibility REAL,
+            created_at TEXT, status_reason TEXT
+        )"""
+    )
+    conn.execute(
+        "INSERT INTO flight_weather_logs VALUES (1, '2026-06-03', 'ANA1891', '08:30', '欠航', NULL, NULL, NULL, NULL, NULL, NULL, '台風')"
+    )
+    conn.commit()
+    conn.close()
+
+    result = normalize_row(read_sqlite_rows(db_file)[0])
+
+    assert result["status"] == "欠航"
+    assert result["status_reason"] == "台風"
+
