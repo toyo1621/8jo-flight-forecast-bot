@@ -52,9 +52,9 @@ def test_wind_direction_label_uses_sixteen_points():
 
 def test_find_similar_flights_filters_same_flight_and_orders_by_weather():
     history = [
-        {"date": "2026-01-01", "flight_number": "ANA1891", "status": "通常", "status_reason": None, "wind_direction": 180.0, "wind_speed": 5.0, "wind_gusts": 8.0, "cloud_cover_low": 20.0, "visibility": 10.0},
-        {"date": "2026-01-02", "flight_number": "ANA1891", "status": "欠航", "status_reason": "強風", "wind_direction": 260.0, "wind_speed": 14.0, "wind_gusts": 20.0, "cloud_cover_low": 90.0, "visibility": 5.0},
-        {"date": "2026-01-03", "flight_number": "ANA1893", "status": "通常", "status_reason": None, "wind_direction": 180.0, "wind_speed": 5.0, "wind_gusts": 8.0, "cloud_cover_low": 20.0, "visibility": 10.0},
+        {"date": "2026-01-01", "flight_number": "ANA1891", "flight_display_name": "ANA1891(1便)", "status": "通常", "status_reason": None, "wind_direction": 180.0, "wind_speed": 5.0, "wind_gusts": 8.0, "cloud_cover_low": 20.0, "visibility": 10.0},
+        {"date": "2026-01-02", "flight_number": "ANA1891", "flight_display_name": "ANA1891(1便)", "status": "欠航", "status_reason": "強風", "wind_direction": 260.0, "wind_speed": 14.0, "wind_gusts": 20.0, "cloud_cover_low": 90.0, "visibility": 5.0},
+        {"date": "2026-01-03", "flight_number": "ANA1893", "flight_display_name": "ANA1893(2便)", "status": "通常", "status_reason": None, "wind_direction": 180.0, "wind_speed": 5.0, "wind_gusts": 8.0, "cloud_cover_low": 20.0, "visibility": 10.0},
     ]
     weather = {"wind_direction": 182.0, "wind_speed": 5.2, "wind_gusts": 8.0, "cloud_cover_low": 20.0, "visibility": 10.0}
 
@@ -63,6 +63,20 @@ def test_find_similar_flights_filters_same_flight_and_orders_by_weather():
 
     assert [row["date"] for row in result] == ["2026-01-01", "2026-01-02"]
     assert result[0]["date_label"] == "2026/01/01"
+    assert result[0]["flight_display_name"] == "ANA1891(1便)"
+
+
+def test_find_similar_flights_prefers_visibility_when_scores_are_equal():
+    history = [
+        {"date": "2026-01-01", "flight_number": "ANA1891", "flight_display_name": "ANA1891(1便)", "status": "通常", "status_reason": None, "wind_direction": 180.0, "wind_speed": 5.0, "wind_gusts": 8.0, "cloud_cover_low": 20.0, "visibility": None},
+        {"date": "2026-01-02", "flight_number": "ANA1891", "flight_display_name": "ANA1891(1便)", "status": "通常", "status_reason": None, "wind_direction": 180.0, "wind_speed": 5.0, "wind_gusts": 8.0, "cloud_cover_low": 20.0, "visibility": 10.0},
+    ]
+    weather = {"wind_direction": 180.0, "wind_speed": 5.0, "wind_gusts": 8.0, "cloud_cover_low": 20.0, "visibility": 10.0}
+
+    with patch("forecast_engine.load_detailed_history", return_value=history):
+        result = find_similar_flights("ANA1891", weather, limit=1)
+
+    assert result[0]["date"] == "2026-01-02"
 
 
 def test_calculate_confidence_uses_ensemble_spread():
@@ -152,6 +166,13 @@ def test_index_renders_forecast():
     assert "予報気象情報" in body
     assert "気象条件が近い過去の就航実績10件" in body
     assert "6ポイント以内" not in body
+
+
+def test_history_template_includes_flight_name_and_visibility_fallback():
+    template = (BASE_DIR / "templates" / "index.html").read_text(encoding="utf-8")
+
+    assert "{{ history.date_label }} {{ history.flight_display_name }}" in template
+    assert "/ 視程 {% if history.visibility is not none %}{{ history.visibility }} km{% else %}欠測{% endif %}" in template
 
 
 def test_index_handles_weather_api_error():
