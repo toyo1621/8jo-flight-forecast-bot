@@ -33,7 +33,7 @@
             </div>
           </div>
           {% if day.confidence.source == "ensemble" %}
-            <p class="confidence-note">天候信頼度は{{ day.confidence.member_count }}通りの天気予測から{{ day.confidence.spread }}ptと判定</p>
+            <p class="confidence-note">(天候信頼度は{{ day.confidence.member_count }}通りの天気予測から{{ day.confidence.spread }}ptと判定)</p>
           {% else %}
             <p class="confidence-note">アンサンブル予報を取得できなかったため、{{ day.confidence.lead_days }}日先として暫定評価しています。</p>
           {% endif %}
