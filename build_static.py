@@ -14,6 +14,7 @@ from web_app import (
     build_daily_forecasts,
     fetch_ensemble_forecast,
     fetch_forecast,
+    fetch_jma_forecast,
 )
 
 
@@ -25,12 +26,17 @@ def build_site(output_dir=DIST_DIR):
         restore_db(BASE_DIR / "flights.db", BASE_DIR / "data" / "flights_dump.sql")
     weather = fetch_forecast()
     try:
+        jma = fetch_jma_forecast()
+    except (requests.RequestException, ValueError) as exc:
+        print(f"JMA forecast unavailable; continuing without JMA comparison: {exc}")
+        jma = {}
+    try:
         ensembles = fetch_ensemble_forecast()
     except (requests.RequestException, ValueError) as exc:
         print(f"Ensemble forecast unavailable; using lead-time confidence: {exc}")
         ensembles = {}
 
-    days = build_daily_forecasts(weather, ensembles)
+    days = build_daily_forecasts(weather, ensembles, jma_by_time=jma)
     updated_at = datetime.now(JST).strftime("%Y/%m/%d %H:%M")
     with app.app_context():
         html = render_template(
