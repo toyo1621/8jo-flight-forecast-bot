@@ -3,18 +3,18 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="description" content="羽田発・八丈島行きANA便の就航確率予報">
+  <meta name="description" content="八丈島便の就航予測サイトです。過去実績とOpen-Meteoの予報をもとに、就航確率の参考値を表示します。">
   <title>八丈島フライト予報</title>
   <link rel="stylesheet" href="static/styles.css">
 </head>
 <body>
   <main class="container">
     <header class="header">
-      <p class="eyebrow">HND → HAC</p>
+      <p class="eyebrow">HND / HAC</p>
       <h1>八丈島フライト予報</h1>
-      <p class="lead">羽田発・八丈島行き ANA便の就航確率</p>
+      <p class="lead">八丈島便の就航傾向を、過去実績と天気予報からざっくり見やすくするサイトです。</p>
       <p class="updated">更新 {{ updated_at }}</p>
-      <p class="confidence-help">信頼度はOpen-MeteoのGFS・ECMWFアンサンブル予報の一致度です。Aに近いほど天気予報のばらつきが小さくなります。</p>
+      <p class="confidence-help">天候信頼度は、Open-MeteoのGFS・ECMWFアンサンブル予報をもとに、予測される就航確率のばらつきから判定しています。Aに近いほど天気の変化によるブレが小さい見込みです。</p>
     </header>
 
     {% if error %}
@@ -27,15 +27,15 @@
           <div class="day-heading">
             <h2><time datetime="{{ day.date }}">{{ day.date_label }} <span>({{ day.weekday }})</span></time></h2>
             <div class="confidence confidence--{{ day.confidence.grade|lower }}">
-              <span>予測信頼度</span>
+              <span>天候信頼度</span>
               <strong>{{ day.confidence.grade }}</strong>
               <small>{{ day.confidence.label }}</small>
             </div>
           </div>
           {% if day.confidence.source == "ensemble" %}
-            <p class="confidence-note">{{ day.confidence.member_count }}通りの予報を比較・就航確率の予測幅 {{ day.confidence.spread }}ポイント</p>
+            <p class="confidence-note">{{ day.confidence.member_count }}通りの予報を比較し、就航確率の予測幅 {{ day.confidence.spread }}ポイントで判定しています。</p>
           {% else %}
-            <p class="confidence-note">アンサンブル予報を取得できなかったため、{{ day.confidence.lead_days }}日先として暫定評価</p>
+            <p class="confidence-note">アンサンブル予報を取得できなかったため、{{ day.confidence.lead_days }}日先として暫定評価しています。</p>
           {% endif %}
           <div class="flights">
             {% for flight in day.flights %}
@@ -46,11 +46,13 @@
                 </div>
                 <p class="probability"><strong>{{ flight.probability }}</strong><span>%</span></p>
                 <div class="details">
-                  <span>風 {{ flight.wind_speed }} m/s</span>
-                  <span>最大瞬間 {{ flight.wind_gusts }} m/s</span>
+                  {% if flight.wind_direction is not none %}<span>風向 {{ flight.wind_direction_label }} {{ flight.wind_direction|round|int }}°</span>{% endif %}
+                  <span>風速 {{ flight.wind_speed }} m/s</span>
+                  <span>最大瞬間風速 {{ flight.wind_gusts }} m/s</span>
+                  {% if flight.cloud_cover_low is not none %}<span>雲量 {{ flight.cloud_cover_low|round|int }}%</span>{% endif %}
                   {% if flight.visibility is not none %}<span>視程 {{ flight.visibility }} km</span>{% endif %}
                 </div>
-                {% if flight.warning_msg != "特になし" %}
+                {% if flight.warning_msg != "なし" %}
                   <p class="warning">{{ flight.warning_msg }}</p>
                 {% endif %}
               </article>
@@ -65,35 +67,35 @@
 
       <article class="about-block">
         <p class="about-label">WHY</p>
-        <h3>なぜ作ったのか</h3>
-        <p>八丈島便は、風や視程などの気象条件によって条件付き運航や欠航になることがあります。旅行や仕事の予定を考えるとき、公式の運航判断が出る前にも「いまの予報は過去のどんな状況に近いか」を知るための参考情報がほしい、という思いから作りました。</p>
+        <h3>なぜ作ったか</h3>
+        <p>八丈島便は、風や視程、雲の状況によって就航判断が変わりやすいことがあります。出発前に「今日はどれくらい危なそうか」を、できるだけシンプルに見える形でまとめたかったので作りました。</p>
       </article>
 
       <article class="about-block">
         <p class="about-label">HOW</p>
-        <h3>ざっくりした仕組み</h3>
+        <h3>ざっくりどういう仕組みか</h3>
         <ol class="system-flow">
-          <li><a href="https://open-meteo.com/en/docs" rel="noreferrer">Open-Meteo</a>から八丈島空港周辺の気象予報を取得します。</li>
-          <li>蓄積した過去の運航実績と、その便に対応する過去の気象情報を照合します。</li>
-          <li>風向・風速・突風・低層雲・視程が近い事例から、就航確率の参考値を算出します。</li>
-          <li>GFSとECMWFのアンサンブル予報を比較し、予測のばらつきを信頼度A〜Eで示します。</li>
+          <li><a href="https://open-meteo.com/en/docs" rel="noreferrer">Open-Meteo</a>から八丈島周辺の予報を取得します。</li>
+          <li>過去の就航実績と照らし合わせて、風向・風速・最大瞬間風速・雲量・視程が近い条件を探します。</li>
+          <li>その条件に近い過去データから、各便の就航確率の参考値を出します。</li>
+          <li>GFSとECMWFのアンサンブル予報を比較し、ばらつきが小さいほど天候信頼度を高く表示します。</li>
         </ol>
-        <p>GitHub Actionsが6時間ごとに計算し直し、静的なWebページとして公開しています。</p>
+        <p>GitHub Actionsで定期更新し、静的サイトとして公開しています。</p>
       </article>
 
       <article class="about-block about-block--notice">
         <p class="about-label">NOTICE</p>
-        <h3>気象業務法への配慮</h3>
-        <p>本サイトは、気象現象そのものを独自に予報することを目的としたサービスではありません。第三者が提供する気象予報データを入力として、過去の運航実績との類似性から「就航確率の参考値」を統計的に表示する試験的な取り組みです。</p>
-        <p>気象庁は、数値予報モデルの結果について、加工や表示方法によっては独自の予報と見なされる可能性があると案内しています。そのため本サイトでは、公式の気象予報や航空会社の運航判断と誤認されないよう、データの出典と参考値であることを明示しています。</p>
-        <p>掲載内容は安全上の判断や旅行判断を保証するものではありません。必ず気象庁等の公式な気象情報と、ANAの最新の運航情報をご確認ください。機能・公開範囲・利用目的を変更する場合は、必要に応じて気象庁へ確認します。</p>
-        <p class="reference-link"><a href="https://www.jma.go.jp/jma/kishou/minkan/kyoka.html" rel="noreferrer">気象庁「予報業務の許可について」</a></p>
+        <h3>気象業法への配慮</h3>
+        <p>このサイトは、気象庁の予報そのものを独自に発表するものではなく、公開されている外部予報データをもとに、八丈島便の就航判断の参考値を見やすく整理したものです。</p>
+        <p>ただし、気象庁の案内でも、予報データを加工して表示する形は「独自の予報」に近い扱いになる可能性があります。そのため、現状は実験的な参考サイトとして運用し、公開範囲や商用利用を広げる場合は、事前に制度面の確認を行う前提にしています。</p>
+        <p>判断の最終確認は、必ずANAや公式の気象情報を優先してください。</p>
+        <p class="reference-link"><a href="https://www.jma.go.jp/jma/kishou/minkan/kyoka.html" rel="noreferrer">気象業務法・気象予報業務許可について</a></p>
       </article>
     </section>
 
     <footer>
-      <p>過去の運航実績と気象予報から算出した参考値です。実際の運航情報はANA公式サイトでご確認ください。</p>
-      <p>予測信頼度はアンサンブル予報の中央80%における就航確率の幅から算出します。A: 5ポイント以内、B: 10以内、C: 20以内、D: 30以内、E: 30超。</p>
+      <p>就航可否は最終的に航空会社の判断に従ってください。最新の運航情報はANA公式サイトでご確認ください。</p>
+      <p>天候信頼度は、アンサンブル予報の中央80%における就航確率の幅から算出します。A: 10ポイント以内、B: 20以内、C: 30以内、D: 40以内、E: 40超。</p>
     </footer>
   </main>
 </body>
