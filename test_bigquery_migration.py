@@ -32,4 +32,5 @@ def test_read_and_normalize_sqlite_rows(tmp_path):
     assert result["flight_number"] == "ANA1891"
     assert result["scheduled_time"] == "08:30:00"
     assert result["visibility"] == 13.2
+    assert result["status_reason"] is None
     assert result["migrated_at"] == "2026-06-19T00:00:00+00:00"

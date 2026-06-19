@@ -23,6 +23,7 @@ SCHEMA = (
     bigquery.SchemaField("wind_gusts", "FLOAT"),
     bigquery.SchemaField("cloud_cover_low", "FLOAT"),
     bigquery.SchemaField("visibility", "FLOAT"),
+    bigquery.SchemaField("status_reason", "STRING"),
     bigquery.SchemaField("created_at", "TIMESTAMP"),
     bigquery.SchemaField("migrated_at", "TIMESTAMP", mode="REQUIRED"),
 )
@@ -66,6 +67,7 @@ def normalize_row(row, migrated_at=None):
         "wind_gusts": row["wind_gusts"],
         "cloud_cover_low": row["cloud_cover_low"],
         "visibility": row["visibility"],
+        "status_reason": None,
         "created_at": row["created_at"],
         "migrated_at": migrated_at.isoformat(),
     }
