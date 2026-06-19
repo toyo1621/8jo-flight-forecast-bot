@@ -29,6 +29,8 @@ STATUS_MAPPING = {
     "odpt.FlightStatus:Diverted": "引き返し(他空港着)",
     "odpt.FlightStatus:Returned": "引き返し(出発空港着)",
     "odpt.FlightStatus:Conditional": "条件付き運航",
+    "odpt.FlightStatus:Arrived": "通常",
+    "odpt.FlightStatus:EstimatedArrival": "通常",
 }
 
 
