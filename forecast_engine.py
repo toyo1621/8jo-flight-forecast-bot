@@ -79,10 +79,11 @@ def find_similar_flights(flight_number, weather, limit=10):
         for field, scale in comparisons:
             if row.get(field) is not None and weather.get(field) is not None:
                 score += abs(row[field] - weather[field]) / scale
-        candidates.append((score, row))
+        visibility_priority = 0 if row.get("visibility") is not None else 1
+        candidates.append((visibility_priority, score, row))
 
     similar = []
-    for score, row in sorted(candidates, key=lambda item: item[0])[:limit]:
+    for _, score, row in sorted(candidates, key=lambda item: (item[0], item[1]))[:limit]:
         similar.append(
             {
                 **row,
