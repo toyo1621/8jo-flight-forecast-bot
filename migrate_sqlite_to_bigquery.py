@@ -59,19 +59,21 @@ def normalize_row(row, migrated_at=None):
     scheduled_time = row["scheduled_time"]
     if scheduled_time and scheduled_time.count(":") == 1:
         scheduled_time = f"{scheduled_time}:00"
+    status = "通常" if row["status"] == "遅延" else row["status"]
+    status_reason = "遅延" if row["status"] == "遅延" else None
     return {
         "id": row["id"],
         "date": row["date"],
         "flight_number": row["flight_number"],
         "flight_display_name": flight_display_name(row["flight_number"]),
         "scheduled_time": scheduled_time,
-        "status": row["status"],
+        "status": status,
         "wind_direction": row["wind_direction"],
         "wind_speed": row["wind_speed"],
         "wind_gusts": row["wind_gusts"],
         "cloud_cover_low": row["cloud_cover_low"],
         "visibility": row["visibility"],
-        "status_reason": None,
+        "status_reason": status_reason,
         "created_at": row["created_at"],
         "migrated_at": migrated_at.isoformat(),
     }

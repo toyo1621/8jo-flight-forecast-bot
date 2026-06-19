@@ -25,7 +25,7 @@ FLIGHTS_SCHEDULE = [
 STATUS_MAPPING = {
     "odpt.FlightStatus:Normal": "通常",
     "odpt.FlightStatus:Cancelled": "欠航",
-    "odpt.FlightStatus:Delayed": "遅延",
+    "odpt.FlightStatus:Delayed": "通常",
     "odpt.FlightStatus:Diverted": "引き返し(他空港着)",
     "odpt.FlightStatus:Returned": "引き返し(出発空港着)",
     "odpt.FlightStatus:Conditional": "条件付き運航",

@@ -41,3 +41,4 @@ def test_demo_data_is_only_created_explicitly():
 def test_odpt_arrival_statuses_count_as_operated():
     assert STATUS_MAPPING["odpt.FlightStatus:Arrived"] == "通常"
     assert STATUS_MAPPING["odpt.FlightStatus:EstimatedArrival"] == "通常"
+    assert STATUS_MAPPING["odpt.FlightStatus:Delayed"] == "通常"
