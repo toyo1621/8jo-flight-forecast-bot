@@ -63,18 +63,20 @@ def fetch_ensemble_forecast():
         (
             "ecmwf_ifs025",
             ("wind_speed_10m", "wind_direction_10m", "wind_gusts_10m", "cloud_cover_low"),
+            31,
         ),
         (
             "gfs_seamless",
             ("wind_speed_10m", "wind_direction_10m", "wind_gusts_10m", "visibility"),
+            31,
         ),
     )
     ensembles_by_time = {}
     errors = []
     with ThreadPoolExecutor(max_workers=len(model_variables)) as executor:
         futures = {
-            executor.submit(_fetch_ensemble_model, model, variables): model
-            for model, variables in model_variables
+            executor.submit(_fetch_ensemble_model, model, variables, max_members): model
+            for model, variables, max_members in model_variables
         }
         for future in as_completed(futures):
             try:
@@ -90,7 +92,16 @@ def fetch_ensemble_forecast():
     return ensembles_by_time
 
 
-def _fetch_ensemble_model(model, variables):
+def _select_evenly(values, limit):
+    if limit is None or len(values) <= limit:
+        return values
+    if limit <= 1:
+        return values[:limit]
+    indices = [round(index * (len(values) - 1) / (limit - 1)) for index in range(limit)]
+    return [values[index] for index in indices]
+
+
+def _fetch_ensemble_model(model, variables, max_members=None):
     response = requests.get(
         ENSEMBLE_URL,
         params={
@@ -113,6 +124,7 @@ def _fetch_ensemble_model(model, variables):
         for key in hourly
         if key == member_key or key.startswith(f"{member_key}_member")
     ]
+    suffixes = _select_evenly(suffixes, max_members)
     if not times or not suffixes:
         raise ValueError("アンサンブル予報の構造が正しくありません。")
 
