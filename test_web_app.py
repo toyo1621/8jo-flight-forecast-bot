@@ -79,6 +79,34 @@ def test_find_similar_flights_prefers_visibility_when_scores_are_equal():
     assert result[0]["date"] == "2026-01-02"
 
 
+def test_find_similar_flights_prioritizes_matching_adverse_condition():
+    base = {"flight_number": "ANA1891", "flight_display_name": "ANA1891(1便)", "status": "通常", "status_reason": None}
+    history = [
+        {**base, "date": "2026-01-01", "wind_direction": 180.0, "wind_speed": 5.0, "wind_gusts": 8.0, "cloud_cover_low": 20.0, "visibility": 15.0},
+        {**base, "date": "2026-01-02", "wind_direction": 210.0, "wind_speed": 6.0, "wind_gusts": 9.0, "cloud_cover_low": 90.0, "visibility": 4.0},
+    ]
+    weather = {"wind_direction": 180.0, "wind_speed": 5.0, "wind_gusts": 8.0, "cloud_cover_low": 95.0, "visibility": 3.0}
+
+    with patch("forecast_engine.load_detailed_history", return_value=history):
+        result = find_similar_flights("ANA1891", weather, limit=1)
+
+    assert result[0]["date"] == "2026-01-02"
+
+
+def test_find_similar_flights_prioritizes_matching_strong_wind_and_direction():
+    base = {"flight_number": "ANA1891", "flight_display_name": "ANA1891(1便)", "status": "通常", "status_reason": None, "cloud_cover_low": 30.0, "visibility": 15.0}
+    history = [
+        {**base, "date": "2026-01-01", "wind_direction": 180.0, "wind_speed": 5.0, "wind_gusts": 8.0},
+        {**base, "date": "2026-01-02", "wind_direction": 245.0, "wind_speed": 13.0, "wind_gusts": 19.0},
+    ]
+    weather = {"wind_direction": 250.0, "wind_speed": 14.0, "wind_gusts": 20.0, "cloud_cover_low": 30.0, "visibility": 15.0}
+
+    with patch("forecast_engine.load_detailed_history", return_value=history):
+        result = find_similar_flights("ANA1891", weather, limit=1)
+
+    assert result[0]["date"] == "2026-01-02"
+
+
 def test_calculate_confidence_uses_ensemble_spread():
     members = [
         {
@@ -188,3 +216,4 @@ def test_health():
 
     assert response.status_code == 200
     assert response.get_json() == {"status": "ok"}
+

@@ -63,27 +63,58 @@ def load_detailed_history():
         conn.close()
 
 
+def _weather_similarity_score(row, weather):
+    """Return a weather distance, emphasizing the forecast's adverse conditions."""
+    angle_diff = abs(row["wind_direction"] - weather["wind_direction"])
+    angle_diff = min(angle_diff, 360 - angle_diff)
+
+    is_strong_wind = weather.get("wind_speed", 0) >= 10
+    is_strong_gust = weather.get("wind_gusts") is not None and weather["wind_gusts"] >= 15
+    is_cloudy = weather.get("cloud_cover_low") is not None and weather["cloud_cover_low"] >= 70
+    is_low_visibility = weather.get("visibility") is not None and weather["visibility"] <= 10
+
+    components = [
+        (angle_diff / 45, 2.5 if is_strong_wind or is_strong_gust else 1.5),
+        (abs(row["wind_speed"] - weather["wind_speed"]) / 5, 3.0 if is_strong_wind else 1.0),
+    ]
+    optional_fields = (
+        ("wind_gusts", 7.5, 3.0 if is_strong_gust else 0.75),
+        ("cloud_cover_low", 25, 3.0 if is_cloudy else 0.75),
+        ("visibility", 5, 4.0 if is_low_visibility else 0.75),
+    )
+    missing_penalty = 0.0
+    for field, scale, weight in optional_fields:
+        if row.get(field) is None or weather.get(field) is None:
+            if weather.get(field) is not None:
+                missing_penalty += weight
+            continue
+        components.append((abs(row[field] - weather[field]) / scale, weight))
+
+    score = sum(distance * weight for distance, weight in components) / sum(
+        weight for _, weight in components
+    )
+
+    # Keep records on the same side of operationally meaningful thresholds.
+    threshold_checks = (
+        (is_strong_wind, row["wind_speed"] >= 10, 2.0),
+        (is_strong_gust, row.get("wind_gusts") is not None and row["wind_gusts"] >= 15, 2.0),
+        (is_cloudy, row.get("cloud_cover_low") is not None and row["cloud_cover_low"] >= 70, 2.0),
+        (is_low_visibility, row.get("visibility") is not None and row["visibility"] <= 10, 3.0),
+    )
+    mismatch_penalty = sum(penalty for active, matches, penalty in threshold_checks if active and not matches)
+    return score + missing_penalty + mismatch_penalty
+
+
 def find_similar_flights(flight_number, weather, limit=10):
     candidates = []
     for row in load_detailed_history():
         if row["flight_number"] != flight_number:
             continue
-        angle_diff = abs(row["wind_direction"] - weather["wind_direction"])
-        angle_diff = min(angle_diff, 360 - angle_diff)
-        score = angle_diff / 45 + abs(row["wind_speed"] - weather["wind_speed"]) / 5
-        comparisons = (
-            ("wind_gusts", 10),
-            ("cloud_cover_low", 100),
-            ("visibility", 20),
-        )
-        for field, scale in comparisons:
-            if row.get(field) is not None and weather.get(field) is not None:
-                score += abs(row[field] - weather[field]) / scale
-        visibility_priority = 0 if row.get("visibility") is not None else 1
-        candidates.append((visibility_priority, score, row))
+        score = _weather_similarity_score(row, weather)
+        candidates.append((score, row))
 
     similar = []
-    for _, score, row in sorted(candidates, key=lambda item: (item[0], item[1]))[:limit]:
+    for score, row in sorted(candidates, key=lambda item: item[0])[:limit]:
         similar.append(
             {
                 **row,
@@ -194,3 +225,4 @@ def predict_flight_probability(wind_direction, wind_speed, wind_gusts, cloud_cov
         "data_count": len(matching_rows),
         "step_used": step_used
     }
+
