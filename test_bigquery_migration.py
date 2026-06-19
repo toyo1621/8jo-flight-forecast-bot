@@ -35,3 +35,25 @@ def test_read_and_normalize_sqlite_rows(tmp_path):
     assert result["visibility"] == 13.2
     assert result["status_reason"] is None
     assert result["migrated_at"] == "2026-06-19T00:00:00+00:00"
+
+
+def test_migration_treats_delay_as_normal(tmp_path):
+    db_file = tmp_path / "flights.db"
+    conn = sqlite3.connect(db_file)
+    conn.execute(
+        """CREATE TABLE flight_weather_logs (
+            id INTEGER, date TEXT, flight_number TEXT, scheduled_time TEXT,
+            status TEXT, wind_direction REAL, wind_speed REAL,
+            wind_gusts REAL, cloud_cover_low REAL, visibility REAL, created_at TEXT
+        )"""
+    )
+    conn.execute(
+        "INSERT INTO flight_weather_logs VALUES (1, '2026-01-01', 'ANA1891', '08:30', '遅延', NULL, NULL, NULL, NULL, NULL, NULL)"
+    )
+    conn.commit()
+    conn.close()
+
+    result = normalize_row(read_sqlite_rows(db_file)[0])
+
+    assert result["status"] == "通常"
+    assert result["status_reason"] == "遅延"
