@@ -21,6 +21,7 @@ def test_normalize_item_formats_time():
     assert result["flight_display_name"] == "ANA1891(1便)"
     assert result["status_reason"] is None
     assert "id" not in result
+    assert result["visibility_source"] is None
 
 
 def test_collector_uses_bigquery_backend(monkeypatch):
