@@ -41,11 +41,13 @@ def read_sqlite_rows(db_file):
     conn = sqlite3.connect(db_file)
     conn.row_factory = sqlite3.Row
     try:
+        columns = {row[1] for row in conn.execute("PRAGMA table_info(flight_weather_logs)")}
+        reason_column = "status_reason" if "status_reason" in columns else "NULL AS status_reason"
         return conn.execute(
-            """
+            f"""
             SELECT id, date, flight_number, scheduled_time, status,
                    wind_direction, wind_speed, wind_gusts,
-                   cloud_cover_low, visibility, created_at
+                   cloud_cover_low, visibility, {reason_column}, created_at
             FROM flight_weather_logs
             ORDER BY date, flight_number
             """
@@ -60,7 +62,7 @@ def normalize_row(row, migrated_at=None):
     if scheduled_time and scheduled_time.count(":") == 1:
         scheduled_time = f"{scheduled_time}:00"
     status = "通常" if row["status"] == "遅延" else row["status"]
-    status_reason = "遅延" if row["status"] == "遅延" else None
+    status_reason = "遅延" if row["status"] == "遅延" else row["status_reason"]
     return {
         "id": row["id"],
         "date": row["date"],
@@ -143,3 +145,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+
