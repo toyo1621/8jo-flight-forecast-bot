@@ -17,6 +17,7 @@ def test_normalize_item_formats_time():
 
     assert result["scheduled_time"] == "08:30:00"
     assert result["flight_number"] == "ANA1891"
+    assert result["status_reason"] is None
 
 
 def test_collector_uses_bigquery_backend(monkeypatch):
