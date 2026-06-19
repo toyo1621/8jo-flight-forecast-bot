@@ -35,7 +35,7 @@ def test_build_daily_forecasts():
         days = build_daily_forecasts(SAMPLE_WEATHER, reference_date=date(2026, 6, 19))
 
     assert days[0]["date_label"] == "6/20"
-    assert days[0]["flights"][0]["number"] == "ANA1891"
+    assert days[0]["flights"][0]["number"] == "ANA1891(1便)"
     assert days[0]["flights"][0]["probability"] == 88.0
     assert days[0]["flights"][0]["wind_direction_label"] == "南"
     assert days[0]["confidence"]["grade"] == "B"

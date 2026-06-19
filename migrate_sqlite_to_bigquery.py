@@ -5,6 +5,8 @@ from pathlib import Path
 
 from google.cloud import bigquery
 
+from flight_metadata import flight_display_name
+
 
 DEFAULT_PROJECT = "hachijo-flight-forecast"
 DEFAULT_DATASET = "flight_forecast"
@@ -16,6 +18,7 @@ SCHEMA = (
     bigquery.SchemaField("id", "INTEGER"),
     bigquery.SchemaField("date", "DATE", mode="REQUIRED"),
     bigquery.SchemaField("flight_number", "STRING", mode="REQUIRED"),
+    bigquery.SchemaField("flight_display_name", "STRING"),
     bigquery.SchemaField("scheduled_time", "TIME"),
     bigquery.SchemaField("status", "STRING"),
     bigquery.SchemaField("wind_direction", "FLOAT"),
@@ -60,6 +63,7 @@ def normalize_row(row, migrated_at=None):
         "id": row["id"],
         "date": row["date"],
         "flight_number": row["flight_number"],
+        "flight_display_name": flight_display_name(row["flight_number"]),
         "scheduled_time": scheduled_time,
         "status": row["status"],
         "wind_direction": row["wind_direction"],

@@ -5,6 +5,7 @@ from functools import lru_cache
 
 from google.cloud import bigquery
 
+from flight_metadata import flight_display_name
 from migrate_sqlite_to_bigquery import DEFAULT_DATASET, DEFAULT_LOCATION, DEFAULT_PROJECT, DEFAULT_TABLE, SCHEMA, ensure_destination
 
 
@@ -47,6 +48,7 @@ def _normalize_item(item, timestamp):
         "id": None,
         "date": item["date"],
         "flight_number": item["flight_number"],
+        "flight_display_name": flight_display_name(item["flight_number"]),
         "scheduled_time": scheduled_time,
         "status": item.get("status"),
         "wind_direction": item.get("wind_direction"),
@@ -83,6 +85,7 @@ def upsert_flight_weather_logs(items):
             USING `{staging}` S
             ON T.date = S.date AND T.flight_number = S.flight_number
             WHEN MATCHED THEN UPDATE SET
+              flight_display_name = S.flight_display_name,
               scheduled_time = S.scheduled_time,
               status = S.status,
               wind_direction = S.wind_direction,
@@ -94,10 +97,10 @@ def upsert_flight_weather_logs(items):
               created_at = S.created_at,
               migrated_at = S.migrated_at
             WHEN NOT MATCHED THEN INSERT
-              (id, date, flight_number, scheduled_time, status, wind_direction,
+              (id, date, flight_number, flight_display_name, scheduled_time, status, wind_direction,
                wind_speed, wind_gusts, cloud_cover_low, visibility, status_reason, created_at, migrated_at)
             VALUES
-              (S.id, S.date, S.flight_number, S.scheduled_time, S.status, S.wind_direction,
+              (S.id, S.date, S.flight_number, S.flight_display_name, S.scheduled_time, S.status, S.wind_direction,
                S.wind_speed, S.wind_gusts, S.cloud_cover_low, S.visibility, S.status_reason, S.created_at, S.migrated_at)
             """
         ).result()
