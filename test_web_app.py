@@ -1,4 +1,4 @@
-from datetime import date
+from datetime import date, datetime, timedelta, timezone
 from unittest.mock import patch
 
 from forecast_engine import find_similar_flights, predict_flight_probability
@@ -11,6 +11,8 @@ from web_app import (
     _select_evenly,
     wind_direction_label,
 )
+
+JST = timezone(timedelta(hours=9))
 
 
 SAMPLE_WEATHER = {
@@ -40,6 +42,28 @@ def test_build_daily_forecasts():
     assert days[0]["flights"][0]["probability"] == 88.0
     assert days[0]["flights"][0]["wind_direction_label"] == "南"
     assert days[0]["confidence"]["grade"] == "B"
+
+
+def test_today_flight_disappears_after_arrival_plus_30_minutes():
+    weather = {
+        f"2026-06-20T{hour:02d}:00": SAMPLE_WEATHER["2026-06-20T08:00"]
+        for hour in (8, 13, 17)
+    }
+    current_time = datetime(2026, 6, 20, 9, 1, tzinfo=JST)
+
+    with patch("web_app.predict_flight_probability", return_value={"probability": 88.0}):
+        days = build_daily_forecasts(weather, current_time=current_time)
+
+    assert [flight["raw_number"] for flight in days[0]["flights"]] == ["ANA1893", "ANA1895"]
+
+
+def test_today_flight_remains_at_exactly_arrival_plus_30_minutes():
+    current_time = datetime(2026, 6, 20, 9, 0, tzinfo=JST)
+
+    with patch("web_app.predict_flight_probability", return_value={"probability": 88.0}):
+        days = build_daily_forecasts(SAMPLE_WEATHER, current_time=current_time)
+
+    assert days[0]["flights"][0]["raw_number"] == "ANA1891"
 
 
 def test_wind_direction_label_uses_sixteen_points():

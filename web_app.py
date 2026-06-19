@@ -230,15 +230,23 @@ def wind_direction_label(degrees):
     return directions[index]
 
 
-def build_daily_forecasts(weather_by_time, ensembles_by_time=None, reference_date=None):
+def _flight_display_expired(date_string, arrival_time, current_time):
+    arrival = datetime.strptime(f"{date_string}T{arrival_time}", "%Y-%m-%dT%H:%M").replace(tzinfo=JST)
+    return current_time > arrival + timedelta(minutes=30)
+
+
+def build_daily_forecasts(weather_by_time, ensembles_by_time=None, reference_date=None, current_time=None):
     ensembles_by_time = ensembles_by_time or {}
-    reference_date = reference_date or datetime.now(JST).date()
+    current_time = current_time or datetime.now(JST)
+    reference_date = reference_date or current_time.date()
     dates = sorted({timestamp[:10] for timestamp in weather_by_time})
     days = []
     for date_string in dates:
         date = datetime.strptime(date_string, "%Y-%m-%d")
         flights = []
         for flight in FLIGHTS:
+            if date.date() == current_time.date() and _flight_display_expired(date_string, flight["time"], current_time):
+                continue
             timestamp = f"{date_string}T{flight['forecast_hour']:02d}:00"
             weather = weather_by_time.get(timestamp)
             if weather is None:
@@ -313,3 +321,4 @@ app = create_app()
 
 if __name__ == "__main__":
     app.run(debug=True)
+
