@@ -25,19 +25,26 @@ def table_path(config=None):
 
 @lru_cache(maxsize=1)
 def fetch_history():
+    return [
+        (row["status"], row["wind_direction"], row["wind_speed"])
+        for row in fetch_detailed_history()
+    ]
+
+
+@lru_cache(maxsize=1)
+def fetch_detailed_history():
     config = settings()
     client = bigquery.Client(project=config["project"], location=config["location"])
     query = f"""
-        SELECT status, wind_direction, wind_speed
+        SELECT CAST(date AS STRING) AS date, flight_number, flight_display_name,
+               status, status_reason, wind_direction, wind_speed, wind_gusts,
+               cloud_cover_low, visibility
         FROM `{table_path(config)}`
         WHERE status IS NOT NULL
           AND wind_direction IS NOT NULL
           AND wind_speed IS NOT NULL
     """
-    return [
-        (row.status, row.wind_direction, row.wind_speed)
-        for row in client.query(query).result()
-    ]
+    return [dict(row.items()) for row in client.query(query).result()]
 
 
 def _normalize_item(item, timestamp):
@@ -107,4 +114,5 @@ def upsert_flight_weather_logs(items):
     finally:
         client.delete_table(staging, not_found_ok=True)
     fetch_history.cache_clear()
+    fetch_detailed_history.cache_clear()
     return len(payload)

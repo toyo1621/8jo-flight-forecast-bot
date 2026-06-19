@@ -6,6 +6,7 @@
   <meta name="description" content="八丈島便の就航予測サイトです。過去実績とOpen-Meteoの予報をもとに、就航確率の参考値を表示します。">
   <title>八丈島フライト予報</title>
   <link rel="stylesheet" href="static/styles.css?v=20260619-2">
+  <script src="static/app.js?v=20260619-1" defer></script>
 </head>
 <body>
   <main class="container">
@@ -39,7 +40,7 @@
           {% endif %}
           <div class="flights">
             {% for flight in day.flights %}
-              <article class="flight{% if flight.alert_required %} flight--alert{% endif %}">
+              <article class="flight{% if flight.alert_required %} flight--alert{% endif %}" role="button" tabindex="0" aria-haspopup="dialog" data-dialog="detail-{{ day.date }}-{{ flight.raw_number }}">
                 <div>
                   <p class="flight-number">{{ flight.number }}</p>
                   <p class="flight-time">{{ flight.time }} 発</p>
@@ -55,7 +56,44 @@
                 {% if flight.warning_msg != "なし" %}
                   <p class="warning">{{ flight.warning_msg }}</p>
                 {% endif %}
+                <span class="detail-hint">詳しく見る</span>
               </article>
+              <dialog class="flight-dialog" id="detail-{{ day.date }}-{{ flight.raw_number }}">
+                <div class="dialog-header">
+                  <div>
+                    <p class="dialog-eyebrow">{{ day.date_label }} {{ flight.time }} 発</p>
+                    <h3>{{ flight.number }} の詳細</h3>
+                  </div>
+                  <button class="dialog-close" type="button" aria-label="閉じる">×</button>
+                </div>
+                <section class="dialog-section">
+                  <h4>予報気象情報</h4>
+                  <dl class="weather-grid">
+                    <div><dt>風向</dt><dd>{{ flight.wind_direction_label }} {{ flight.wind_direction|round|int }}°</dd></div>
+                    <div><dt>風速</dt><dd>{{ flight.wind_speed }} m/s</dd></div>
+                    <div><dt>最大瞬間風速</dt><dd>{{ flight.wind_gusts }} m/s</dd></div>
+                    <div><dt>雲量</dt><dd>{{ flight.cloud_cover_low|round|int }}%</dd></div>
+                    <div><dt>視程</dt><dd>{{ flight.visibility }} km</dd></div>
+                    <div><dt>就航確率</dt><dd>{{ flight.probability }}%</dd></div>
+                  </dl>
+                </section>
+                <section class="dialog-section">
+                  <h4>気象条件が近い過去の就航実績10件</h4>
+                  <div class="history-list">
+                    {% for history in flight.similar_history %}
+                      <article class="history-item">
+                        <div class="history-summary">
+                          <strong>{{ history.date_label }}</strong>
+                          <span class="history-status history-status--{% if history.status == '通常' %}normal{% else %}alert{% endif %}">{{ history.status }}{% if history.status_reason %}（{{ history.status_reason }}）{% endif %}</span>
+                        </div>
+                        <p>風向 {{ history.wind_direction|round|int }}° / 風速 {{ history.wind_speed }} m/s{% if history.wind_gusts is not none %} / 突風 {{ history.wind_gusts }} m/s{% endif %}{% if history.cloud_cover_low is not none %} / 雲量 {{ history.cloud_cover_low|round|int }}%{% endif %}{% if history.visibility is not none %} / 視程 {{ history.visibility }} km{% endif %}</p>
+                      </article>
+                    {% else %}
+                      <p class="history-empty">近い過去データがありません。</p>
+                    {% endfor %}
+                  </div>
+                </section>
+              </dialog>
             {% endfor %}
           </div>
         </section>
