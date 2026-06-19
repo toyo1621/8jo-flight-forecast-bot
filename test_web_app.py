@@ -1,8 +1,13 @@
+from datetime import date
 from unittest.mock import patch
 
-from datetime import date
-
-from web_app import app, build_daily_forecasts, calculate_confidence, fallback_confidence
+from web_app import (
+    app,
+    build_daily_forecasts,
+    calculate_confidence,
+    fallback_confidence,
+    wind_direction_label,
+)
 
 
 SAMPLE_WEATHER = {
@@ -20,7 +25,7 @@ def test_build_daily_forecasts():
     result = {
         "probability": 88.0,
         "alert_required": False,
-        "warning_msg": "特になし",
+        "warning_msg": "なし",
         "data_count": 10,
         "step_used": 1,
     }
@@ -30,7 +35,16 @@ def test_build_daily_forecasts():
     assert days[0]["date_label"] == "6/20"
     assert days[0]["flights"][0]["number"] == "ANA1891"
     assert days[0]["flights"][0]["probability"] == 88.0
+    assert days[0]["flights"][0]["wind_direction_label"] == "南"
     assert days[0]["confidence"]["grade"] == "B"
+
+
+def test_wind_direction_label_uses_sixteen_points():
+    assert wind_direction_label(0) == "北"
+    assert wind_direction_label(45) == "北東"
+    assert wind_direction_label(225) == "南西"
+    assert wind_direction_label(359) == "北"
+    assert wind_direction_label(None) is None
 
 
 def test_calculate_confidence_uses_ensemble_spread():
@@ -51,7 +65,7 @@ def test_calculate_confidence_uses_ensemble_spread():
     ):
         confidence = calculate_confidence(members)
 
-    assert confidence["grade"] == "E"
+    assert confidence["grade"] == "D"
     assert confidence["member_count"] == 40
 
 
@@ -66,7 +80,7 @@ def test_index_renders_forecast():
     result = {
         "probability": 88.0,
         "alert_required": False,
-        "warning_msg": "特になし",
+        "warning_msg": "なし",
         "data_count": 10,
         "step_used": 1,
     }
@@ -79,14 +93,15 @@ def test_index_renders_forecast():
         response = client.get("/")
 
     assert response.status_code == 200
-    assert "八丈島フライト予報" in response.get_data(as_text=True)
-    assert "88.0" in response.get_data(as_text=True)
-    assert "予測信頼度" in response.get_data(as_text=True)
-    assert "なぜ作ったのか" in response.get_data(as_text=True)
-    assert "ざっくりした仕組み" in response.get_data(as_text=True)
-    assert "気象業務法への配慮" in response.get_data(as_text=True)
-    assert "予報業務の許可について" in response.get_data(as_text=True)
-    assert "6時間ごと" in response.get_data(as_text=True)
+    body = response.get_data(as_text=True)
+    assert "八丈島フライト予報" in body
+    assert "天候信頼度" in body
+    assert "風向 南 180°" in body
+    assert "雲量 20%" in body
+    assert "なぜ作ったか" in body
+    assert "ざっくりどういう仕組みか" in body
+    assert "気象業法への配慮" in body
+    assert "6ポイント以内" not in body
 
 
 def test_index_handles_weather_api_error():

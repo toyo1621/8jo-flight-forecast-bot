@@ -1,5 +1,5 @@
-from datetime import datetime, timedelta, timezone
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 import requests
@@ -26,10 +26,7 @@ def fetch_forecast():
         params={
             "latitude": 33.115,
             "longitude": 139.782,
-            "hourly": (
-                "wind_speed_10m,wind_direction_10m,wind_gusts_10m,"
-                "cloud_cover_low,visibility"
-            ),
+            "hourly": "wind_speed_10m,wind_direction_10m,wind_gusts_10m,cloud_cover_low,visibility",
             "wind_speed_unit": "ms",
             "timezone": "Asia/Tokyo",
             "forecast_days": 7,
@@ -47,7 +44,7 @@ def fetch_forecast():
         "visibility",
     }
     if not times or any(len(hourly.get(key, [])) != len(times) for key in required):
-        raise ValueError("気象予報データの形式が不正です。")
+        raise ValueError("気象データの構造が正しくありません。")
 
     weather_by_time = {}
     for index, timestamp in enumerate(times):
@@ -117,7 +114,7 @@ def _fetch_ensemble_model(model, variables):
         if key == member_key or key.startswith(f"{member_key}_member")
     ]
     if not times or not suffixes:
-        raise ValueError("アンサンブル予報データの形式が不正です。")
+        raise ValueError("アンサンブル予報の構造が正しくありません。")
 
     ensembles_by_time = {}
     for index, timestamp in enumerate(times):
@@ -156,16 +153,16 @@ def calculate_confidence(ensemble_members, baseline_weather=None):
     low = probabilities[round((len(probabilities) - 1) * 0.1)]
     high = probabilities[round((len(probabilities) - 1) * 0.9)]
     spread = round(high - low, 1)
-    if spread <= 5:
-        grade, label = "A", "高い"
-    elif spread <= 10:
-        grade, label = "B", "やや高い"
+    if spread <= 10:
+        grade, label = "A", "10ポイント以内"
     elif spread <= 20:
-        grade, label = "C", "標準"
+        grade, label = "B", "20ポイント以内"
     elif spread <= 30:
-        grade, label = "D", "低め"
+        grade, label = "C", "30ポイント以内"
+    elif spread <= 40:
+        grade, label = "D", "40ポイント以内"
     else:
-        grade, label = "E", "低い"
+        grade, label = "E", "40ポイント超"
     return {
         "grade": grade,
         "label": label,
@@ -178,21 +175,46 @@ def calculate_confidence(ensemble_members, baseline_weather=None):
 def fallback_confidence(target_date, reference_date):
     lead_days = max((target_date - reference_date).days, 0)
     if lead_days == 0:
-        grade, label = "A", "高い"
+        grade, label = "A", "10ポイント以内"
     elif lead_days == 1:
-        grade, label = "B", "やや高い"
+        grade, label = "B", "20ポイント以内"
     elif lead_days <= 3:
-        grade, label = "C", "標準"
+        grade, label = "C", "30ポイント以内"
     elif lead_days <= 5:
-        grade, label = "D", "低め"
+        grade, label = "D", "40ポイント以内"
     else:
-        grade, label = "E", "低い"
+        grade, label = "E", "40ポイント超"
     return {
         "grade": grade,
         "label": label,
         "lead_days": lead_days,
         "source": "lead_time",
     }
+
+
+def wind_direction_label(degrees):
+    if degrees is None:
+        return None
+    directions = (
+        "北",
+        "北北東",
+        "北東",
+        "東北東",
+        "東",
+        "東南東",
+        "南東",
+        "南南東",
+        "南",
+        "南南西",
+        "南西",
+        "西南西",
+        "西",
+        "西北西",
+        "北西",
+        "北北西",
+    )
+    index = int(((float(degrees) % 360) + 11.25) % 360 // 22.5)
+    return directions[index]
 
 
 def build_daily_forecasts(weather_by_time, ensembles_by_time=None, reference_date=None):
@@ -210,7 +232,15 @@ def build_daily_forecasts(weather_by_time, ensembles_by_time=None, reference_dat
                 continue
             result = predict_flight_probability(**weather)
             confidence = calculate_confidence(ensembles_by_time.get(timestamp, []), weather)
-            flights.append({**flight, **weather, **result, "confidence": confidence})
+            flights.append(
+                {
+                    **flight,
+                    **weather,
+                    **result,
+                    "confidence": confidence,
+                    "wind_direction_label": wind_direction_label(weather["wind_direction"]),
+                }
+            )
         if flights:
             confidence_values = [flight["confidence"] for flight in flights if flight["confidence"]]
             if confidence_values:
@@ -254,7 +284,7 @@ def create_app():
             days = build_daily_forecasts(weather, ensembles)
         except (requests.RequestException, ValueError, OSError) as exc:
             app.logger.warning("Forecast could not be loaded: %s", exc)
-            error = "現在、予報を取得できません。時間をおいて再度お試しください。"
+            error = "現在、予報を取得できません。時間をおいてもう一度お試しください。"
 
         updated_at = datetime.now(JST).strftime("%Y/%m/%d %H:%M")
         return render_template("index.html", days=days, error=error, updated_at=updated_at)
