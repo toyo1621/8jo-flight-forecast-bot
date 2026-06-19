@@ -1,5 +1,5 @@
 from datetime import date, datetime, timedelta, timezone
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 from forecast_engine import find_similar_flights, predict_flight_probability
 from web_app import (
@@ -10,6 +10,8 @@ from web_app import (
     calculate_confidence,
     fallback_confidence,
     _select_evenly,
+    _with_model_difference_warning,
+    fetch_jma_forecast,
     wind_direction_label,
 )
 
@@ -47,6 +49,37 @@ def test_build_daily_forecasts():
 
 def test_forecast_period_reaches_ten_days_ahead():
     assert FORECAST_DAYS == 11
+
+
+def test_jma_forecast_requests_jma_seamless_model():
+    response = Mock()
+    response.json.return_value = {
+        "hourly": {
+            "time": ["2026-06-20T08:00"],
+            "wind_speed_10m": [5.0],
+            "wind_direction_10m": [180.0],
+            "wind_gusts_10m": [8.0],
+            "cloud_cover_low": [20.0],
+            "visibility": [15000.0],
+        }
+    }
+    with patch("web_app.requests.get", return_value=response) as get:
+        result = fetch_jma_forecast()
+
+    response.raise_for_status.assert_called_once()
+    assert get.call_args.kwargs["params"]["models"] == "jma_seamless"
+    assert result["2026-06-20T08:00"]["visibility"] == 15.0
+
+
+def test_model_difference_warning_uses_twenty_point_boundary():
+    result = {"probability": 80.0, "warning_msg": "特になし", "alert_required": False}
+
+    warned = _with_model_difference_warning(result, 60.0)
+    quiet = _with_model_difference_warning(result, 60.1)
+
+    assert warned["warning_msg"] == "モデル差注意 (JMA差 20.0pt)"
+    assert warned["alert_required"] is True
+    assert quiet["warning_msg"] == "特になし"
 
 
 def test_today_flight_disappears_after_arrival_plus_30_minutes():
@@ -231,6 +264,7 @@ def test_index_renders_forecast():
     }
     with (
         patch("web_app.fetch_forecast", return_value=SAMPLE_WEATHER),
+        patch("web_app.fetch_jma_forecast", return_value={}),
         patch("web_app.fetch_ensemble_forecast", return_value={}),
         patch("web_app.predict_flight_probability", return_value=result),
         app.test_client() as client,
