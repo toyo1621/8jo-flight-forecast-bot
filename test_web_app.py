@@ -74,7 +74,7 @@ def test_calculate_confidence_uses_ensemble_spread():
 def test_confidence_note_uses_short_wording():
     template = (BASE_DIR / "templates" / "index.html").read_text(encoding="utf-8")
 
-    assert "天候信頼度は{{ day.confidence.member_count }}通りの天気予測から{{ day.confidence.spread }}ptと判定" in template
+    assert "(天候信頼度は{{ day.confidence.member_count }}通りの天気予測から{{ day.confidence.spread }}ptと判定)" in template
 
 
 def test_select_evenly_balances_ensemble_members():
