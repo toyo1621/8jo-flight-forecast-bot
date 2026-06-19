@@ -1,7 +1,7 @@
 from unittest.mock import patch
 
 import bigquery_storage
-from data_collector import get_demo_flight_data, save_collected_data
+from data_collector import STATUS_MAPPING, get_demo_flight_data, save_collected_data
 
 
 def test_normalize_item_formats_time():
@@ -34,3 +34,8 @@ def test_demo_data_is_only_created_explicitly():
 
     assert len(flights) == 3
     assert flights[1]["status"] == "条件付き運航"
+
+
+def test_odpt_arrival_statuses_count_as_operated():
+    assert STATUS_MAPPING["odpt.FlightStatus:Arrived"] == "通常"
+    assert STATUS_MAPPING["odpt.FlightStatus:EstimatedArrival"] == "通常"
