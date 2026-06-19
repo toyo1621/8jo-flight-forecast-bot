@@ -35,7 +35,12 @@ def export_dump(db_file=DB_FILE, dump_file=DUMP_FILE):
     dump_file.parent.mkdir(parents=True, exist_ok=True)
     conn = sqlite3.connect(db_file)
     try:
-        dump_file.write_text("\n".join(conn.iterdump()) + "\n", encoding="utf-8")
+        statements = [
+            statement
+            for statement in conn.iterdump()
+            if "sqlite_sequence" not in statement
+        ]
+        dump_file.write_text("\n".join(statements) + "\n", encoding="utf-8")
     finally:
         conn.close()
     print(f"Exported {db_file} to {dump_file}.")
@@ -54,3 +59,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+
