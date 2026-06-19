@@ -143,6 +143,25 @@ def test_low_cloud_warning_uses_precise_wording():
     assert result["warning_msg"] == "低層雲の影響注意 (低層雲量 100.0%)"
 
 
+def test_southerly_wind_warning_includes_boundary_values():
+    with patch("forecast_engine.load_history", return_value=[("通常", 180.0, 9.0)]):
+        lower = predict_flight_probability(120.0, 9.0, 10.0, 20.0, 15.0)
+        upper = predict_flight_probability(240.0, 9.0, 10.0, 20.0, 15.0)
+
+    assert "南風注意" in lower["warning_msg"]
+    assert "南風注意" in upper["warning_msg"]
+    assert lower["alert_required"] is True
+
+
+def test_southerly_wind_warning_requires_direction_and_speed():
+    with patch("forecast_engine.load_history", return_value=[("通常", 180.0, 9.0)]):
+        weak = predict_flight_probability(180.0, 8.9, 10.0, 20.0, 15.0)
+        outside = predict_flight_probability(241.0, 9.0, 10.0, 20.0, 15.0)
+
+    assert "南風注意" not in weak["warning_msg"]
+    assert "南風注意" not in outside["warning_msg"]
+
+
 def test_calculate_confidence_uses_ensemble_spread():
     members = [
         {
