@@ -32,7 +32,19 @@ jobs:
       - name: Install dependencies
         run: pip install -r requirements.txt
 
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ vars.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ vars.GCP_SERVICE_ACCOUNT }}
+
       - name: Build static forecast
+        env:
+          FORECAST_DATA_BACKEND: bigquery
+          GCP_PROJECT_ID: hachijo-flight-forecast
+          BIGQUERY_DATASET: flight_forecast
+          BIGQUERY_TABLE: flight_weather_logs
+          BIGQUERY_LOCATION: asia-northeast1
         run: python build_static.py
 
       - name: Configure Pages

@@ -2,7 +2,31 @@ import sqlite3
 import os
 from pathlib import Path
 
+from bigquery_storage import fetch_history
+
 DB_FILE = Path(__file__).resolve().parent / "flights.db"
+
+
+def load_history():
+    backend = os.getenv("FORECAST_DATA_BACKEND", "sqlite").lower()
+    if backend == "bigquery":
+        return fetch_history()
+
+    if not DB_FILE.exists():
+        return []
+    conn = sqlite3.connect(DB_FILE)
+    try:
+        return conn.execute(
+            """
+            SELECT status, wind_direction, wind_speed
+            FROM flight_weather_logs
+            WHERE status IS NOT NULL
+              AND wind_direction IS NOT NULL
+              AND wind_speed IS NOT NULL
+            """
+        ).fetchall()
+    finally:
+        conn.close()
 
 def predict_flight_probability(wind_direction, wind_speed, wind_gusts, cloud_cover_low, visibility):
     """
@@ -18,62 +42,35 @@ def predict_flight_probability(wind_direction, wind_speed, wind_gusts, cloud_cov
     Returns:
         dict: 予測結果 (probability, alert_required, warning_msg, data_count, step_used)
     """
-    if not os.path.exists(DB_FILE):
+    history = load_history()
+    if not history:
         return {
             "probability": 95.0,
             "alert_required": False,
-            "warning_msg": "データベースが存在しないため、デフォルト値を返します。",
+            "warning_msg": "過去データを取得できないため、デフォルト値を返します。",
             "data_count": 0,
             "step_used": 0
         }
         
-    conn = sqlite3.connect(DB_FILE)
-    cursor = conn.cursor()
-    
     matching_rows = []
     step_used = 1
-    
-    # 段階的な検索条件緩和
-    # SQLiteで風向の角度差 (環状の差) を計算するためのSQL CASE文
-    # ABS(angle1 - angle2) が 180 を超える場合は 360 - ABS(angle1 - angle2) を最小の角度差とする
-    angle_diff_sql = """
-        CASE 
-            WHEN ABS(wind_direction - ?) > 180 THEN 360 - ABS(wind_direction - ?) 
-            ELSE ABS(wind_direction - ?) 
-        END
-    """
-    
-    # ステップ1: 風向差 <= 30度、風速差 <= 3.0 m/s
-    query = f"""
-        SELECT status FROM flight_weather_logs
-        WHERE ({angle_diff_sql}) <= ?
-        AND ABS(wind_speed - ?) <= ?
-    """
-    
-    try:
-        cursor.execute(query, (wind_direction, wind_direction, wind_direction, 30.0, wind_speed, 3.0))
-        matching_rows = cursor.fetchall()
-        
-        # データ数が少ない場合はステップ2に緩和 (風向差 <= 45度、風速差 <= 5.0 m/s)
-        if len(matching_rows) < 5:
-            step_used = 2
-            cursor.execute(query, (wind_direction, wind_direction, wind_direction, 45.0, wind_speed, 5.0))
-            matching_rows = cursor.fetchall()
-            
-        # それでもデータ数が少ない場合はステップ3 (全データ)
-        if len(matching_rows) < 5:
-            step_used = 3
-            cursor.execute("SELECT status FROM flight_weather_logs")
-            matching_rows = cursor.fetchall()
-            
-    except sqlite3.OperationalError as e:
-        print(f"データベースクエリエラー: {e}")
-        # visibilityカラムがまだ存在しない古いDBなどの場合のフォールバック
-        cursor.execute("SELECT status FROM flight_weather_logs")
-        matching_rows = cursor.fetchall()
+
+    def matches(angle_limit, speed_limit):
+        result = []
+        for status, historical_direction, historical_speed in history:
+            angle_diff = abs(historical_direction - wind_direction)
+            angle_diff = min(angle_diff, 360 - angle_diff)
+            if angle_diff <= angle_limit and abs(historical_speed - wind_speed) <= speed_limit:
+                result.append((status,))
+        return result
+
+    matching_rows = matches(30.0, 3.0)
+    if len(matching_rows) < 5:
+        step_used = 2
+        matching_rows = matches(45.0, 5.0)
+    if len(matching_rows) < 5:
         step_used = 3
-    finally:
-        conn.close()
+        matching_rows = [(status,) for status, _, _ in history]
         
     # ベース確率の算出
     if not matching_rows:
