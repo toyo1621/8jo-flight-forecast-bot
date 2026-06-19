@@ -15,7 +15,6 @@ DEFAULT_LOCATION = "asia-northeast1"
 DEFAULT_DB = Path(__file__).resolve().parent / "flights.db"
 
 SCHEMA = (
-    bigquery.SchemaField("id", "INTEGER"),
     bigquery.SchemaField("date", "DATE", mode="REQUIRED"),
     bigquery.SchemaField("flight_number", "STRING", mode="REQUIRED"),
     bigquery.SchemaField("flight_display_name", "STRING"),
@@ -45,7 +44,7 @@ def read_sqlite_rows(db_file):
         reason_column = "status_reason" if "status_reason" in columns else "NULL AS status_reason"
         return conn.execute(
             f"""
-            SELECT id, date, flight_number, scheduled_time, status,
+            SELECT date, flight_number, scheduled_time, status,
                    wind_direction, wind_speed, wind_gusts,
                    cloud_cover_low, visibility, {reason_column}, created_at
             FROM flight_weather_logs
@@ -64,7 +63,6 @@ def normalize_row(row, migrated_at=None):
     status = "通常" if row["status"] == "遅延" else row["status"]
     status_reason = "遅延" if row["status"] == "遅延" else row["status_reason"]
     return {
-        "id": row["id"],
         "date": row["date"],
         "flight_number": row["flight_number"],
         "flight_display_name": flight_display_name(row["flight_number"]),

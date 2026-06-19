@@ -55,7 +55,6 @@ def _normalize_item(item, timestamp):
     if scheduled_time and scheduled_time.count(":") == 1:
         scheduled_time = f"{scheduled_time}:00"
     return {
-        "id": None,
         "date": item["date"],
         "flight_number": item["flight_number"],
         "flight_display_name": flight_display_name(item["flight_number"]),
@@ -107,10 +106,10 @@ def upsert_flight_weather_logs(items):
               created_at = S.created_at,
               migrated_at = S.migrated_at
             WHEN NOT MATCHED THEN INSERT
-              (id, date, flight_number, flight_display_name, scheduled_time, status, wind_direction,
+              (date, flight_number, flight_display_name, scheduled_time, status, wind_direction,
                wind_speed, wind_gusts, cloud_cover_low, visibility, status_reason, created_at, migrated_at)
             VALUES
-              (S.id, S.date, S.flight_number, S.flight_display_name, S.scheduled_time, S.status, S.wind_direction,
+              (S.date, S.flight_number, S.flight_display_name, S.scheduled_time, S.status, S.wind_direction,
                S.wind_speed, S.wind_gusts, S.cloud_cover_low, S.visibility, S.status_reason, S.created_at, S.migrated_at)
             """
         ).result()
