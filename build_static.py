@@ -1,4 +1,5 @@
 import shutil
+import os
 from datetime import datetime
 from pathlib import Path
 
@@ -20,7 +21,8 @@ DIST_DIR = BASE_DIR / "dist"
 
 
 def build_site(output_dir=DIST_DIR):
-    restore_db(BASE_DIR / "flights.db", BASE_DIR / "data" / "flights_dump.sql")
+    if os.getenv("FORECAST_DATA_BACKEND", "sqlite").lower() != "bigquery":
+        restore_db(BASE_DIR / "flights.db", BASE_DIR / "data" / "flights_dump.sql")
     weather = fetch_forecast()
     try:
         ensembles = fetch_ensemble_forecast()
@@ -47,3 +49,4 @@ def build_site(output_dir=DIST_DIR):
 
 if __name__ == "__main__":
     build_site()
+
