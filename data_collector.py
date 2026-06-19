@@ -5,6 +5,8 @@ import argparse
 import requests
 from dotenv import load_dotenv
 
+from bigquery_storage import upsert_flight_weather_logs
+
 # 環境変数の読み込み
 load_dotenv()
 
@@ -270,12 +272,22 @@ def save_flight_weather_logs(conn, flights_with_weather):
     print(f"データベースに {saved_count} 件のデータを保存・更新しました。")
 
 
+def save_collected_data(conn, flights_with_weather):
+    backend = os.getenv("FORECAST_DATA_BACKEND", "sqlite").lower()
+    if backend == "bigquery":
+        saved_count = upsert_flight_weather_logs(flights_with_weather)
+        print(f"BigQueryに {saved_count} 件のデータを保存・更新しました。")
+        return
+    save_flight_weather_logs(conn, flights_with_weather)
+
+
 def main():
     parser = argparse.ArgumentParser(description="羽田→八丈島便の運航・気象データ自動収集スクリプト")
     parser.add_argument("--demo", action="store_true", help="APIキーの有無にかかわらずデモ用データを使用する")
     args = parser.parse_args()
 
-    conn = init_db()
+    backend = os.getenv("FORECAST_DATA_BACKEND", "sqlite").lower()
+    conn = None if backend == "bigquery" else init_db()
     api_key = os.getenv("ODPT_API_KEY")
     today = datetime.today().strftime("%Y-%m-%d")
 
@@ -293,20 +305,20 @@ def main():
         merged_item = {**f, **weather}
         completed_data.append(merged_item)
 
-    save_flight_weather_logs(conn, completed_data)
+    save_collected_data(conn, completed_data)
 
-    print("\n--- 保存された最新のデータ (最大5件) ---")
-    cursor = conn.cursor()
-    cursor.execute("""
-        SELECT date, flight_number, scheduled_time, status, wind_direction, wind_speed, wind_gusts, cloud_cover_low, visibility
-        FROM flight_weather_logs
-        ORDER BY date DESC, scheduled_time DESC LIMIT 5
-    """)
-    rows = cursor.fetchall()
-    for row in rows:
-        print(f"日付: {row[0]} | 便名: {row[1]} | 定刻: {row[2]} | 結果: {row[3]} | 風向: {row[4]}° | 風速: {row[5]} m/s | 突風: {row[6]} m/s | 雲量: {row[7]}% | 視程: {row[8]} km")
-
-    conn.close()
+    if conn is not None:
+        print("\n--- 保存された最新のデータ (最大5件) ---")
+        cursor = conn.cursor()
+        cursor.execute("""
+            SELECT date, flight_number, scheduled_time, status, wind_direction, wind_speed, wind_gusts, cloud_cover_low, visibility
+            FROM flight_weather_logs
+            ORDER BY date DESC, scheduled_time DESC LIMIT 5
+        """)
+        rows = cursor.fetchall()
+        for row in rows:
+            print(f"日付: {row[0]} | 便名: {row[1]} | 定刻: {row[2]} | 結果: {row[3]} | 風向: {row[4]}° | 風速: {row[5]} m/s | 突風: {row[6]} m/s | 雲量: {row[7]}% | 視程: {row[8]} km")
+        conn.close()
     print("データ自動収集処理が完了しました。")
 
 
