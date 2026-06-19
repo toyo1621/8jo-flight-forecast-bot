@@ -187,6 +187,10 @@ def predict_flight_probability(wind_direction, wind_speed, wind_gusts, cloud_cov
     prob = base_prob
     warnings = []
     alert_required = False
+
+    if 120.0 <= wind_direction <= 240.0 and wind_speed >= 9.0:
+        warnings.append("南風注意")
+        alert_required = True
     
     # 2. 霧・低層雲量による減算補正
     if visibility is not None and visibility < 5.0:
