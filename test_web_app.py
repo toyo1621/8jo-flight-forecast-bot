@@ -84,6 +84,12 @@ def test_mobile_css_prevents_horizontal_overflow():
     assert ".header::after { right: 0; width: 55%; }" in stylesheet
 
 
+def test_stylesheet_url_has_cache_buster():
+    template = (BASE_DIR / "templates" / "index.html").read_text(encoding="utf-8")
+
+    assert 'href="static/styles.css?v=' in template
+
+
 def test_select_evenly_balances_ensemble_members():
     members = list(range(51))
 
