@@ -199,17 +199,17 @@ def predict_flight_probability(wind_direction, wind_speed, wind_gusts, cloud_cov
         warnings.append(f"視程不良リスク ({visibility} km)")
     
     if cloud_cover_low is not None and cloud_cover_low > 90.0:
-        prob *= 0.8
+        prob *= 0.9
         warnings.append(f"低層雲の影響注意 (低層雲量 {cloud_cover_low}%)")
         
     # 3. 台風・強風による補正
     is_windy = False
     if wind_gusts is not None and wind_gusts >= 15.0:
-        prob *= 0.7
+        prob *= 0.9
         is_windy = True
         warnings.append(f"突風注意 (予報突風: {wind_gusts} m/s)")
     elif wind_speed is not None and wind_speed >= 10.0:
-        prob *= 0.7
+        prob *= 0.9
         is_windy = True
         warnings.append(f"強風注意 (予報風速: {wind_speed} m/s)")
         

@@ -73,12 +73,12 @@ def calculate_flight_probability(wind_speed, wind_direction, cloud_cover_low, vi
     if visibility is not None and visibility < 5.0:
         base_prob *= 0.6  # 視界不良時は確率を大幅引き下げ
     elif cloud_cover_low > 90:
-        base_prob *= 0.8  # 低層雲が厚い場合も引き下げ
+        base_prob *= 0.9  # 低層雲が厚い場合も引き下げ
         
     # 3. 台風警告時の補正 & アラートフラグ
     alert_required = False
     if is_typhoon_warning:
-        base_prob *= 0.7
+        base_prob *= 0.9
         alert_required = True
         
     # 4. 機材繰り等を考慮した 100% 排除のキャップ処理

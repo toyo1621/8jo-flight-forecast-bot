@@ -15,6 +15,7 @@
       <h1>八丈島就航統計予測</h1>
       <p class="lead">羽田→八丈島便の就航傾向を、過去の就航実績と天気から見やすくするサイトです。</p>
       <p class="updated">更新 {{ updated_at }}</p>
+      <p class="forecast-source">主予報はOpen-Meteo標準予報を使用しています。</p>
       <p class="confidence-help">天候信頼度は、Open-Meteo APIからオープンデータであるGFS(アメリカ海洋大気庁)・ECMWF(欧州中期予報センター)のアンサンブル予報をもとに、予測される天候のばらつきから判定しています。Aに近いほどブレが小さい見込みです。気象庁(JMA)の予報は独立した参考値として比較しています。</p>
     </header>
 
@@ -68,13 +69,14 @@
                 </div>
                 <section class="dialog-section">
                   <h4>予報気象情報</h4>
+                  <p class="model-source">主予報: Open-Meteo標準予報</p>
                   <dl class="weather-grid">
                     <div><dt>風向</dt><dd>{{ flight.wind_direction_label }} {{ flight.wind_direction|round|int }}°</dd></div>
                     <div><dt>風速</dt><dd>{{ flight.wind_speed }} m/s</dd></div>
                     <div><dt>最大瞬間風速</dt><dd>{{ flight.wind_gusts }} m/s</dd></div>
                     <div><dt>低層雲量</dt><dd>{{ flight.cloud_cover_low|round|int }}%</dd></div>
                     <div><dt>視程</dt><dd>{{ flight.visibility }} km</dd></div>
-                    <div><dt>就航確率</dt><dd>{{ flight.probability }}%</dd></div>
+                    <div><dt>主予報就航確率</dt><dd>{{ flight.probability }}%</dd></div>
                     {% if flight.gfs_probability is not none %}<div><dt>GFS参考就航確率</dt><dd>{{ flight.gfs_probability }}%</dd></div>{% endif %}
                     {% if flight.ecmwf_probability is not none %}<div><dt>ECMWF参考就航確率</dt><dd>{{ flight.ecmwf_probability }}%</dd></div>{% endif %}
                     {% if flight.jma_probability is not none %}<div><dt>JMA参考就航確率</dt><dd>{{ flight.jma_probability }}%</dd></div>{% endif %}

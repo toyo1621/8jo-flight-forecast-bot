@@ -88,6 +88,7 @@ h1 {
 
 .lead { margin: 18px 0 0; color: #c7d9e4; font-weight: 600; }
 .updated { display: inline-block; margin: 18px 0 0; padding: 6px 10px; border: 1px solid var(--line); color: #8eb3c9; font-size: .72rem; letter-spacing: .06em; }
+.forecast-source { margin: 10px 0 0; color: #8eb3c9; font-size: .72rem; }
 .confidence-help { max-width: 680px; margin: 20px 0 0; color: var(--muted); font-size: .82rem; line-height: 1.8; }
 
 .error {
@@ -262,6 +263,7 @@ footer {
 .dialog-section { padding: 22px 24px; }
 .dialog-section + .dialog-section { padding-top: 0; }
 .dialog-section h4 { margin: 0 0 14px; color: #dff5ff; font-size: .9rem; }
+.model-source { margin: -6px 0 14px; color: var(--muted); font-size: .75rem; }
 .weather-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 1px; margin: 0; overflow: hidden; border: 1px solid var(--line); border-radius: 8px; background: var(--line); }
 .weather-grid div { padding: 13px 14px; background: var(--panel-strong); }
 .weather-grid dt { color: var(--muted); font-size: .66rem; }
@@ -303,3 +305,4 @@ footer {
 @media (prefers-reduced-motion: reduce) {
   .flight { transition: none; }
 }
+
