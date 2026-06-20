@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="description" content="羽田→八丈島便の就航傾向を、過去の就航実績と天気から見やすくするサイトです。">
   <title>八丈島就航統計予測</title>
-  <link rel="stylesheet" href="static/styles.css?v=20260619-2">
+  <link rel="stylesheet" href="static/styles.css?v=20260620-1">
   <script src="static/app.js?v=20260619-1" defer></script>
 </head>
 <body>
@@ -41,7 +41,7 @@
           {% endif %}
           <div class="flights">
             {% for flight in day.flights %}
-              <article class="flight{% if flight.alert_required %} flight--alert{% endif %}" role="button" tabindex="0" aria-haspopup="dialog" data-dialog="detail-{{ day.date }}-{{ flight.raw_number }}">
+              <article class="flight{% if flight.probability < 60 %} flight--low-probability{% endif %}" role="button" tabindex="0" aria-haspopup="dialog" data-dialog="detail-{{ day.date }}-{{ flight.raw_number }}">
                 <div>
                   <p class="flight-number">{{ flight.number }}</p>
                   <p class="flight-time">{{ flight.time }} 着</p>
