@@ -275,6 +275,16 @@ def test_stylesheet_url_has_cache_buster():
     assert 'href="static/styles.css?v=' in template
 
 
+def test_orange_flight_style_depends_on_probability_below_sixty():
+    template = (BASE_DIR / "templates" / "index.html").read_text(encoding="utf-8")
+    stylesheet = (BASE_DIR / "static" / "styles.css").read_text(encoding="utf-8")
+
+    assert "{% if flight.probability < 60 %} flight--low-probability{% endif %}" in template
+    assert "flight.alert_required" not in template
+    assert ".flight--low-probability .probability" in stylesheet
+    assert ".flight--alert" not in stylesheet
+
+
 def test_select_evenly_balances_ensemble_members():
     members = list(range(51))
 
