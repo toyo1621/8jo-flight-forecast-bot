@@ -8,6 +8,7 @@ from web_app import (
     app,
     build_daily_forecasts,
     calculate_confidence,
+    calculate_model_reference_probabilities,
     fallback_confidence,
     _select_evenly,
     _with_model_difference_warning,
@@ -38,7 +39,11 @@ def test_build_daily_forecasts():
         "step_used": 1,
     }
     with patch("web_app.predict_flight_probability", return_value=result):
-        days = build_daily_forecasts(SAMPLE_WEATHER, reference_date=date(2026, 6, 19))
+        days = build_daily_forecasts(
+            SAMPLE_WEATHER,
+            reference_date=date(2026, 6, 19),
+            current_time=datetime(2026, 6, 19, 12, 0, tzinfo=JST),
+        )
 
     assert days[0]["date_label"] == "6/20"
     assert days[0]["flights"][0]["number"] == "ANA1891(1便)"
@@ -77,7 +82,7 @@ def test_model_difference_warning_uses_twenty_point_boundary():
     warned = _with_model_difference_warning(result, 60.0)
     quiet = _with_model_difference_warning(result, 60.1)
 
-    assert warned["warning_msg"] == "モデル差注意 (JMA差 20.0pt)"
+    assert warned["warning_msg"] == "気象モデル差に注意"
     assert warned["alert_required"] is True
     assert quiet["warning_msg"] == "特になし"
 
@@ -225,6 +230,23 @@ def test_calculate_confidence_uses_ensemble_spread():
     assert confidence["member_count"] == 40
 
 
+def test_model_reference_probabilities_use_each_models_median():
+    members = [
+        {"_model": "gfs_seamless", "wind_speed": value}
+        for value in (10.0, 20.0, 30.0)
+    ] + [
+        {"_model": "ecmwf_ifs025", "wind_speed": value}
+        for value in (40.0, 50.0)
+    ]
+    with patch(
+        "web_app.predict_flight_probability",
+        side_effect=lambda **weather: {"probability": weather["wind_speed"]},
+    ):
+        probabilities = calculate_model_reference_probabilities(members)
+
+    assert probabilities == {"gfs_seamless": 20.0, "ecmwf_ifs025": 45.0}
+
+
 def test_confidence_note_uses_short_wording():
     template = (BASE_DIR / "templates" / "index.html").read_text(encoding="utf-8")
 
@@ -275,6 +297,7 @@ def test_index_renders_forecast():
         patch("web_app.fetch_jma_forecast", return_value={}),
         patch("web_app.fetch_ensemble_forecast", return_value={}),
         patch("web_app.predict_flight_probability", return_value=result),
+        patch("web_app._flight_display_expired", return_value=False),
         app.test_client() as client,
     ):
         response = client.get("/")
@@ -301,6 +324,9 @@ def test_history_template_includes_flight_name_and_visibility_fallback():
 
     assert "{{ history.date_label }} {{ history.flight_display_name }}" in template
     assert "/ 視程 {% if history.visibility is not none %}{{ history.visibility }} km{% else %}欠測{% endif %}" in template
+    assert "GFS参考就航確率" in template
+    assert "ECMWF参考就航確率" in template
+    assert "JMA参考就航確率" in template
 
 
 def test_index_handles_weather_api_error():

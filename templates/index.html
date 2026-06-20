@@ -75,6 +75,8 @@
                     <div><dt>低層雲量</dt><dd>{{ flight.cloud_cover_low|round|int }}%</dd></div>
                     <div><dt>視程</dt><dd>{{ flight.visibility }} km</dd></div>
                     <div><dt>就航確率</dt><dd>{{ flight.probability }}%</dd></div>
+                    {% if flight.gfs_probability is not none %}<div><dt>GFS参考就航確率</dt><dd>{{ flight.gfs_probability }}%</dd></div>{% endif %}
+                    {% if flight.ecmwf_probability is not none %}<div><dt>ECMWF参考就航確率</dt><dd>{{ flight.ecmwf_probability }}%</dd></div>{% endif %}
                     {% if flight.jma_probability is not none %}<div><dt>JMA参考就航確率</dt><dd>{{ flight.jma_probability }}%</dd></div>{% endif %}
                   </dl>
                 </section>
@@ -118,7 +120,7 @@
           <li>過去の就航実績と照らし合わせて、風向・風速・最大瞬間風速・低層雲量・視程が近い条件を探します。</li>
           <li>その条件に近い過去データから、各便の就航確率の参考値を出します。</li>
           <li>GFSとECMWFのアンサンブル予報を比較し、ばらつきが小さいほど天候信頼度を高く表示します。</li>
-          <li><a href="https://open-meteo.com/en/docs/jma-api" rel="noreferrer">気象庁(JMA)のGSM・MSM予報</a>を独立した参考値として比較し、就航確率の差が20ポイント以上なら「モデル差注意」と表示します。</li>
+          <li><a href="https://open-meteo.com/en/docs/jma-api" rel="noreferrer">気象庁(JMA)のGSM・MSM予報</a>を独立した参考値として比較し、就航確率の差が20ポイント以上なら「気象モデル差に注意」と表示します。</li>
         </ol>
         <p>GitHub Actionsで定期更新し、静的サイトとして公開しています。</p>
       </article>
