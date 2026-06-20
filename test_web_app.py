@@ -189,6 +189,15 @@ def test_probability_cap_is_97_percent():
     assert result["probability"] == 97.0
 
 
+def test_low_cloud_and_gust_adjustments_each_use_09():
+    history = [("通常", 210.0, 18.0)] * 3 + [("欠航", 210.0, 18.0)] * 6
+    with patch("forecast_engine.load_history", return_value=history):
+        result = predict_flight_probability(210.0, 18.09, 24.4, 100.0, 12.2)
+
+    assert result["data_count"] == 9
+    assert result["probability"] == 27.0
+
+
 def test_southerly_wind_warning_includes_boundary_values():
     with patch("forecast_engine.load_history", return_value=[("通常", 180.0, 9.0)]):
         lower = predict_flight_probability(120.0, 9.0, 10.0, 20.0, 15.0)
@@ -307,6 +316,9 @@ def test_index_renders_forecast():
     assert "八丈島就航統計予測" in body
     assert "羽田→八丈島便の就航傾向を、過去の就航実績と天気から見やすくするサイトです。" in body
     assert "GFS(アメリカ海洋大気庁)・ECMWF(欧州中期予報センター)" in body
+    assert "主予報はOpen-Meteo標準予報を使用しています。" in body
+    assert "主予報: Open-Meteo標準予報" in body
+    assert "主予報就航確率" in body
     assert "天候信頼度" in body
     assert "風向 南 180°" in body
     assert "低層雲量 20%" in body
