@@ -335,6 +335,9 @@ def test_index_renders_forecast():
     assert ">雲量<" not in body
     assert "なぜ作ったか" in body
     assert "ざっくりどういう仕組みか" in body
+    assert "GFS 31通りとECMWF 31通り、合計62通り" in body
+    assert "就航確率60%未満の便はオレンジ" in body
+    assert "GitHub Actionsで6時間ごとに再計算" in body
     assert "気象業法への配慮" in body
     assert "予報気象情報" in body
     assert "気象条件が近い過去の就航実績10件" in body
