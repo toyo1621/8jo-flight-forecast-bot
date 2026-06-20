@@ -76,10 +76,10 @@
                     <div><dt>最大瞬間風速</dt><dd>{{ flight.wind_gusts }} m/s</dd></div>
                     <div><dt>低層雲量</dt><dd>{{ flight.cloud_cover_low|round|int }}%</dd></div>
                     <div><dt>視程</dt><dd>{{ flight.visibility }} km</dd></div>
-                    <div><dt>主予報就航確率</dt><dd>{{ flight.probability }}%</dd></div>
-                    {% if flight.gfs_probability is not none %}<div><dt>GFS参考就航確率</dt><dd>{{ flight.gfs_probability }}%</dd></div>{% endif %}
-                    {% if flight.ecmwf_probability is not none %}<div><dt>ECMWF参考就航確率</dt><dd>{{ flight.ecmwf_probability }}%</dd></div>{% endif %}
-                    {% if flight.jma_probability is not none %}<div><dt>JMA参考就航確率</dt><dd>{{ flight.jma_probability }}%</dd></div>{% endif %}
+                    <div><dt>主予報(Open-Meteo)での就航確率</dt><dd>{{ flight.probability }}%</dd></div>
+                    {% if flight.gfs_probability is not none %}<div><dt>GFS予報での参考就航確率</dt><dd>{{ flight.gfs_probability }}%</dd></div>{% endif %}
+                    {% if flight.ecmwf_probability is not none %}<div><dt>ECMWF予報での参考就航確率</dt><dd>{{ flight.ecmwf_probability }}%</dd></div>{% endif %}
+                    {% if flight.jma_probability is not none %}<div><dt>JMA予報での参考就航確率</dt><dd>{{ flight.jma_probability }}%</dd></div>{% endif %}
                   </dl>
                 </section>
                 <section class="dialog-section">
