@@ -1,6 +1,7 @@
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
+from statistics import median
 
 import requests
 from flask import Flask, render_template
@@ -157,6 +158,7 @@ def _fetch_ensemble_model(model, variables, max_members=None):
                 variable.removesuffix("_10m"): value
                 for variable, value in zip(variables, values)
             }
+            weather["_model"] = model
             if "visibility" in weather:
                 weather["visibility"] = _meters_to_km(weather["visibility"])
             members.append(weather)
@@ -171,7 +173,7 @@ def _meters_to_km(value):
 def calculate_confidence(ensemble_members, baseline_weather=None):
     baseline_weather = baseline_weather or {}
     probabilities = sorted(
-        predict_flight_probability(**{**baseline_weather, **weather})["probability"]
+        predict_flight_probability(**{**baseline_weather, **{key: value for key, value in weather.items() if key != "_model"}})["probability"]
         for weather in ensemble_members
     )
     if len(probabilities) < 10:
@@ -196,6 +198,23 @@ def calculate_confidence(ensemble_members, baseline_weather=None):
         "spread": spread,
         "member_count": len(probabilities),
         "source": "ensemble",
+    }
+
+
+def calculate_model_reference_probabilities(ensemble_members, baseline_weather=None):
+    baseline_weather = baseline_weather or {}
+    probabilities = {}
+    for member in ensemble_members:
+        model = member.get("_model")
+        if not model:
+            continue
+        weather = {key: value for key, value in member.items() if key != "_model"}
+        probability = predict_flight_probability(**{**baseline_weather, **weather})["probability"]
+        probabilities.setdefault(model, []).append(probability)
+    return {
+        model: round(median(values), 1)
+        for model, values in probabilities.items()
+        if values
     }
 
 
@@ -256,7 +275,7 @@ def _with_model_difference_warning(result, jma_probability):
     difference = round(abs(result["probability"] - jma_probability), 1)
     result["model_difference"] = difference
     if difference >= MODEL_DIFFERENCE_WARNING_POINTS:
-        warning = f"モデル差注意 (JMA差 {difference}pt)"
+        warning = "気象モデル差に注意"
         current = result.get("warning_msg")
         result["warning_msg"] = warning if current in {None, "なし", "特になし"} else f"{current}、{warning}"
         result["alert_required"] = True
@@ -289,6 +308,9 @@ def build_daily_forecasts(weather_by_time, ensembles_by_time=None, reference_dat
             )
             result = _with_model_difference_warning(result, jma_probability)
             confidence = calculate_confidence(ensembles_by_time.get(timestamp, []), weather)
+            model_probabilities = calculate_model_reference_probabilities(
+                ensembles_by_time.get(timestamp, []), weather
+            )
             flights.append(
                 {
                     **flight,
@@ -299,6 +321,8 @@ def build_daily_forecasts(weather_by_time, ensembles_by_time=None, reference_dat
                     "similar_history": find_similar_flights(flight["number"], weather),
                     "jma_weather": jma_weather,
                     "jma_probability": jma_probability,
+                    "gfs_probability": model_probabilities.get("gfs_seamless"),
+                    "ecmwf_probability": model_probabilities.get("ecmwf_ifs025"),
                     "confidence": confidence,
                     "wind_direction_label": wind_direction_label(weather["wind_direction"]),
                 }
