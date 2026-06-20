@@ -118,13 +118,15 @@
         <p class="about-label">HOW</p>
         <h3>ざっくりどういう仕組みか</h3>
         <ol class="system-flow">
-          <li><a href="https://open-meteo.com/en/docs" rel="noreferrer">Open-Meteo</a>から八丈島周辺の予報を取得します。</li>
-          <li>過去の就航実績と照らし合わせて、風向・風速・最大瞬間風速・低層雲量・視程が近い条件を探します。</li>
-          <li>その条件に近い過去データから、各便の就航確率の参考値を出します。</li>
-          <li>GFSとECMWFのアンサンブル予報を比較し、ばらつきが小さいほど天候信頼度を高く表示します。</li>
-          <li><a href="https://open-meteo.com/en/docs/jma-api" rel="noreferrer">気象庁(JMA)のGSM・MSM予報</a>を独立した参考値として比較し、就航確率の差が20ポイント以上なら「気象モデル差に注意」と表示します。</li>
+          <li>主予報には、<a href="https://open-meteo.com/en/docs" rel="noreferrer">Open-Meteo標準予報</a>の風向・風速・最大瞬間風速・低層雲量・視程を使います。</li>
+          <li>BigQueryに保存した過去の就航実績から、予報と風向・風速が近い事例を探して、各便の就航確率を計算します。</li>
+          <li>視程5 km未満、低層雲量90%超、強風・突風の場合は確率を補正します。上限は97%です。</li>
+          <li>詳細画面では、低視程・低層雲・強風など、その日の問題点を重視して近い過去実績10件を表示します。</li>
+          <li>GFS 31通りとECMWF 31通り、合計62通りのアンサンブル予報から天候信頼度A〜Eを判定します。</li>
+          <li>GFS・ECMWF・<a href="https://open-meteo.com/en/docs/jma-api" rel="noreferrer">気象庁(JMA)予報</a>で計算した値は、詳細画面に比較用の参考就航確率として表示します。主予報とJMAの差が20ポイント以上なら「気象モデル差に注意」と表示します。</li>
+          <li>就航確率60%未満の便はオレンジで表示し、当日便は到着予定時刻の30分後を過ぎると非表示にします。</li>
         </ol>
-        <p>GitHub Actionsで定期更新し、静的サイトとして公開しています。</p>
+        <p>GitHub Actionsで6時間ごとに再計算し、静的サイトとして公開しています。</p>
       </article>
 
       <article class="about-block about-block--notice">
