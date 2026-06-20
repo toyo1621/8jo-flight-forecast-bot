@@ -318,7 +318,7 @@ def test_index_renders_forecast():
     assert "GFS(アメリカ海洋大気庁)・ECMWF(欧州中期予報センター)" in body
     assert "主予報はOpen-Meteo標準予報を使用しています。" in body
     assert "主予報: Open-Meteo標準予報" in body
-    assert "主予報就航確率" in body
+    assert "主予報(Open-Meteo)での就航確率" in body
     assert "天候信頼度" in body
     assert "風向 南 180°" in body
     assert "低層雲量 20%" in body
@@ -336,9 +336,9 @@ def test_history_template_includes_flight_name_and_visibility_fallback():
 
     assert "{{ history.date_label }} {{ history.flight_display_name }}" in template
     assert "/ 視程 {% if history.visibility is not none %}{{ history.visibility }} km{% else %}欠測{% endif %}" in template
-    assert "GFS参考就航確率" in template
-    assert "ECMWF参考就航確率" in template
-    assert "JMA参考就航確率" in template
+    assert "GFS予報での参考就航確率" in template
+    assert "ECMWF予報での参考就航確率" in template
+    assert "JMA予報での参考就航確率" in template
 
 
 def test_index_handles_weather_api_error():
