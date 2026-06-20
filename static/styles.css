@@ -183,7 +183,7 @@ h1 {
 .flight[role="button"]:focus-visible { outline: 2px solid var(--blue); outline-offset: 3px; }
 .detail-hint { display: block; margin-top: 16px; color: var(--blue); font-size: .68rem; font-weight: 700; text-align: right; }
 
-.flight--alert { border-color: rgba(255, 196, 94, .35); }
+.flight--low-probability { border-color: rgba(255, 196, 94, .35); }
 .flight-number, .flight-time, .probability, .warning { margin: 0; }
 .flight-number { color: #eaf7ff; font-size: .86rem; font-weight: 750; letter-spacing: .03em; }
 .flight-time { margin-top: 4px; color: var(--muted); font-size: .76rem; }
@@ -191,7 +191,7 @@ h1 {
 .probability { margin: 26px 0 20px; color: var(--blue); }
 .probability strong { font-size: clamp(2.45rem, 5vw, 3.5rem); line-height: 1; letter-spacing: -.065em; text-shadow: 0 0 24px rgba(90, 199, 255, .3); }
 .probability span { margin-left: 4px; font-size: 1.05rem; font-weight: 750; }
-.flight--alert .probability { color: var(--amber); }
+.flight--low-probability .probability { color: var(--amber); }
 
 .details { display: grid; gap: 7px; color: #a9bfcc; font-size: .74rem; }
 .details span { display: flex; align-items: center; gap: 7px; }
