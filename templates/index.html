@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="description" content="羽田→八丈島便の就航傾向を、過去の就航実績と天気から見やすくするサイトです。">
+  <meta name="description" content="羽田→八丈島便の就航傾向を、過去の運航実績と天気から見やすくするサイトです。">
   <title>八丈島就航統計予測</title>
   <link rel="stylesheet" href="static/styles.css?v=20260620-1">
   <script src="static/app.js?v=20260619-1" defer></script>
@@ -13,7 +13,7 @@
     <header class="header">
       <p class="eyebrow">HND / HAC</p>
       <h1>八丈島就航統計予測</h1>
-      <p class="lead">羽田→八丈島便の就航傾向を、過去の就航実績と天気から見やすくするサイトです。</p>
+      <p class="lead">羽田→八丈島便の就航傾向を、過去の運航実績と天気から見やすくするサイトです。</p>
       <p class="updated">更新 {{ updated_at }}</p>
       <p class="forecast-source">主予報はOpen-Meteo標準予報を使用しています。</p>
       <p class="confidence-help">天候信頼度は、Open-Meteo APIからオープンデータであるGFS(アメリカ海洋大気庁)・ECMWF(欧州中期予報センター)のアンサンブル予報をもとに、予測される天候のばらつきから判定しています。Aに近いほどブレが小さい見込みです。気象庁(JMA)の予報は独立した参考値として比較しています。</p>
@@ -83,7 +83,7 @@
                   </dl>
                 </section>
                 <section class="dialog-section">
-                  <h4>気象条件が近い過去の就航実績10件</h4>
+                  <h4>気象条件が近い過去の運航実績10件</h4>
                   <div class="history-list">
                     {% for history in flight.similar_history %}
                       <article class="history-item">
@@ -119,7 +119,7 @@
         <h3>ざっくりどういう仕組みか</h3>
         <ol class="system-flow">
           <li>主予報には、<a href="https://open-meteo.com/en/docs" rel="noreferrer">Open-Meteo標準予報</a>の風向・風速・最大瞬間風速・低層雲量・視程を使います。</li>
-          <li>BigQueryに保存した過去の就航実績から、予報と風向・風速が近い事例を探して、各便の就航確率を計算します。</li>
+          <li>BigQueryに保存した過去の運航実績から、予報と風向・風速が近い事例を探して、各便の就航確率を計算します。</li>
           <li>視程5 km未満、低層雲量90%超、強風・突風の場合は確率を補正します。上限は97%です。</li>
           <li>詳細画面では、低視程・低層雲・強風など、その日の問題点を重視して近い過去実績10件を表示します。</li>
           <li>GFS 31通りとECMWF 31通り、合計62通りのアンサンブル予報から天候信頼度A〜Eを判定します。</li>
