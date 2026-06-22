@@ -78,7 +78,7 @@ def generate_status(wind_speed, wind_gusts, visibility, cloud_cover_low):
     if random.random() < 0.035:
         return "条件付き→就航"
         
-    return "通常"
+    return "運航"
 
 def main():
     conn = init_db()
