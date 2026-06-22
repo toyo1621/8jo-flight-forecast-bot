@@ -324,7 +324,7 @@ def test_index_renders_forecast():
     assert response.status_code == 200
     body = response.get_data(as_text=True)
     assert "八丈島就航統計予測" in body
-    assert "羽田→八丈島便の就航傾向を、過去の就航実績と天気から見やすくするサイトです。" in body
+    assert "羽田→八丈島便の就航傾向を、過去の運航実績と天気から見やすくするサイトです。" in body
     assert "GFS(アメリカ海洋大気庁)・ECMWF(欧州中期予報センター)" in body
     assert "主予報はOpen-Meteo標準予報を使用しています。" in body
     assert "主予報: Open-Meteo標準予報" in body
@@ -340,7 +340,7 @@ def test_index_renders_forecast():
     assert "GitHub Actionsで6時間ごとに再計算" in body
     assert "気象業法への配慮" in body
     assert "予報気象情報" in body
-    assert "気象条件が近い過去の就航実績10件" in body
+    assert "気象条件が近い過去の運航実績10件" in body
     assert "6ポイント以内" not in body
 
 
