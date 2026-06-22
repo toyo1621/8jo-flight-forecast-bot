@@ -2,7 +2,7 @@ from unittest.mock import patch
 
 import bigquery_storage
 from data_collector import STATUS_MAPPING, get_demo_flight_data, save_collected_data
-from flight_metadata import normalize_status
+from flight_metadata import normalize_database_status, normalize_status
 
 
 def test_normalize_item_formats_time():
@@ -22,6 +22,22 @@ def test_normalize_item_formats_time():
     assert result["status_reason"] is None
     assert "id" not in result
     assert result["visibility_source"] is None
+
+
+def test_normalize_item_uses_database_status_and_visibility_source():
+    result = bigquery_storage._normalize_item(
+        {
+            "date": "2025-06-15",
+            "flight_number": "ANA1891",
+            "status": "条件付き→就航",
+            "visibility": 12.0,
+            "visibility_source": "open_meteo_archive",
+        },
+        "2026-06-22T00:00:00+00:00",
+    )
+
+    assert result["status"] == "条件付き運航"
+    assert result["visibility_source"] == "open_meteo_archive"
 
 
 def test_collector_uses_bigquery_backend(monkeypatch):
@@ -52,5 +68,7 @@ def test_odpt_arrival_statuses_count_as_operated():
 
 def test_legacy_status_labels_are_normalized_for_display():
     assert normalize_status("条件付き運航") == "条件付き→就航"
+    assert normalize_status("条件付→運航") == "条件付き→就航"
     assert normalize_status("引き返し(出発空港着)") == "条件付き→引返欠航"
+    assert normalize_database_status("条件付き→就航") == "条件付き運航"
 

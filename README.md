@@ -203,6 +203,14 @@ python data_collector.py
 python import_user_csv.py --csv path/to/past_flights.csv
 ```
 
+SQLiteとBigQueryの両方へ反映する場合:
+
+```bash
+python import_user_csv.py --csv path/to/past_flights.csv --backend both
+```
+
+CSVの`運航`は`通常`、`条件付→運航`は`条件付き運航`としてDBへ保存します。`欠航(強風)`のような括弧内の理由は`status_reason`へ分離します。Open-Meteo Archiveで取得できない過去視程は`backfill_bigquery_visibility.py`でHistorical Forecastから補完します。
+
 ## テスト
 
 ```bash
