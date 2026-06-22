@@ -50,7 +50,7 @@ def test_migration_treats_delay_as_normal(tmp_path):
 
     result = normalize_row(read_sqlite_rows(db_file)[0])
 
-    assert result["status"] == "通常"
+    assert result["status"] == "運航"
     assert result["status_reason"] == "遅延"
 
 

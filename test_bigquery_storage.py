@@ -11,7 +11,7 @@ def test_normalize_item_formats_time():
             "date": "2026-06-19",
             "flight_number": "ANA1891",
             "scheduled_time": "08:30",
-            "status": "通常",
+            "status": "運航",
         },
         "2026-06-19T00:00:00+00:00",
     )
@@ -20,6 +20,7 @@ def test_normalize_item_formats_time():
     assert result["flight_number"] == "ANA1891"
     assert result["flight_display_name"] == "ANA1891(1便)"
     assert result["status_reason"] is None
+    assert result["status"] == "運航"
     assert "id" not in result
     assert result["visibility_source"] is None
 
@@ -58,17 +59,19 @@ def test_demo_data_is_only_created_explicitly():
 
 
 def test_odpt_arrival_statuses_count_as_operated():
-    assert STATUS_MAPPING["odpt.FlightStatus:Arrived"] == "通常"
-    assert STATUS_MAPPING["odpt.FlightStatus:EstimatedArrival"] == "通常"
-    assert STATUS_MAPPING["odpt.FlightStatus:Delayed"] == "通常"
+    assert STATUS_MAPPING["odpt.FlightStatus:Arrived"] == "運航"
+    assert STATUS_MAPPING["odpt.FlightStatus:EstimatedArrival"] == "運航"
+    assert STATUS_MAPPING["odpt.FlightStatus:Delayed"] == "運航"
     assert STATUS_MAPPING["odpt.FlightStatus:Conditional"] == "条件付き→就航"
     assert STATUS_MAPPING["odpt.FlightStatus:Diverted"] == "条件付き→引返欠航"
     assert STATUS_MAPPING["odpt.FlightStatus:Returned"] == "条件付き→引返欠航"
 
 
 def test_legacy_status_labels_are_normalized_for_display():
+    assert normalize_status("通常") == "運航"
     assert normalize_status("条件付き運航") == "条件付き→就航"
     assert normalize_status("条件付→運航") == "条件付き→就航"
     assert normalize_status("引き返し(出発空港着)") == "条件付き→引返欠航"
     assert normalize_database_status("条件付き→就航") == "条件付き運航"
+    assert normalize_database_status("通常") == "運航"
 
