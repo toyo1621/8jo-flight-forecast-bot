@@ -85,7 +85,7 @@ def parse_status(status_str):
     if "欠航" in status_str or "全便欠航" in status_str:
         return "欠航", reason
     if "条件付" in status_str and "運航" in status_str:
-        return "条件付き運航", None
+        return "運航(条件付)", None
     if "遅延" in status_str:
         return "遅延", None
     if status_str == "運航" or "通常" in status_str or "到着" in status_str:

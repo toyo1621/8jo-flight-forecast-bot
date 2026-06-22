@@ -89,7 +89,7 @@
                       <article class="history-item">
                         <div class="history-summary">
                           <strong>{{ history.date_label }} {{ history.flight_display_name }}</strong>
-                          <span class="history-status history-status--{% if history.status in ['運航', '通常', '遅延', '条件付き→就航'] %}normal{% else %}alert{% endif %}">{{ history.status }}{% if history.status_reason %}（{{ history.status_reason }}）{% endif %}</span>
+                          <span class="history-status history-status--{% if history.status in ['運航', '通常', '遅延', '運航(条件付)'] %}normal{% else %}alert{% endif %}">{{ history.status }}{% if history.status_reason %}（{{ history.status_reason }}）{% endif %}</span>
                         </div>
                         <p>風向 {{ history.wind_direction|round|int }}° / 風速 {{ history.wind_speed }} m/s{% if history.wind_gusts is not none %} / 突風 {{ history.wind_gusts }} m/s{% endif %}{% if history.cloud_cover_low is not none %} / 低層雲量 {{ history.cloud_cover_low|round|int }}%{% endif %} / 視程 {% if history.visibility is not none %}{{ history.visibility }} km{% else %}欠測{% endif %}</p>
                       </article>

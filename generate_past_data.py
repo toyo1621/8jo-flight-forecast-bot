@@ -72,11 +72,11 @@ def generate_status(wind_speed, wind_gusts, visibility, cloud_cover_low):
        (wind_gusts is not None and wind_gusts > 15.0) or \
        (visibility is not None and visibility < 3.0) or \
        (cloud_cover_low is not None and cloud_cover_low > 85.0):
-        return "条件付き→就航"
+        return "運航(条件付)"
         
     # ランダムな条件付き運航 (約3.5%)
     if random.random() < 0.035:
-        return "条件付き→就航"
+        return "運航(条件付)"
         
     return "運航"
 

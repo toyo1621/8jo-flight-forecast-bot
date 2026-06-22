@@ -28,7 +28,7 @@ STATUS_MAPPING = {
     "odpt.FlightStatus:Delayed": "運航",
     "odpt.FlightStatus:Diverted": "条件付き→引返欠航",
     "odpt.FlightStatus:Returned": "条件付き→引返欠航",
-    "odpt.FlightStatus:Conditional": "条件付き→就航",
+    "odpt.FlightStatus:Conditional": "運航(条件付)",
     "odpt.FlightStatus:Arrived": "運航",
     "odpt.FlightStatus:EstimatedArrival": "運航",
 }
@@ -229,7 +229,7 @@ def get_demo_flight_data():
     print("APIキーが設定されていないため、デモ用ダミーデータを生成します...")
     today = datetime.today().strftime("%Y-%m-%d")
     flights = get_scheduled_flights(today, default_status="運航")
-    flights[1]["status"] = "条件付き→就航"
+    flights[1]["status"] = "運航(条件付)"
     return flights
 
 

@@ -178,7 +178,7 @@ def predict_flight_probability(wind_direction, wind_speed, wind_gusts, cloud_cov
         total = len(matching_rows)
         score_sum = 0.0
         for (status,) in matching_rows:
-            if normalize_status(status) in ["運航", "通常", "遅延", "条件付き→就航"]:
+            if normalize_status(status) in ["運航", "通常", "遅延", "運航(条件付)"]:
                 score_sum += 1.0
             else:
                 score_sum += 0.0
