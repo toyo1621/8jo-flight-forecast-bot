@@ -37,7 +37,7 @@ def test_normalize_item_uses_database_status_and_visibility_source():
         "2026-06-22T00:00:00+00:00",
     )
 
-    assert result["status"] == "条件付き運航"
+    assert result["status"] == "運航(条件付)"
     assert result["visibility_source"] == "open_meteo_archive"
 
 
@@ -55,23 +55,23 @@ def test_demo_data_is_only_created_explicitly():
     flights = get_demo_flight_data()
 
     assert len(flights) == 3
-    assert flights[1]["status"] == "条件付き→就航"
+    assert flights[1]["status"] == "運航(条件付)"
 
 
 def test_odpt_arrival_statuses_count_as_operated():
     assert STATUS_MAPPING["odpt.FlightStatus:Arrived"] == "運航"
     assert STATUS_MAPPING["odpt.FlightStatus:EstimatedArrival"] == "運航"
     assert STATUS_MAPPING["odpt.FlightStatus:Delayed"] == "運航"
-    assert STATUS_MAPPING["odpt.FlightStatus:Conditional"] == "条件付き→就航"
+    assert STATUS_MAPPING["odpt.FlightStatus:Conditional"] == "運航(条件付)"
     assert STATUS_MAPPING["odpt.FlightStatus:Diverted"] == "条件付き→引返欠航"
     assert STATUS_MAPPING["odpt.FlightStatus:Returned"] == "条件付き→引返欠航"
 
 
 def test_legacy_status_labels_are_normalized_for_display():
     assert normalize_status("通常") == "運航"
-    assert normalize_status("条件付き運航") == "条件付き→就航"
-    assert normalize_status("条件付→運航") == "条件付き→就航"
+    assert normalize_status("条件付き運航") == "運航(条件付)"
+    assert normalize_status("条件付→運航") == "運航(条件付)"
     assert normalize_status("引き返し(出発空港着)") == "条件付き→引返欠航"
-    assert normalize_database_status("条件付き→就航") == "条件付き運航"
+    assert normalize_database_status("条件付き→就航") == "運航(条件付)"
     assert normalize_database_status("通常") == "運航"
 
