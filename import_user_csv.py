@@ -89,7 +89,7 @@ def parse_status(status_str):
     if "遅延" in status_str:
         return "遅延", None
     if status_str == "運航" or "通常" in status_str or "到着" in status_str:
-        return "通常", None
+        return "運航", None
 
     return None, None
 
