@@ -5,7 +5,7 @@ from functools import lru_cache
 
 from google.cloud import bigquery
 
-from flight_metadata import flight_display_name, normalize_status
+from flight_metadata import flight_display_name, normalize_database_status, normalize_status
 from migrate_sqlite_to_bigquery import DEFAULT_DATASET, DEFAULT_LOCATION, DEFAULT_PROJECT, DEFAULT_TABLE, SCHEMA, ensure_destination
 
 
@@ -59,13 +59,15 @@ def _normalize_item(item, timestamp):
         "flight_number": item["flight_number"],
         "flight_display_name": flight_display_name(item["flight_number"]),
         "scheduled_time": scheduled_time,
-        "status": normalize_status(item.get("status")),
+        "status": normalize_database_status(item.get("status")),
         "wind_direction": item.get("wind_direction"),
         "wind_speed": item.get("wind_speed"),
         "wind_gusts": item.get("wind_gusts"),
         "cloud_cover_low": item.get("cloud_cover_low"),
         "visibility": item.get("visibility"),
-        "visibility_source": "open_meteo_forecast" if item.get("visibility") is not None else None,
+        "visibility_source": item.get("visibility_source") or (
+            "open_meteo_forecast" if item.get("visibility") is not None else None
+        ),
         "status_reason": item.get("status_reason"),
         "created_at": timestamp,
         "migrated_at": timestamp,

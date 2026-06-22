@@ -1,6 +1,7 @@
 import os
 import sqlite3
 import csv
+import re
 import requests
 import argparse
 from datetime import datetime, timedelta
@@ -40,6 +41,12 @@ def init_db():
         print("既存のデータベースに visibility (視程) カラムを追加しました。")
     except sqlite3.OperationalError:
         pass
+    try:
+        cursor.execute("ALTER TABLE flight_weather_logs ADD COLUMN status_reason TEXT")
+        conn.commit()
+        print("既存のデータベースに status_reason (運航理由) カラムを追加しました。")
+    except sqlite3.OperationalError:
+        pass
     conn.commit()
     return conn
 
@@ -61,28 +68,34 @@ def parse_date_range(date_str):
             curr += timedelta(days=1)
         return dates
     else:
-        # '2026-01-08' のような単一日付
-        return [date_str]
+        # '2025-6-12' のような日付もAPI用のゼロ埋め形式へ統一
+        return [datetime.strptime(date_str, "%Y-%m-%d").strftime("%Y-%m-%d")]
+
+def parse_status(status_str):
+    status_str = status_str.strip().replace(" ", "").replace("　", "")
+
+    if not status_str or "?" in status_str or "？" in status_str:
+        return None, None
+
+    reason_match = re.search(r"欠航[（(]([^）)]+)[）)]", status_str)
+    reason = reason_match.group(1) if reason_match else None
+
+    if "引返" in status_str and "欠航" in status_str:
+        return "条件付き→引返欠航", reason
+    if "欠航" in status_str or "全便欠航" in status_str:
+        return "欠航", reason
+    if "条件付" in status_str and "運航" in status_str:
+        return "条件付き運航", None
+    if "遅延" in status_str:
+        return "遅延", None
+    if status_str == "運航" or "通常" in status_str or "到着" in status_str:
+        return "通常", None
+
+    return None, None
+
 
 def map_status(status_str):
-    status_str = status_str.strip()
-    
-    if '?' in status_str:
-        return None
-    
-    if '欠航' in status_str or '全便欠航' in status_str:
-        return "欠航"
-        
-    if '条件付' in status_str:
-        return "条件付き→就航"
-        
-    if '遅延' in status_str:
-        return "遅延"
-        
-    if '通常' in status_str or '到着' in status_str:
-        return "通常"
-        
-    return None
+    return parse_status(status_str)[0]
 
 def fetch_archive_weather(start_date, end_date):
     print(f"Open-Meteo Archive APIから {start_date} から {end_date} の気象データを取得中...")
@@ -103,6 +116,12 @@ def fetch_archive_weather(start_date, end_date):
 def main():
     parser = argparse.ArgumentParser(description="CSVの過去運航実績にOpen-Meteoの過去気象データを付与してDBへUPSERTします")
     parser.add_argument("--csv", default=DEFAULT_CSV_FILE, help="取り込むCSVファイルのパス")
+    parser.add_argument(
+        "--backend",
+        choices=("sqlite", "bigquery", "both"),
+        default="sqlite",
+        help="保存先。bothでSQLiteとBigQueryの両方へ保存します。",
+    )
     args = parser.parse_args()
 
     if not os.path.exists(args.csv):
@@ -192,13 +211,13 @@ def main():
             
         print("気象データの取得とパースが完了しました。データベースに保存しています...")
         
-        total_inserted = 0
+        items = []
         for rec in raw_records:
             for date_str in rec["dates"]:
                 for f_map in FLIGHT_MAPPING:
                     col_idx = f_map["col_idx"]
                     status_raw = rec["statuses"][col_idx - 1]
-                    status = map_status(status_raw)
+                    status, status_reason = parse_status(status_raw)
                     
                     if status is None:
                         # 取得していない、または不明なステータスはスキップ
@@ -221,36 +240,53 @@ def main():
                             "visibility": None
                         }
                         
-                    # SQLiteに保存
-                    cursor.execute("""
-                    INSERT INTO flight_weather_logs (
-                        date, flight_number, scheduled_time, status,
-                        wind_direction, wind_speed, wind_gusts, cloud_cover_low, visibility
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-                    ON CONFLICT(date, flight_number) DO UPDATE SET
-                        scheduled_time=excluded.scheduled_time,
-                        status=excluded.status,
-                        wind_direction=excluded.wind_direction,
-                        wind_speed=excluded.wind_speed,
-                        wind_gusts=excluded.wind_gusts,
-                        cloud_cover_low=excluded.cloud_cover_low,
-                        visibility=excluded.visibility,
-                        created_at=CURRENT_TIMESTAMP
-                    """, (
-                        date_str,
-                        f_map["flight_number"],
-                        f_map["scheduled_time"],
-                        status,
-                        w["wind_direction"],
-                        w["wind_speed"],
-                        w["wind_gusts"],
-                        w["cloud_cover_low"],
-                        w["visibility"]
-                    ))
-                    total_inserted += 1
-                    
-        conn.commit()
-        print(f"インポート完了: 合計 {total_inserted} 件のリアル運航実績データを登録しました。")
+                    item = {
+                        "date": date_str,
+                        "flight_number": f_map["flight_number"],
+                        "scheduled_time": f_map["scheduled_time"],
+                        "status": status,
+                        "status_reason": status_reason,
+                        "wind_direction": w["wind_direction"],
+                        "wind_speed": w["wind_speed"],
+                        "wind_gusts": w["wind_gusts"],
+                        "cloud_cover_low": w["cloud_cover_low"],
+                        "visibility": w["visibility"],
+                        "visibility_source": "open_meteo_archive" if w["visibility"] is not None else None,
+                    }
+                    items.append(item)
+
+                    if args.backend in {"sqlite", "both"}:
+                        cursor.execute("""
+                        INSERT INTO flight_weather_logs (
+                            date, flight_number, scheduled_time, status, status_reason,
+                            wind_direction, wind_speed, wind_gusts, cloud_cover_low, visibility
+                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        ON CONFLICT(date, flight_number) DO UPDATE SET
+                            scheduled_time=excluded.scheduled_time,
+                            status=excluded.status,
+                            status_reason=excluded.status_reason,
+                            wind_direction=excluded.wind_direction,
+                            wind_speed=excluded.wind_speed,
+                            wind_gusts=excluded.wind_gusts,
+                            cloud_cover_low=excluded.cloud_cover_low,
+                            visibility=excluded.visibility,
+                            created_at=CURRENT_TIMESTAMP
+                        """, (
+                            date_str, f_map["flight_number"], f_map["scheduled_time"],
+                            status, status_reason, w["wind_direction"], w["wind_speed"],
+                            w["wind_gusts"], w["cloud_cover_low"], w["visibility"]
+                        ))
+
+        if args.backend in {"sqlite", "both"}:
+            conn.commit()
+            print(f"SQLite登録完了: {len(items)}件")
+        if args.backend in {"bigquery", "both"}:
+            from bigquery_storage import upsert_flight_weather_logs
+
+            inserted = upsert_flight_weather_logs(items)
+            print(f"BigQuery登録完了: {inserted}件")
+
+        print(f"インポート完了: 合計 {len(items)} 件のリアル運航実績データを登録しました。")
         
     except Exception as e:
         print(f"エラーが発生しました: {e}")

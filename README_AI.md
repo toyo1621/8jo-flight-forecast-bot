@@ -80,6 +80,7 @@ GitHub Pagesは`main`へのpush時、手動実行時、6時間ごとのスケジ
 - 引き返し: `条件付き→引返欠航`
 - 遅延は統計上、就航として扱います。
 - BigQueryのレコード識別子は`date + flight_number`であり、連番`id`は使用しません。
+- DB保存時は`運航`を`通常`、`条件付→運航`を`条件付き運航`へ正規化します。表示時のみ`条件付き→就航`へ変換します。
 
 ## 主要ファイル
 
@@ -115,6 +116,16 @@ $env:BIGQUERY_TABLE = "flight_weather_logs"
 $env:BIGQUERY_LOCATION = "asia-northeast1"
 .\.venv\Scripts\python.exe build_static.py
 ```
+
+ユーザー提供CSVをSQLiteとBigQueryへ取り込む場合:
+
+```powershell
+.\.venv\Scripts\python.exe import_user_csv.py --csv "C:\path\to\data.csv" --backend both
+.\.venv\Scripts\python.exe backfill_bigquery_visibility.py
+.\.venv\Scripts\python.exe db_snapshot.py export
+```
+
+`import_user_csv.py`は、未知・未確定の`?`または`？`を推測せずスキップします。欠航理由は`status_reason`へ分離します。Archive APIで視程が欠測する場合はHistorical Forecast APIで補完し、`visibility_source`へ出典を保存します。
 
 テストでは外部APIやBigQueryをモックし、認証不要で完走できる状態を維持してください。
 
