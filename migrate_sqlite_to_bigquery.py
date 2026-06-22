@@ -5,7 +5,7 @@ from pathlib import Path
 
 from google.cloud import bigquery
 
-from flight_metadata import flight_display_name
+from flight_metadata import flight_display_name, normalize_database_status
 
 
 DEFAULT_PROJECT = "hachijo-flight-forecast"
@@ -61,7 +61,7 @@ def normalize_row(row, migrated_at=None):
     scheduled_time = row["scheduled_time"]
     if scheduled_time and scheduled_time.count(":") == 1:
         scheduled_time = f"{scheduled_time}:00"
-    status = "通常" if row["status"] == "遅延" else row["status"]
+    status = normalize_database_status(row["status"])
     status_reason = "遅延" if row["status"] == "遅延" else row["status_reason"]
     return {
         "date": row["date"],
