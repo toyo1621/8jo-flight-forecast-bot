@@ -13,6 +13,14 @@ from app_config import (
     LOW_CLOUD_RISK_PERCENT,
     MAX_PROBABILITY,
     MIN_MATCHING_HISTORY_ROWS,
+    PRECIPITATION_PROBABILITY_MULTIPLIER,
+    PRECIPITATION_RISK_MM,
+    SEVERE_GUST_PROBABILITY_MULTIPLIER,
+    SEVERE_GUST_RISK_MS,
+    SEVERE_PRECIPITATION_PROBABILITY_MULTIPLIER,
+    SEVERE_PRECIPITATION_RISK_MM,
+    SEVERE_VISIBILITY_PROBABILITY_MULTIPLIER,
+    SEVERE_VISIBILITY_RISK_KM,
     SOUTHERLY_CAUTION_WIND_MS,
     SOUTHERLY_WIND_MAX_DEGREES,
     SOUTHERLY_WIND_MIN_DEGREES,
@@ -143,7 +151,7 @@ def find_similar_flights(flight_number, weather, limit=10):
         )
     return similar
 
-def predict_flight_probability(wind_direction, wind_speed, wind_gusts, cloud_cover_low, visibility):
+def predict_flight_probability(wind_direction, wind_speed, wind_gusts, cloud_cover_low, visibility, precipitation=None):
     """
     入力された気象条件から、八丈島便の運航確率を予測する。
     
@@ -153,6 +161,7 @@ def predict_flight_probability(wind_direction, wind_speed, wind_gusts, cloud_cov
         wind_gusts (float): 突風 (m/s)
         cloud_cover_low (float): 低層雲量 (%)
         visibility (float): 視程 (km)
+        precipitation (float): 降水量 (mm/h)
         
     Returns:
         dict: 予測結果 (probability, alert_required, warning_msg, data_count, step_used)
@@ -215,8 +224,18 @@ def predict_flight_probability(wind_direction, wind_speed, wind_gusts, cloud_cov
     
     # 2. 霧・低層雲量による減算補正
     if visibility is not None and visibility < VISIBILITY_RISK_KM:
-        prob *= VISIBILITY_PROBABILITY_MULTIPLIER
+        if visibility < SEVERE_VISIBILITY_RISK_KM:
+            prob *= SEVERE_VISIBILITY_PROBABILITY_MULTIPLIER
+        else:
+            prob *= VISIBILITY_PROBABILITY_MULTIPLIER
         warnings.append(f"視程不良リスク ({visibility} km)")
+
+    if precipitation is not None and precipitation >= PRECIPITATION_RISK_MM:
+        if precipitation >= SEVERE_PRECIPITATION_RISK_MM:
+            prob *= SEVERE_PRECIPITATION_PROBABILITY_MULTIPLIER
+        else:
+            prob *= PRECIPITATION_PROBABILITY_MULTIPLIER
+        warnings.append(f"降水注意 (予報降水量: {precipitation} mm/h)")
 
     if cloud_cover_low is not None and cloud_cover_low > LOW_CLOUD_RISK_PERCENT:
         prob *= LOW_CLOUD_PROBABILITY_MULTIPLIER
@@ -225,7 +244,10 @@ def predict_flight_probability(wind_direction, wind_speed, wind_gusts, cloud_cov
     # 3. 台風・強風による補正
     is_windy = False
     if wind_gusts is not None and wind_gusts >= GUST_RISK_MS:
-        prob *= WIND_PROBABILITY_MULTIPLIER
+        if wind_gusts >= SEVERE_GUST_RISK_MS:
+            prob *= SEVERE_GUST_PROBABILITY_MULTIPLIER
+        else:
+            prob *= WIND_PROBABILITY_MULTIPLIER
         is_windy = True
         warnings.append(f"突風注意 (予報突風: {wind_gusts} m/s)")
     elif wind_speed is not None and wind_speed >= STRONG_WIND_RISK_MS:

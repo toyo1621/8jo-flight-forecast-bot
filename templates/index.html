@@ -87,6 +87,7 @@
                     <div><dt>最大瞬間風速</dt><dd>{{ flight.wind_gusts }} m/s</dd></div>
                     <div><dt>低層雲量</dt><dd>{{ flight.cloud_cover_low|round|int }}%</dd></div>
                     <div><dt>視程</dt><dd>{{ flight.visibility }} km</dd></div>
+                    <div><dt>降水量</dt><dd>{% if flight.precipitation is not none %}{{ flight.precipitation }} mm/h{% else %}欠測{% endif %}</dd></div>
                     <div><dt>主予報(Open-Meteo)での運航確率</dt><dd><span class="probability-inline-symbol">{{ flight.probability_symbol }}</span>{{ flight.probability }}%</dd></div>
                     {% for model in flight.model_probabilities %}
                       <div><dt>{{ model.label }}予報での参考運航確率</dt><dd><span class="probability-inline-symbol">{{ model.symbol }}</span>{{ model.probability }}%</dd></div>

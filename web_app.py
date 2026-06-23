@@ -34,7 +34,7 @@ def _fetch_deterministic_forecast(model=None):
     params = {
         "latitude": HACHIJO_AIRPORT_LATITUDE,
         "longitude": HACHIJO_AIRPORT_LONGITUDE,
-        "hourly": "wind_speed_10m,wind_direction_10m,wind_gusts_10m,cloud_cover_low,visibility",
+        "hourly": "wind_speed_10m,wind_direction_10m,wind_gusts_10m,cloud_cover_low,visibility,precipitation",
         "wind_speed_unit": "ms",
         "timezone": "Asia/Tokyo",
         "forecast_days": FORECAST_DAYS,
@@ -55,6 +55,7 @@ def _fetch_deterministic_forecast(model=None):
         "wind_gusts_10m",
         "cloud_cover_low",
         "visibility",
+        "precipitation",
     }
     if not times or any(len(hourly.get(key, [])) != len(times) for key in required):
         raise ValueError("気象データの構造が正しくありません。")
@@ -67,6 +68,7 @@ def _fetch_deterministic_forecast(model=None):
             "wind_gusts": hourly["wind_gusts_10m"][index],
             "cloud_cover_low": hourly["cloud_cover_low"][index],
             "visibility": _meters_to_km(hourly["visibility"][index]),
+            "precipitation": hourly["precipitation"][index],
         }
     return weather_by_time
 
@@ -83,12 +85,12 @@ def fetch_ensemble_forecast():
     model_variables = (
         (
             "ecmwf_ifs025",
-            ("wind_speed_10m", "wind_direction_10m", "wind_gusts_10m", "cloud_cover_low"),
+            ("wind_speed_10m", "wind_direction_10m", "wind_gusts_10m", "cloud_cover_low", "precipitation"),
             31,
         ),
         (
             "gfs_seamless",
-            ("wind_speed_10m", "wind_direction_10m", "wind_gusts_10m", "visibility"),
+            ("wind_speed_10m", "wind_direction_10m", "wind_gusts_10m", "visibility", "precipitation"),
             31,
         ),
     )
@@ -179,7 +181,7 @@ def _prepare_reference_weather(candidate, fallback):
     if candidate is None:
         return None
     prepared = dict(candidate)
-    for field in ("wind_direction", "wind_speed"):
+    for field in ("wind_direction", "wind_speed", "wind_gusts", "cloud_cover_low", "visibility", "precipitation"):
         if prepared.get(field) is None:
             prepared[field] = fallback.get(field)
     if prepared.get("wind_direction") is None or prepared.get("wind_speed") is None:
@@ -233,6 +235,7 @@ def calculate_model_reference_probabilities(ensemble_members, baseline_weather=N
 RISK_LABELS = (
     "南風注意",
     "視程不良リスク",
+    "降水注意",
     "低層雲の影響注意",
     "突風注意",
     "強風注意",
