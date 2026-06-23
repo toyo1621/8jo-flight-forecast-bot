@@ -361,6 +361,10 @@ def test_index_renders_forecast():
     assert "羽田→八丈島便の就航傾向を、過去の運航実績と天気から見やすくするサイトです。" in body
     assert "GFS(アメリカ海洋大気庁)・ECMWF(欧州中期予報センター)" in body
     assert "主予報はOpen-Meteo標準予報を使用しています。" in body
+    assert "更新 " in body
+    assert "(6時間ごとに更新)" in body
+    assert "青: 就航確率60%以上" in body
+    assert "オレンジ: 就航確率60%未満" in body
     assert "主予報: Open-Meteo標準予報" in body
     assert "主予報(Open-Meteo)での就航確率" in body
     assert "天候信頼度" in body
