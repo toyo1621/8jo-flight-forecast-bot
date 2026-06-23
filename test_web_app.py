@@ -3,7 +3,9 @@ from unittest.mock import Mock, patch
 
 from flask import render_template
 
+from app_config import LOW_PROBABILITY_THRESHOLD
 from forecast_engine import MAX_PROBABILITY, find_similar_flights, predict_flight_probability
+from presentation import decorate_flight_for_display
 from web_app import (
     BASE_DIR,
     FORECAST_DAYS,
@@ -16,6 +18,7 @@ from web_app import (
     _prepare_reference_weather,
     _with_model_difference_warning,
     fetch_jma_forecast,
+    load_forecast_bundle,
     wind_direction_label,
 )
 
@@ -315,7 +318,8 @@ def test_orange_flight_style_depends_on_probability_below_sixty():
     template = (BASE_DIR / "templates" / "index.html").read_text(encoding="utf-8")
     stylesheet = (BASE_DIR / "static" / "styles.css").read_text(encoding="utf-8")
 
-    assert "{% if flight.probability < 60 %} flight--low-probability{% endif %}" in template
+    assert "{% if flight.is_low_probability %} flight--low-probability{% endif %}" in template
+    assert LOW_PROBABILITY_THRESHOLD == 60.0
     assert "flight.alert_required" not in template
     assert ".flight--low-probability .probability" in stylesheet
     assert ".flight--alert" not in stylesheet
@@ -326,29 +330,24 @@ def test_flight_card_shows_model_reference_probabilities_with_threshold_styles()
     stylesheet = (BASE_DIR / "static" / "styles.css").read_text(encoding="utf-8")
 
     assert 'class="model-probabilities"' in template
-    assert '<img class="model-flag" src="static/flags/us.svg" alt="US">GFS' in template
-    assert '<img class="model-flag" src="static/flags/eu.svg" alt="EU">ECMWF' in template
-    assert '<img class="model-flag" src="static/flags/jp.svg" alt="JP">JMA' in template
-    assert "{% if flight.gfs_probability >= 60 %}ok{% else %}low{% endif %}" in template
-    assert "{% if flight.ecmwf_probability >= 60 %}ok{% else %}low{% endif %}" in template
-    assert "{% if flight.jma_probability >= 60 %}ok{% else %}low{% endif %}" in template
+    assert "{% for model in flight.model_probabilities %}" in template
+    assert 'src="{{ model.flag_path }}"' in template
+    assert "model-probability--{{ model.tone }}" in template
     assert "(Open-Meteo主予報)" in template
     assert "詳しく見る(運航実績・気象情報)" in template
     assert ".model-probability--ok" in stylesheet
     assert ".model-probability--low" in stylesheet
     assert ".flight-meta" in stylesheet
     assert ".model-flag" in stylesheet
-    assert "probability_symbol(flight.probability)" in template
-    assert "probability_symbol(flight.gfs_probability)" in template
-    assert "probability_symbol(flight.ecmwf_probability)" in template
-    assert "probability_symbol(flight.jma_probability)" in template
+    assert "flight.probability_symbol" in template
+    assert "model.symbol" in template
     assert ".probability-symbol" in stylesheet
     assert ".probability-inline-symbol" in stylesheet
     assert ".probability small" in stylesheet
 
 
 def test_probability_symbol_thresholds_render_in_template():
-    flight = {
+    flight = decorate_flight_for_display({
         "date": "2026-06-20",
         "number": "ANA1891(1便)",
         "raw_number": "ANA1891",
@@ -365,7 +364,7 @@ def test_probability_symbol_thresholds_render_in_template():
         "cloud_cover_low": 20.0,
         "visibility": 15.0,
         "similar_history": [],
-    }
+    })
     day = {
         "date": "2026-06-20",
         "date_label": "6/20",
@@ -386,6 +385,82 @@ def test_flag_icon_assets_exist():
     assert (BASE_DIR / "static" / "flags" / "us.svg").exists()
     assert (BASE_DIR / "static" / "flags" / "eu.svg").exists()
     assert (BASE_DIR / "static" / "flags" / "jp.svg").exists()
+
+
+def test_decorate_flight_for_display_builds_model_rows():
+    flight = decorate_flight_for_display(
+        {
+            "probability": 88.0,
+            "gfs_probability": 75.0,
+            "ecmwf_probability": 59.9,
+            "jma_probability": None,
+        }
+    )
+
+    assert flight["probability_symbol"] == "〇"
+    assert flight["is_low_probability"] is False
+    assert flight["model_probabilities"] == [
+        {
+            "label": "GFS",
+            "probability": 75.0,
+            "symbol": "〇",
+            "tone": "ok",
+            "flag_path": "static/flags/us.svg",
+            "flag_alt": "US",
+        },
+        {
+            "label": "ECMWF",
+            "probability": 59.9,
+            "symbol": "△",
+            "tone": "low",
+            "flag_path": "static/flags/eu.svg",
+            "flag_alt": "EU",
+        },
+    ]
+
+
+def test_load_forecast_bundle_uses_cached_main_forecast_on_api_error():
+    cached = {
+        "weather": SAMPLE_WEATHER,
+        "jma": {"2026-06-20T08:00": SAMPLE_WEATHER["2026-06-20T08:00"]},
+        "ensembles": {"2026-06-20T08:00": []},
+    }
+
+    with (
+        patch("web_app.fetch_forecast", side_effect=ValueError("bad data")),
+        patch("web_app.load_cached_forecast_bundle", return_value=cached),
+        patch("web_app.save_forecast_bundle") as save,
+    ):
+        bundle = load_forecast_bundle()
+
+    assert bundle["source"] == "cache"
+    assert bundle["weather"] == SAMPLE_WEATHER
+    assert "前回取得した予報データ" in bundle["notices"][0]
+    save.assert_not_called()
+
+
+def test_load_forecast_bundle_reuses_cached_optional_sources():
+    cached = {
+        "weather": SAMPLE_WEATHER,
+        "jma": {"cached-jma": {"wind_direction": 180.0, "wind_speed": 5.0}},
+        "ensembles": {"cached-ensemble": []},
+    }
+
+    with (
+        patch("web_app.fetch_forecast", return_value=SAMPLE_WEATHER),
+        patch("web_app.fetch_jma_forecast", side_effect=ValueError("bad jma")),
+        patch("web_app.fetch_ensemble_forecast", side_effect=ValueError("bad ensemble")),
+        patch("web_app.load_cached_forecast_bundle", return_value=cached),
+        patch("web_app.save_forecast_bundle") as save,
+    ):
+        bundle = load_forecast_bundle()
+
+    assert bundle["source"] == "live"
+    assert bundle["jma"] == cached["jma"]
+    assert bundle["ensembles"] == cached["ensembles"]
+    assert "JMA予報は前回取得データ" in bundle["notices"][0]
+    assert "アンサンブル予報は前回取得データ" in bundle["notices"][1]
+    save.assert_called_once_with(SAMPLE_WEATHER, cached["jma"], cached["ensembles"])
 
 
 def test_select_evenly_balances_ensemble_members():
@@ -455,13 +530,14 @@ def test_history_template_includes_flight_name_and_visibility_fallback():
 
     assert "{{ history.date_label }} {{ history.flight_display_name }}" in template
     assert "/ 視程 {% if history.visibility is not none %}{{ history.visibility }} km{% else %}欠測{% endif %}" in template
-    assert "GFS予報での参考運航確率" in template
-    assert "ECMWF予報での参考運航確率" in template
-    assert "JMA予報での参考運航確率" in template
+    assert "{{ model.label }}予報での参考運航確率" in template
 
 
 def test_index_handles_weather_api_error():
-    with patch("web_app.fetch_forecast", side_effect=ValueError("bad data")):
+    with (
+        patch("web_app.fetch_forecast", side_effect=ValueError("bad data")),
+        patch("web_app.load_cached_forecast_bundle", return_value=None),
+    ):
         response = app.test_client().get("/")
 
     assert response.status_code == 200

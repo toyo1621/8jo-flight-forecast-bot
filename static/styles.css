@@ -104,6 +104,12 @@ h1 {
   color: #ffd2c9;
 }
 
+.error--notice {
+  border-color: rgba(94, 196, 255, .45);
+  background: rgba(94, 196, 255, .12);
+  color: #eff8ff;
+}
+
 .days { display: grid; gap: 52px; }
 
 .day {

@@ -29,6 +29,8 @@ GitHub Pagesは`main`へのpush時、手動実行時、6時間ごとのスケジ
 
 `forecast_engine.predict_flight_probability()`を変更するときは、以下を意図せず変えないでください。
 
+しきい値や補正倍率は`app_config.py`に集約しています。数値を変える場合は、コード中の直書きではなくこのファイルを更新してください。
+
 1. 過去データを風向差30度以内・風速差3 m/s以内で検索します。
 2. 5件未満なら45度以内・5 m/s以内へ広げます。
 3. それでも5件未満なら全履歴を使います。
@@ -77,6 +79,7 @@ GitHub Pagesは`main`へのpush時、手動実行時、6時間ごとのスケジ
 - 詳細画面は`詳しく見る(運航実績・気象情報)`から開きます。
 - 詳細画面の確率ラベルは「主予報(Open-Meteo)での運航確率」「GFS予報での参考運航確率」「ECMWF予報での参考運航確率」「JMA予報での参考運航確率」です。
 - CSSやJavaScriptを変更したら、`templates/index.html`のクエリ文字列を更新してGitHub Pagesのキャッシュを回避します。
+- 便カード・詳細画面に渡す表示用フィールドは`presentation.py`で整形します。テンプレートに確率しきい値やモデル別表示の分岐を増やさないでください。
 
 ## ステータス表記
 
@@ -90,6 +93,9 @@ GitHub Pagesは`main`へのpush時、手動実行時、6時間ごとのスケジ
 
 | ファイル | 責務 |
 | --- | --- |
+| `app_config.py` | 予報日数、確率しきい値、補正倍率、信頼度境界などの共通設定 |
+| `forecast_cache.py` | Open-Meteo取得失敗時に使う前回予報キャッシュ |
+| `presentation.py` | 便カード・詳細画面向けの表示用データ整形 |
 | `forecast_engine.py` | 主確率、警告、類似実績 |
 | `web_app.py` | 気象API、62メンバー、JMA比較、表示用データ |
 | `bigquery_storage.py` | BigQuery取得・`date + flight_number`でのMERGE |
@@ -139,6 +145,7 @@ $env:BIGQUERY_LOCATION = "asia-northeast1"
 - Secret: `ODPT_API_KEY`
 - Repository Variables: `GCP_WORKLOAD_IDENTITY_PROVIDER`、`GCP_SERVICE_ACCOUNT`
 - GitHub ActionsはWorkload Identity FederationでGoogle Cloudへ認証します。サービスアカウント鍵をリポジトリへ保存しないでください。
+- Pages更新では`.cache/forecast_bundle.json`をActions Cacheに保存し、Open-Meteoの主予報取得に失敗した場合は前回成功データを使って公開ページを維持します。
 
 ## 変更時チェックリスト
 
