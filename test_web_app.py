@@ -11,6 +11,7 @@ from web_app import (
     calculate_model_reference_probabilities,
     fallback_confidence,
     _select_evenly,
+    _prepare_reference_weather,
     _with_model_difference_warning,
     fetch_jma_forecast,
     wind_direction_label,
@@ -74,6 +75,39 @@ def test_jma_forecast_requests_jma_seamless_model():
     response.raise_for_status.assert_called_once()
     assert get.call_args.kwargs["params"]["models"] == "jma_seamless"
     assert result["2026-06-20T08:00"]["visibility"] == 15.0
+
+
+def test_jma_reference_uses_main_forecast_for_missing_required_values():
+    candidate = {
+        "wind_direction": None,
+        "wind_speed": 5.0,
+        "wind_gusts": None,
+        "cloud_cover_low": 20.0,
+        "visibility": None,
+    }
+
+    result = _prepare_reference_weather(candidate, SAMPLE_WEATHER["2026-06-20T08:00"])
+
+    assert result["wind_direction"] == 180.0
+    assert result["wind_speed"] == 5.0
+    assert result["wind_gusts"] is None
+
+
+def test_daily_forecast_skips_main_weather_without_required_values():
+    weather = {
+        "2026-06-20T08:00": {
+            **SAMPLE_WEATHER["2026-06-20T08:00"],
+            "wind_direction": None,
+        }
+    }
+
+    days = build_daily_forecasts(
+        weather,
+        reference_date=date(2026, 6, 19),
+        current_time=datetime(2026, 6, 19, 12, 0, tzinfo=JST),
+    )
+
+    assert days == []
 
 
 def test_model_difference_warning_uses_twenty_point_boundary():
