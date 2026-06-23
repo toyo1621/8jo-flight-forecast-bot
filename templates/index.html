@@ -1,3 +1,10 @@
+{%- macro probability_symbol(value) -%}
+  {%- if value >= 95 -%}◎
+  {%- elif value >= 75 -%}〇
+  {%- elif value >= 35 -%}△
+  {%- else -%}×
+  {%- endif -%}
+{%- endmacro -%}
 <!doctype html>
 <html lang="ja">
 <head>
@@ -5,7 +12,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="description" content="羽田→八丈島便の運航傾向を、過去の運航実績と天気から見やすくするサイトです。">
   <title>八丈島運航統計予測</title>
-  <link rel="stylesheet" href="static/styles.css?v=20260623-5">
+  <link rel="stylesheet" href="static/styles.css?v=20260623-6">
   <script src="static/app.js?v=20260619-1" defer></script>
 </head>
 <body>
@@ -50,21 +57,21 @@
                   <p class="flight-number">{{ flight.number }}</p>
                   <p class="flight-time">{{ flight.time }} 着</p>
                 </div>
-                <p class="probability"><strong>{{ flight.probability }}</strong><span>%</span><small>(Open-Meteo主予報)</small></p>
+                <p class="probability"><span class="probability-symbol">{{ probability_symbol(flight.probability) }}</span><strong>{{ flight.probability }}</strong><span class="probability-unit">%</span><small>(Open-Meteo主予報)</small></p>
                 <div class="model-probabilities" aria-label="モデル別の参考運航確率">
                   {% if flight.gfs_probability is not none %}
                     <p class="model-probability model-probability--{% if flight.gfs_probability >= 60 %}ok{% else %}low{% endif %}">
-                      <span><img class="model-flag" src="static/flags/us.svg" alt="US">GFS</span><strong>{{ flight.gfs_probability }}%</strong>
+                      <span><img class="model-flag" src="static/flags/us.svg" alt="US">GFS</span><strong><span class="probability-inline-symbol">{{ probability_symbol(flight.gfs_probability) }}</span>{{ flight.gfs_probability }}%</strong>
                     </p>
                   {% endif %}
                   {% if flight.ecmwf_probability is not none %}
                     <p class="model-probability model-probability--{% if flight.ecmwf_probability >= 60 %}ok{% else %}low{% endif %}">
-                      <span><img class="model-flag" src="static/flags/eu.svg" alt="EU">ECMWF</span><strong>{{ flight.ecmwf_probability }}%</strong>
+                      <span><img class="model-flag" src="static/flags/eu.svg" alt="EU">ECMWF</span><strong><span class="probability-inline-symbol">{{ probability_symbol(flight.ecmwf_probability) }}</span>{{ flight.ecmwf_probability }}%</strong>
                     </p>
                   {% endif %}
                   {% if flight.jma_probability is not none %}
                     <p class="model-probability model-probability--{% if flight.jma_probability >= 60 %}ok{% else %}low{% endif %}">
-                      <span><img class="model-flag" src="static/flags/jp.svg" alt="JP">JMA</span><strong>{{ flight.jma_probability }}%</strong>
+                      <span><img class="model-flag" src="static/flags/jp.svg" alt="JP">JMA</span><strong><span class="probability-inline-symbol">{{ probability_symbol(flight.jma_probability) }}</span>{{ flight.jma_probability }}%</strong>
                     </p>
                   {% endif %}
                 </div>
@@ -90,10 +97,10 @@
                     <div><dt>最大瞬間風速</dt><dd>{{ flight.wind_gusts }} m/s</dd></div>
                     <div><dt>低層雲量</dt><dd>{{ flight.cloud_cover_low|round|int }}%</dd></div>
                     <div><dt>視程</dt><dd>{{ flight.visibility }} km</dd></div>
-                    <div><dt>主予報(Open-Meteo)での運航確率</dt><dd>{{ flight.probability }}%</dd></div>
-                    {% if flight.gfs_probability is not none %}<div><dt>GFS予報での参考運航確率</dt><dd>{{ flight.gfs_probability }}%</dd></div>{% endif %}
-                    {% if flight.ecmwf_probability is not none %}<div><dt>ECMWF予報での参考運航確率</dt><dd>{{ flight.ecmwf_probability }}%</dd></div>{% endif %}
-                    {% if flight.jma_probability is not none %}<div><dt>JMA予報での参考運航確率</dt><dd>{{ flight.jma_probability }}%</dd></div>{% endif %}
+                    <div><dt>主予報(Open-Meteo)での運航確率</dt><dd><span class="probability-inline-symbol">{{ probability_symbol(flight.probability) }}</span>{{ flight.probability }}%</dd></div>
+                    {% if flight.gfs_probability is not none %}<div><dt>GFS予報での参考運航確率</dt><dd><span class="probability-inline-symbol">{{ probability_symbol(flight.gfs_probability) }}</span>{{ flight.gfs_probability }}%</dd></div>{% endif %}
+                    {% if flight.ecmwf_probability is not none %}<div><dt>ECMWF予報での参考運航確率</dt><dd><span class="probability-inline-symbol">{{ probability_symbol(flight.ecmwf_probability) }}</span>{{ flight.ecmwf_probability }}%</dd></div>{% endif %}
+                    {% if flight.jma_probability is not none %}<div><dt>JMA予報での参考運航確率</dt><dd><span class="probability-inline-symbol">{{ probability_symbol(flight.jma_probability) }}</span>{{ flight.jma_probability }}%</dd></div>{% endif %}
                   </dl>
                 </section>
                 <section class="dialog-section">
