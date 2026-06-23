@@ -21,7 +21,7 @@ jobs:
     steps:
       # 1. リポジトリのコードを取得
       - name: Checkout repository
-        uses: actions/checkout@v5
+        uses: actions/checkout@v7
         with:
           # 最新の変更を反映してプッシュするために履歴を全取得
           fetch-depth: 0
@@ -79,7 +79,7 @@ jobs:
 
       - name: Upload data quality report
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: collection-data-quality-report
           path: data_quality_report.md
