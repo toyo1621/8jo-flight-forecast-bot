@@ -1,0 +1,53 @@
+name: Data correction
+description: Report a flight operation or weather data correction.
+title: "Data correction: YYYY-MM-DD ANA189X"
+labels: ["data-quality"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        過去実績の修正・欠航理由の追加に使います。推測ではなく、確認できた情報だけを書いてください。
+  - type: input
+    id: date
+    attributes:
+      label: Date
+      description: YYYY-MM-DD
+      placeholder: "2026-02-25"
+    validations:
+      required: true
+  - type: dropdown
+    id: flight
+    attributes:
+      label: Flight
+      options:
+        - ANA1891(1便)
+        - ANA1893(2便)
+        - ANA1895(3便)
+        - 全便
+    validations:
+      required: true
+  - type: dropdown
+    id: status
+    attributes:
+      label: Correct status
+      options:
+        - 運航
+        - 運航(条件付)
+        - 欠航
+        - 条件付き→引返欠航
+        - その他
+    validations:
+      required: true
+  - type: input
+    id: reason
+    attributes:
+      label: Reason
+      description: 欠航・引返欠航の場合は理由を書いてください。
+      placeholder: "強風"
+  - type: textarea
+    id: source
+    attributes:
+      label: Source / note
+      description: 確認元や補足を書いてください。
+    validations:
+      required: true
