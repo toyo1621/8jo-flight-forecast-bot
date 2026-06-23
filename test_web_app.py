@@ -1,6 +1,8 @@
 from datetime import date, datetime, timedelta, timezone
 from unittest.mock import Mock, patch
 
+from flask import render_template
+
 from forecast_engine import MAX_PROBABILITY, find_similar_flights, predict_flight_probability
 from web_app import (
     BASE_DIR,
@@ -336,7 +338,48 @@ def test_flight_card_shows_model_reference_probabilities_with_threshold_styles()
     assert ".model-probability--low" in stylesheet
     assert ".flight-meta" in stylesheet
     assert ".model-flag" in stylesheet
+    assert "probability_symbol(flight.probability)" in template
+    assert "probability_symbol(flight.gfs_probability)" in template
+    assert "probability_symbol(flight.ecmwf_probability)" in template
+    assert "probability_symbol(flight.jma_probability)" in template
+    assert ".probability-symbol" in stylesheet
+    assert ".probability-inline-symbol" in stylesheet
     assert ".probability small" in stylesheet
+
+
+def test_probability_symbol_thresholds_render_in_template():
+    flight = {
+        "date": "2026-06-20",
+        "number": "ANA1891(1便)",
+        "raw_number": "ANA1891",
+        "time": "08:30",
+        "probability": 96.0,
+        "gfs_probability": 76.0,
+        "ecmwf_probability": 35.0,
+        "jma_probability": 34.9,
+        "warning_msg": "なし",
+        "wind_direction": 180.0,
+        "wind_direction_label": "南",
+        "wind_speed": 4.0,
+        "wind_gusts": 7.0,
+        "cloud_cover_low": 20.0,
+        "visibility": 15.0,
+        "similar_history": [],
+    }
+    day = {
+        "date": "2026-06-20",
+        "date_label": "6/20",
+        "weekday": "土",
+        "flights": [flight],
+        "confidence": {"grade": "A", "label": "10ポイント以内", "source": "lead_time", "lead_days": 1},
+    }
+    with app.test_request_context("/"):
+        body = render_template("index.html", days=[day], error=None, updated_at="2026/06/20 00:00")
+
+    assert "◎</span><strong>96.0" in body
+    assert "〇</span>76.0%" in body
+    assert "△</span>35.0%" in body
+    assert "×</span>34.9%" in body
 
 
 def test_flag_icon_assets_exist():
