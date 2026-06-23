@@ -649,6 +649,7 @@ def test_index_renders_forecast():
     assert "なぜ作ったか" in body
     assert "ざっくりどういう仕組みか" in body
     assert "GFS 31通りとECMWF 31通り、合計62通り" in body
+    assert "短期はJMA参考値と主予報との差を特に確認" in body
     assert "運航確率60%未満の便はオレンジ" in body
     assert "GitHub Actionsで6時間ごとに再計算" in body
     assert "気象業法への配慮" in body
