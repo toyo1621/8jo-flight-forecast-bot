@@ -15,7 +15,7 @@ def _cache_file():
     return Path(os.getenv("FORECAST_CACHE_FILE", DEFAULT_CACHE_FILE))
 
 
-def save_forecast_bundle(weather, jma=None, ensembles=None, cache_file=None):
+def save_forecast_bundle(weather, jma=None, ensembles=None, haneda=None, cache_file=None):
     path = Path(cache_file) if cache_file is not None else _cache_file()
     path.parent.mkdir(parents=True, exist_ok=True)
     payload = {
@@ -24,6 +24,7 @@ def save_forecast_bundle(weather, jma=None, ensembles=None, cache_file=None):
         "weather": weather,
         "jma": jma or {},
         "ensembles": ensembles or {},
+        "haneda": haneda or {},
     }
     path.write_text(json.dumps(payload, ensure_ascii=False), encoding="utf-8")
 
