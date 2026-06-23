@@ -170,6 +170,18 @@ def _meters_to_km(value):
     return round(value / 1000, 1) if value is not None else None
 
 
+def _prepare_reference_weather(candidate, fallback):
+    if candidate is None:
+        return None
+    prepared = dict(candidate)
+    for field in ("wind_direction", "wind_speed"):
+        if prepared.get(field) is None:
+            prepared[field] = fallback.get(field)
+    if prepared.get("wind_direction") is None or prepared.get("wind_speed") is None:
+        return None
+    return prepared
+
+
 def calculate_confidence(ensemble_members, baseline_weather=None):
     baseline_weather = baseline_weather or {}
     probabilities = sorted(
@@ -297,10 +309,14 @@ def build_daily_forecasts(weather_by_time, ensembles_by_time=None, reference_dat
                 continue
             timestamp = f"{date_string}T{flight['forecast_hour']:02d}:00"
             weather = weather_by_time.get(timestamp)
-            if weather is None:
+            if (
+                weather is None
+                or weather.get("wind_direction") is None
+                or weather.get("wind_speed") is None
+            ):
                 continue
             result = predict_flight_probability(**weather)
-            jma_weather = jma_by_time.get(timestamp)
+            jma_weather = _prepare_reference_weather(jma_by_time.get(timestamp), weather)
             jma_probability = (
                 predict_flight_probability(**jma_weather)["probability"]
                 if jma_weather is not None
