@@ -314,6 +314,16 @@ def test_stylesheet_url_has_cache_buster():
     assert 'href="static/styles.css?v=' in template
 
 
+def test_template_includes_quick_guide_for_non_experts():
+    template = (BASE_DIR / "templates" / "index.html").read_text(encoding="utf-8")
+    stylesheet = (BASE_DIR / "static" / "styles.css").read_text(encoding="utf-8")
+
+    assert 'class="quick-guide"' in template
+    assert "◎95%以上 / 〇75%以上 / △35%以上 / ×35%未満" in template
+    assert "GFS・ECMWF・JMAは別モデルで計算した参考値" in template
+    assert ".quick-guide" in stylesheet
+
+
 def test_orange_flight_style_depends_on_probability_below_sixty():
     template = (BASE_DIR / "templates" / "index.html").read_text(encoding="utf-8")
     stylesheet = (BASE_DIR / "static" / "styles.css").read_text(encoding="utf-8")
@@ -549,5 +559,18 @@ def test_health():
 
     assert response.status_code == 200
     assert response.get_json() == {"status": "ok"}
+
+
+def test_workflows_run_tests_and_data_quality_reports():
+    ci = (BASE_DIR / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8")
+    pages = (BASE_DIR / ".github" / "workflows" / "pages.yml").read_text(encoding="utf-8")
+    collection = (BASE_DIR / ".github" / "workflows" / "data_collection.yml").read_text(encoding="utf-8")
+
+    assert "python -m pytest -q" in ci
+    assert "python data_quality.py --backend sqlite" in ci
+    assert "python data_quality.py --backend bigquery" in pages
+    assert "python data_quality.py --backend bigquery" in collection
+    assert "actions/upload-artifact@v4" in pages
+    assert "actions/upload-artifact@v4" in collection
 
 
