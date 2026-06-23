@@ -196,7 +196,9 @@ h1 {
 
 .probability { margin: 24px 0 18px; color: var(--blue); }
 .probability strong { font-size: clamp(2.8rem, 5.8vw, 4.05rem); line-height: 1; letter-spacing: -.065em; text-shadow: 0 0 24px rgba(90, 199, 255, .3); }
-.probability span { margin-left: 4px; font-size: 1.12rem; font-weight: 750; }
+.probability-unit { margin-left: 4px; font-size: 1.12rem; font-weight: 750; }
+.probability-symbol { display: inline-block; min-width: 1.25em; margin-right: 7px; color: currentColor; font-size: clamp(1.65rem, 3.4vw, 2.1rem); font-weight: 900; line-height: 1; vertical-align: .18em; text-shadow: 0 0 18px currentColor; }
+.probability-inline-symbol { display: inline-block; min-width: 1.35em; margin-right: 4px; color: currentColor; font-weight: 900; }
 .probability small { display: block; margin-top: 5px; color: #fff; font-size: .66rem; font-weight: 700; letter-spacing: .04em; }
 .flight--low-probability .probability { color: var(--amber); }
 
