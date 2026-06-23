@@ -513,7 +513,8 @@ def test_index_renders_forecast():
     body = response.get_data(as_text=True)
     assert "八丈島運航統計予測" in body
     assert "羽田→八丈島便の運航傾向を、過去の運航実績と天気から見やすくするサイトです。" in body
-    assert "GFS(アメリカ海洋大気庁)・ECMWF(欧州中期予報センター)" in body
+    assert "天候信頼度は、Open-Meteo APIからオープンデータ" not in body
+    assert "GFS・ECMWF・JMAは別モデルで計算した参考値" in body
     assert "主予報はOpen-Meteo標準予報を使用しています。" in body
     assert "更新 " in body
     assert "(6時間ごとに更新)" in body
