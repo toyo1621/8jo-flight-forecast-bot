@@ -53,7 +53,7 @@ jobs:
           BIGQUERY_DATASET: flight_forecast
           BIGQUERY_TABLE: flight_weather_logs
           BIGQUERY_LOCATION: asia-northeast1
-        run: python data_quality.py --backend bigquery --format markdown --output data_quality_report.md --fail-on error
+        run: python data_quality.py --backend bigquery --format markdown --output data_quality_report.md --fail-on none
 
       - name: Add data quality report to summary
         if: always()

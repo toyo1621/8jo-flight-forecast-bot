@@ -68,7 +68,7 @@
 
 ### データ品質エラー
 
-Data Quality Report の severity が `error` の場合、Pages更新や収集後チェックを止めます。
+Data Quality Report の severity が `error` の場合、公開ページは可用性を優先して維持しつつ、最優先で調査します。PR/CIでは品質チェックを確認し、運用者が修正判断を行います。
 
 代表例:
 
