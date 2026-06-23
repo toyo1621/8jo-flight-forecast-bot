@@ -3,11 +3,28 @@ import os
 from functools import lru_cache
 from pathlib import Path
 
+from app_config import (
+    FALLBACK_MATCH_ANGLE_DEGREES,
+    FALLBACK_MATCH_WIND_SPEED_MS,
+    GUST_RISK_MS,
+    INITIAL_MATCH_ANGLE_DEGREES,
+    INITIAL_MATCH_WIND_SPEED_MS,
+    LOW_CLOUD_PROBABILITY_MULTIPLIER,
+    LOW_CLOUD_RISK_PERCENT,
+    MAX_PROBABILITY,
+    MIN_MATCHING_HISTORY_ROWS,
+    SOUTHERLY_CAUTION_WIND_MS,
+    SOUTHERLY_WIND_MAX_DEGREES,
+    SOUTHERLY_WIND_MIN_DEGREES,
+    STRONG_WIND_RISK_MS,
+    VISIBILITY_PROBABILITY_MULTIPLIER,
+    VISIBILITY_RISK_KM,
+    WIND_PROBABILITY_MULTIPLIER,
+)
 from bigquery_storage import fetch_detailed_history, fetch_history
 from flight_metadata import flight_display_name, normalize_status
 
 DB_FILE = Path(__file__).resolve().parent / "flights.db"
-MAX_PROBABILITY = 97.0
 
 
 def load_history():
@@ -70,8 +87,8 @@ def _weather_similarity_score(row, weather):
     angle_diff = abs(row["wind_direction"] - weather["wind_direction"])
     angle_diff = min(angle_diff, 360 - angle_diff)
 
-    is_strong_wind = weather.get("wind_speed", 0) >= 10
-    is_strong_gust = weather.get("wind_gusts") is not None and weather["wind_gusts"] >= 15
+    is_strong_wind = weather.get("wind_speed", 0) >= STRONG_WIND_RISK_MS
+    is_strong_gust = weather.get("wind_gusts") is not None and weather["wind_gusts"] >= GUST_RISK_MS
     is_cloudy = weather.get("cloud_cover_low") is not None and weather["cloud_cover_low"] >= 70
     is_low_visibility = weather.get("visibility") is not None and weather["visibility"] <= 10
 
@@ -98,8 +115,8 @@ def _weather_similarity_score(row, weather):
 
     # Keep records on the same side of operationally meaningful thresholds.
     threshold_checks = (
-        (is_strong_wind, row["wind_speed"] >= 10, 2.0),
-        (is_strong_gust, row.get("wind_gusts") is not None and row["wind_gusts"] >= 15, 2.0),
+        (is_strong_wind, row["wind_speed"] >= STRONG_WIND_RISK_MS, 2.0),
+        (is_strong_gust, row.get("wind_gusts") is not None and row["wind_gusts"] >= GUST_RISK_MS, 2.0),
         (is_cloudy, row.get("cloud_cover_low") is not None and row["cloud_cover_low"] >= 70, 2.0),
         (is_low_visibility, row.get("visibility") is not None and row["visibility"] <= 10, 3.0),
     )
@@ -128,7 +145,7 @@ def find_similar_flights(flight_number, weather, limit=10):
 
 def predict_flight_probability(wind_direction, wind_speed, wind_gusts, cloud_cover_low, visibility):
     """
-    入力された気象条件から、八丈島便の就航確率を予測する。
+    入力された気象条件から、八丈島便の運航確率を予測する。
     
     Args:
         wind_direction (float): 風向 (0 - 360 度)
@@ -162,11 +179,11 @@ def predict_flight_probability(wind_direction, wind_speed, wind_gusts, cloud_cov
                 result.append((status,))
         return result
 
-    matching_rows = matches(30.0, 3.0)
-    if len(matching_rows) < 5:
+    matching_rows = matches(INITIAL_MATCH_ANGLE_DEGREES, INITIAL_MATCH_WIND_SPEED_MS)
+    if len(matching_rows) < MIN_MATCHING_HISTORY_ROWS:
         step_used = 2
-        matching_rows = matches(45.0, 5.0)
-    if len(matching_rows) < 5:
+        matching_rows = matches(FALLBACK_MATCH_ANGLE_DEGREES, FALLBACK_MATCH_WIND_SPEED_MS)
+    if len(matching_rows) < MIN_MATCHING_HISTORY_ROWS:
         step_used = 3
         matching_rows = [(status,) for status, _, _ in history]
         
@@ -174,7 +191,7 @@ def predict_flight_probability(wind_direction, wind_speed, wind_gusts, cloud_cov
     if not matching_rows:
         base_prob = MAX_PROBABILITY
     else:
-        # 重み付け: 就航した便=1.0、欠航・引返欠航=0.0
+        # 重み付け: 運航した便=1.0、欠航・引返欠航=0.0
         total = len(matching_rows)
         score_sum = 0.0
         for (status,) in matching_rows:
@@ -189,27 +206,30 @@ def predict_flight_probability(wind_direction, wind_speed, wind_gusts, cloud_cov
     warnings = []
     alert_required = False
 
-    if 120.0 <= wind_direction <= 240.0 and wind_speed >= 9.0:
+    if (
+        SOUTHERLY_WIND_MIN_DEGREES <= wind_direction <= SOUTHERLY_WIND_MAX_DEGREES
+        and wind_speed >= SOUTHERLY_CAUTION_WIND_MS
+    ):
         warnings.append("南風注意")
         alert_required = True
     
     # 2. 霧・低層雲量による減算補正
-    if visibility is not None and visibility < 5.0:
-        prob *= 0.6
+    if visibility is not None and visibility < VISIBILITY_RISK_KM:
+        prob *= VISIBILITY_PROBABILITY_MULTIPLIER
         warnings.append(f"視程不良リスク ({visibility} km)")
-    
-    if cloud_cover_low is not None and cloud_cover_low > 90.0:
-        prob *= 0.9
+
+    if cloud_cover_low is not None and cloud_cover_low > LOW_CLOUD_RISK_PERCENT:
+        prob *= LOW_CLOUD_PROBABILITY_MULTIPLIER
         warnings.append(f"低層雲の影響注意 (低層雲量 {cloud_cover_low}%)")
         
     # 3. 台風・強風による補正
     is_windy = False
-    if wind_gusts is not None and wind_gusts >= 15.0:
-        prob *= 0.9
+    if wind_gusts is not None and wind_gusts >= GUST_RISK_MS:
+        prob *= WIND_PROBABILITY_MULTIPLIER
         is_windy = True
         warnings.append(f"突風注意 (予報突風: {wind_gusts} m/s)")
-    elif wind_speed is not None and wind_speed >= 10.0:
-        prob *= 0.9
+    elif wind_speed is not None and wind_speed >= STRONG_WIND_RISK_MS:
+        prob *= WIND_PROBABILITY_MULTIPLIER
         is_windy = True
         warnings.append(f"強風注意 (予報風速: {wind_speed} m/s)")
         

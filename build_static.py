@@ -3,18 +3,16 @@ import os
 from datetime import datetime
 from pathlib import Path
 
-import requests
 from flask import render_template
 
+from app_config import LOW_PROBABILITY_THRESHOLD
 from db_snapshot import restore_db
 from web_app import (
     BASE_DIR,
     JST,
     app,
     build_daily_forecasts,
-    fetch_ensemble_forecast,
-    fetch_forecast,
-    fetch_jma_forecast,
+    load_forecast_bundle,
 )
 
 
@@ -24,19 +22,12 @@ DIST_DIR = BASE_DIR / "dist"
 def build_site(output_dir=DIST_DIR):
     if os.getenv("FORECAST_DATA_BACKEND", "sqlite").lower() != "bigquery":
         restore_db(BASE_DIR / "flights.db", BASE_DIR / "data" / "flights_dump.sql")
-    weather = fetch_forecast()
-    try:
-        jma = fetch_jma_forecast()
-    except (requests.RequestException, ValueError) as exc:
-        print(f"JMA forecast unavailable; continuing without JMA comparison: {exc}")
-        jma = {}
-    try:
-        ensembles = fetch_ensemble_forecast()
-    except (requests.RequestException, ValueError) as exc:
-        print(f"Ensemble forecast unavailable; using lead-time confidence: {exc}")
-        ensembles = {}
-
-    days = build_daily_forecasts(weather, ensembles, jma_by_time=jma)
+    bundle = load_forecast_bundle(print)
+    days = build_daily_forecasts(
+        bundle["weather"],
+        bundle["ensembles"],
+        jma_by_time=bundle["jma"],
+    )
     updated_at = datetime.now(JST).strftime("%Y/%m/%d %H:%M")
     with app.app_context():
         html = render_template(
@@ -44,6 +35,8 @@ def build_site(output_dir=DIST_DIR):
             days=days,
             error=None,
             updated_at=updated_at,
+            notices=bundle["notices"],
+            low_probability_threshold=LOW_PROBABILITY_THRESHOLD,
         )
 
     output_dir.mkdir(parents=True, exist_ok=True)
