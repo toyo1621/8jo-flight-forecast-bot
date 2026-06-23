@@ -9,14 +9,18 @@ on:
     # GitHubのWeb画面から手動でいつでも即時起動できるボタンを有効化
     # 動作確認や過去データの手動回収時に便利です
 
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: daily-flight-weather-data-collection
+  cancel-in-progress: false
+
 jobs:
   collect-data:
     runs-on: ubuntu-latest
-    
-    # リポジトリへの自動プッシュを許可するための権限設定
-    permissions:
-      contents: read
-      id-token: write
+    timeout-minutes: 20
 
     steps:
       # 1. リポジトリのコードを取得
@@ -32,6 +36,7 @@ jobs:
         with:
           python-version: '3.11'
           cache: 'pip' # pipのキャッシュを有効化して高速化
+          cache-dependency-path: requirements.txt
 
       # 3. 依存ライブラリのインストール
       - name: Install dependencies

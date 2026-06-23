@@ -1,0 +1,36 @@
+name: Operations incident
+description: Report a failed update, stale site, API issue, or suspected security issue.
+title: "Incident: "
+labels: ["operations"]
+body:
+  - type: dropdown
+    id: category
+    attributes:
+      label: Category
+      options:
+        - GitHub Pages update failed
+        - Daily data collection failed
+        - Public site looks stale
+        - Data quality warning
+        - API or BigQuery issue
+        - Suspected credential exposure
+        - Other
+    validations:
+      required: true
+  - type: input
+    id: run_url
+    attributes:
+      label: GitHub Actions run URL
+      description: 関連するActions runがあれば貼ってください。
+  - type: textarea
+    id: observed
+    attributes:
+      label: What happened?
+      description: 見えている症状を短く書いてください。
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected state
+      description: 本来どうなっているべきかを書いてください。
