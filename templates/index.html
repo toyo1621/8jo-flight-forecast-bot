@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="description" content="羽田→八丈島便の運航傾向を、過去の運航実績と天気から見やすくするサイトです。">
   <title>八丈島運航統計予測</title>
-  <link rel="stylesheet" href="static/styles.css?v=20260623-7">
+  <link rel="stylesheet" href="static/styles.css?v=20260623-8">
   <script src="static/app.js?v=20260619-1" defer></script>
 </head>
 <body>
@@ -20,6 +20,10 @@
       <div class="status-legend" aria-label="表示色の説明">
         <span><i class="legend-dot legend-dot--blue" aria-hidden="true"></i>青: 運航確率{{ low_threshold }}%以上</span>
         <span><i class="legend-dot legend-dot--orange" aria-hidden="true"></i>オレンジ: 運航確率{{ low_threshold }}%未満</span>
+      </div>
+      <div class="quick-guide" aria-label="画面の見方">
+        <p><strong>見方:</strong> ◎95%以上 / 〇75%以上 / △35%以上 / ×35%未満。GFS・ECMWF・JMAは別モデルで計算した参考値です。</p>
+        <p>天候信頼度は、複数の天気予測で結果がどれくらいブレるかを示します。Aに近いほどブレが小さい見込みです。</p>
       </div>
       <p class="confidence-help">天候信頼度は、Open-Meteo APIからオープンデータであるGFS(アメリカ海洋大気庁)・ECMWF(欧州中期予報センター)のアンサンブル予報をもとに、予測される天候のばらつきから判定しています。Aに近いほどブレが小さい見込みです。気象庁(JMA)の予報は独立した参考値として比較しています。</p>
     </header>
