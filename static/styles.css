@@ -304,6 +304,12 @@ footer {
 .weather-grid div { padding: 13px 14px; background: var(--panel-strong); }
 .weather-grid dt { color: #fff; font-size: .66rem; }
 .weather-grid dd { margin: 5px 0 0; color: #f2faff; font-size: .85rem; font-weight: 700; }
+.model-risk-list { display: grid; gap: 8px; }
+.model-risk { display: grid; grid-template-columns: 110px 1fr; gap: 12px; align-items: center; padding: 12px 14px; border: 1px solid rgba(255, 255, 255, .14); border-radius: 7px; background: rgba(8, 31, 48, .88); }
+.model-risk strong { display: inline-flex; align-items: center; gap: 7px; color: #fff; font-size: .8rem; letter-spacing: .04em; }
+.model-risk span { color: #fff; font-size: .76rem; line-height: 1.55; }
+.model-risk--alert { border-color: rgba(255, 196, 94, .3); background: rgba(255, 196, 94, .08); }
+.model-risk--alert span { color: #ffd083; }
 .history-list { display: grid; gap: 8px; }
 .history-item { padding: 13px 14px; border: 1px solid var(--line); border-radius: 7px; background: rgba(8, 31, 48, .88); }
 .history-summary { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
@@ -341,6 +347,7 @@ footer {
   .probability small { text-align: right; }
   .model-probability { gap: 8px; padding: 8px; }
   .model-probability span { letter-spacing: .02em; }
+  .model-risk { grid-template-columns: 1fr; gap: 6px; }
   .about-block { padding: 22px; }
   .dialog-header, .dialog-section { padding-right: 17px; padding-left: 17px; }
   .flight-dialog { width: calc(100% - 16px); max-height: 90vh; }

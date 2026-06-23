@@ -1,3 +1,4 @@
+from collections import Counter
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -229,6 +230,65 @@ def calculate_model_reference_probabilities(ensemble_members, baseline_weather=N
     }
 
 
+RISK_LABELS = (
+    "南風注意",
+    "視程不良リスク",
+    "低層雲の影響注意",
+    "突風注意",
+    "強風注意",
+)
+
+
+def _risk_labels(warning_msg):
+    if not warning_msg or warning_msg in {"なし", "特になし"}:
+        return []
+    labels = []
+    for warning in str(warning_msg).split("、"):
+        for label in RISK_LABELS:
+            if warning.startswith(label):
+                labels.append(label)
+                break
+    return labels
+
+
+def _format_risk_summary(counts, total):
+    if not counts:
+        return "特になし"
+    return "、".join(
+        f"{label} ({counts[label]}/{total}通り)"
+        for label in RISK_LABELS
+        if counts.get(label)
+    )
+
+
+def calculate_model_reference_risks(ensemble_members, baseline_weather=None):
+    baseline_weather = baseline_weather or {}
+    risk_counts = {}
+    totals = Counter()
+    for member in ensemble_members:
+        model = member.get("_model")
+        if not model:
+            continue
+        weather = {key: value for key, value in member.items() if key != "_model"}
+        result = predict_flight_probability(**{**baseline_weather, **weather})
+        totals[model] += 1
+        risk_counts.setdefault(model, Counter()).update(_risk_labels(result.get("warning_msg")))
+
+    return {
+        model: _format_risk_summary(risk_counts.get(model, Counter()), total)
+        for model, total in totals.items()
+        if total
+    }
+
+
+def deterministic_risk_summary(result):
+    labels = _risk_labels(result.get("warning_msg"))
+    if not labels:
+        return "特になし"
+    counts = Counter(labels)
+    return "、".join(label for label in RISK_LABELS if counts.get(label))
+
+
 def fallback_confidence(target_date, reference_date):
     lead_days = max((target_date - reference_date).days, 0)
     if lead_days == 0:
@@ -369,14 +429,14 @@ def build_daily_forecasts(weather_by_time, ensembles_by_time=None, reference_dat
                 continue
             result = predict_flight_probability(**weather)
             jma_weather = _prepare_reference_weather(jma_by_time.get(timestamp), weather)
-            jma_probability = (
-                predict_flight_probability(**jma_weather)["probability"]
-                if jma_weather is not None
-                else None
-            )
+            jma_result = predict_flight_probability(**jma_weather) if jma_weather is not None else None
+            jma_probability = jma_result["probability"] if jma_result is not None else None
             result = _with_model_difference_warning(result, jma_probability)
             confidence = calculate_confidence(ensembles_by_time.get(timestamp, []), weather)
             model_probabilities = calculate_model_reference_probabilities(
+                ensembles_by_time.get(timestamp, []), weather
+            )
+            model_risks = calculate_model_reference_risks(
                 ensembles_by_time.get(timestamp, []), weather
             )
             flights.append(
@@ -390,8 +450,11 @@ def build_daily_forecasts(weather_by_time, ensembles_by_time=None, reference_dat
                         "similar_history": find_similar_flights(flight["number"], weather),
                         "jma_weather": jma_weather,
                         "jma_probability": jma_probability,
+                        "jma_risk": deterministic_risk_summary(jma_result) if jma_result is not None else None,
                         "gfs_probability": model_probabilities.get("gfs_seamless"),
+                        "gfs_risk": model_risks.get("gfs_seamless"),
                         "ecmwf_probability": model_probabilities.get("ecmwf_ifs025"),
+                        "ecmwf_risk": model_risks.get("ecmwf_ifs025"),
                         "confidence": confidence,
                         "wind_direction_label": wind_direction_label(weather["wind_direction"]),
                     }
