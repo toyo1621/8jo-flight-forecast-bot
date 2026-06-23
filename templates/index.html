@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="description" content="羽田→八丈島便の運航傾向を、過去の運航実績と天気から見やすくするサイトです。">
   <title>八丈島運航統計予測</title>
-  <link rel="stylesheet" href="static/styles.css?v=20260623-1">
+  <link rel="stylesheet" href="static/styles.css?v=20260623-2">
   <script src="static/app.js?v=20260619-1" defer></script>
 </head>
 <body>
@@ -51,12 +51,22 @@
                   <p class="flight-time">{{ flight.time }} 着</p>
                 </div>
                 <p class="probability"><strong>{{ flight.probability }}</strong><span>%</span></p>
-                <div class="details">
-                  {% if flight.wind_direction is not none %}<span>風向 {{ flight.wind_direction_label }} {{ flight.wind_direction|round|int }}°</span>{% endif %}
-                  <span>風速 {{ flight.wind_speed }} m/s</span>
-                  <span>最大瞬間風速 {{ flight.wind_gusts }} m/s</span>
-                  {% if flight.cloud_cover_low is not none %}<span>低層雲量 {{ flight.cloud_cover_low|round|int }}%</span>{% endif %}
-                  {% if flight.visibility is not none %}<span>視程 {{ flight.visibility }} km</span>{% endif %}
+                <div class="model-probabilities" aria-label="モデル別の参考運航確率">
+                  {% if flight.gfs_probability is not none %}
+                    <p class="model-probability model-probability--{% if flight.gfs_probability >= 60 %}ok{% else %}low{% endif %}">
+                      <span>GFS</span><strong>{{ flight.gfs_probability }}%</strong>
+                    </p>
+                  {% endif %}
+                  {% if flight.ecmwf_probability is not none %}
+                    <p class="model-probability model-probability--{% if flight.ecmwf_probability >= 60 %}ok{% else %}low{% endif %}">
+                      <span>ECMWF</span><strong>{{ flight.ecmwf_probability }}%</strong>
+                    </p>
+                  {% endif %}
+                  {% if flight.jma_probability is not none %}
+                    <p class="model-probability model-probability--{% if flight.jma_probability >= 60 %}ok{% else %}low{% endif %}">
+                      <span>JMA</span><strong>{{ flight.jma_probability }}%</strong>
+                    </p>
+                  {% endif %}
                 </div>
                 {% if flight.warning_msg != "なし" %}
                   <p class="warning">{{ flight.warning_msg }}</p>
