@@ -1,0 +1,31 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 7410 3900" role="img" aria-label="United States flag">
+  <path fill="#b22234" d="M0 0h7410v3900H0z"/>
+  <path stroke="#fff" stroke-width="300" d="M0 450h7410M0 1050h7410M0 1650h7410M0 2250h7410M0 2850h7410M0 3450h7410"/>
+  <path fill="#3c3b6e" d="M0 0h2964v2100H0z"/>
+  <g fill="#fff">
+    <g id="s18">
+      <g id="s9">
+        <g id="s5">
+          <circle cx="247" cy="210" r="70"/>
+          <circle cx="741" cy="210" r="70"/>
+          <circle cx="1235" cy="210" r="70"/>
+          <circle cx="1729" cy="210" r="70"/>
+          <circle cx="2223" cy="210" r="70"/>
+        </g>
+        <use href="#s5" y="420"/>
+      </g>
+      <use href="#s9" y="840"/>
+    </g>
+    <use href="#s18" y="1680"/>
+    <g id="s16">
+      <circle cx="494" cy="420" r="70"/>
+      <circle cx="988" cy="420" r="70"/>
+      <circle cx="1482" cy="420" r="70"/>
+      <circle cx="1976" cy="420" r="70"/>
+    </g>
+    <use href="#s16" y="420"/>
+    <use href="#s16" y="840"/>
+    <use href="#s16" y="1260"/>
+    <use href="#s16" y="1680"/>
+  </g>
+</svg>
