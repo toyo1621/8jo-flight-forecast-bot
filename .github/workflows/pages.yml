@@ -46,6 +46,32 @@ jobs:
           workload_identity_provider: ${{ vars.GCP_WORKLOAD_IDENTITY_PROVIDER }}
           service_account: ${{ vars.GCP_SERVICE_ACCOUNT }}
 
+      - name: Check BigQuery data quality
+        env:
+          FORECAST_DATA_BACKEND: bigquery
+          GCP_PROJECT_ID: hachijo-flight-forecast
+          BIGQUERY_DATASET: flight_forecast
+          BIGQUERY_TABLE: flight_weather_logs
+          BIGQUERY_LOCATION: asia-northeast1
+        run: python data_quality.py --backend bigquery --format markdown --output data_quality_report.md --fail-on error
+
+      - name: Add data quality report to summary
+        if: always()
+        run: |
+          if [ -f data_quality_report.md ]; then
+            cat data_quality_report.md >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "Data quality report was not generated." >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - name: Upload data quality report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pages-data-quality-report
+          path: data_quality_report.md
+          if-no-files-found: ignore
+
       - name: Build static forecast
         env:
           FORECAST_DATA_BACKEND: bigquery

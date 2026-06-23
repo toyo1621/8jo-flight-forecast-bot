@@ -58,3 +58,30 @@ jobs:
         run: |
           python data_collector.py
 
+      - name: Check BigQuery data quality
+        if: always()
+        env:
+          FORECAST_DATA_BACKEND: bigquery
+          GCP_PROJECT_ID: hachijo-flight-forecast
+          BIGQUERY_DATASET: flight_forecast
+          BIGQUERY_TABLE: flight_weather_logs
+          BIGQUERY_LOCATION: asia-northeast1
+        run: python data_quality.py --backend bigquery --format markdown --output data_quality_report.md --fail-on error
+
+      - name: Add data quality report to summary
+        if: always()
+        run: |
+          if [ -f data_quality_report.md ]; then
+            cat data_quality_report.md >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "Data quality report was not generated." >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - name: Upload data quality report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: collection-data-quality-report
+          path: data_quality_report.md
+          if-no-files-found: ignore
+

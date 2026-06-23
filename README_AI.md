@@ -99,6 +99,7 @@ GitHub Pagesは`main`へのpush時、手動実行時、6時間ごとのスケジ
 | `forecast_engine.py` | 主確率、警告、類似実績 |
 | `web_app.py` | 気象API、62メンバー、JMA比較、表示用データ |
 | `bigquery_storage.py` | BigQuery取得・`date + flight_number`でのMERGE |
+| `data_quality.py` | BigQuery/SQLiteのデータ品質チェックとレポート |
 | `flight_metadata.py` | 便表示名とステータス正規化 |
 | `build_static.py` | `dist/`生成 |
 | `templates/index.html` | 全画面HTMLと説明文 |
@@ -107,6 +108,9 @@ GitHub Pagesは`main`へのpush時、手動実行時、6時間ごとのスケジ
 | `static/flags/*.svg` | GFS・ECMWF・JMA表示用の旗アイコン |
 | `.github/workflows/pages.yml` | 6時間ごとのPages生成・公開 |
 | `.github/workflows/data_collection.yml` | 日次収集 |
+| `.github/workflows/ci.yml` | PR/push時の自動テスト |
+| `docs/operations.md` | 運用・復旧手順 |
+| `docs/nfr_scorecard.md` | 非機能要件の評価基準 |
 
 ## ローカル検証
 
@@ -114,6 +118,7 @@ Windowsではリポジトリ内の仮想環境を優先します。
 
 ```powershell
 .\.venv\Scripts\python.exe -m pytest -q
+.\.venv\Scripts\python.exe data_quality.py --backend sqlite --format markdown --output data_quality_report.md --fail-on none
 .\.venv\Scripts\python.exe build_static.py
 ```
 
@@ -125,6 +130,7 @@ $env:GCP_PROJECT_ID = "hachijo-flight-forecast"
 $env:BIGQUERY_DATASET = "flight_forecast"
 $env:BIGQUERY_TABLE = "flight_weather_logs"
 $env:BIGQUERY_LOCATION = "asia-northeast1"
+.\.venv\Scripts\python.exe data_quality.py --backend bigquery --format markdown --output data_quality_report.md
 .\.venv\Scripts\python.exe build_static.py
 ```
 
@@ -146,6 +152,7 @@ $env:BIGQUERY_LOCATION = "asia-northeast1"
 - Repository Variables: `GCP_WORKLOAD_IDENTITY_PROVIDER`、`GCP_SERVICE_ACCOUNT`
 - GitHub ActionsはWorkload Identity FederationでGoogle Cloudへ認証します。サービスアカウント鍵をリポジトリへ保存しないでください。
 - Pages更新では`.cache/forecast_bundle.json`をActions Cacheに保存し、Open-Meteoの主予報取得に失敗した場合は前回成功データを使って公開ページを維持します。
+- `data_quality.py`はCI、Pages、日次収集でレポートを出します。`error`はworkflow失敗、`warning`は調査対象として扱います。
 
 ## 変更時チェックリスト
 
@@ -154,7 +161,8 @@ $env:BIGQUERY_LOCATION = "asia-northeast1"
 3. 確率ロジックを変えたら境界値の回帰テストを追加します。
 4. BigQueryスキーマを変える場合は移行・MERGE・テストを同時に更新します。
 5. `.venv\Scripts\python.exe -m pytest -q`を実行します。
-6. 公開後はキャッシュを避けたURLでGitHub PagesのHTML/CSSを確認します。
+6. `data_quality.py`を実行し、データ品質レポートを確認します。
+7. 公開後はキャッシュを避けたURLでGitHub PagesのHTML/CSSを確認します。
 
 ## 注意
 
