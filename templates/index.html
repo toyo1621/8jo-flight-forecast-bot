@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="description" content="羽田→八丈島便の運航傾向を、過去の運航実績と天気から見やすくするサイトです。">
   <title>八丈島運航統計予測</title>
-  <link rel="stylesheet" href="static/styles.css?v=20260623-2">
+  <link rel="stylesheet" href="static/styles.css?v=20260623-3">
   <script src="static/app.js?v=20260619-1" defer></script>
 </head>
 <body>
@@ -50,28 +50,28 @@
                   <p class="flight-number">{{ flight.number }}</p>
                   <p class="flight-time">{{ flight.time }} 着</p>
                 </div>
-                <p class="probability"><strong>{{ flight.probability }}</strong><span>%</span></p>
+                <p class="probability"><strong>{{ flight.probability }}</strong><span>%</span><small>(Open-Meteo主予報)</small></p>
                 <div class="model-probabilities" aria-label="モデル別の参考運航確率">
                   {% if flight.gfs_probability is not none %}
                     <p class="model-probability model-probability--{% if flight.gfs_probability >= 60 %}ok{% else %}low{% endif %}">
-                      <span>GFS</span><strong>{{ flight.gfs_probability }}%</strong>
+                      <span>GFS🇺🇸</span><strong>{{ flight.gfs_probability }}%</strong>
                     </p>
                   {% endif %}
                   {% if flight.ecmwf_probability is not none %}
                     <p class="model-probability model-probability--{% if flight.ecmwf_probability >= 60 %}ok{% else %}low{% endif %}">
-                      <span>ECMWF</span><strong>{{ flight.ecmwf_probability }}%</strong>
+                      <span>ECMWF🇪🇺</span><strong>{{ flight.ecmwf_probability }}%</strong>
                     </p>
                   {% endif %}
                   {% if flight.jma_probability is not none %}
                     <p class="model-probability model-probability--{% if flight.jma_probability >= 60 %}ok{% else %}low{% endif %}">
-                      <span>JMA</span><strong>{{ flight.jma_probability }}%</strong>
+                      <span>JMA🇯🇵</span><strong>{{ flight.jma_probability }}%</strong>
                     </p>
                   {% endif %}
                 </div>
                 {% if flight.warning_msg != "なし" %}
                   <p class="warning">{{ flight.warning_msg }}</p>
                 {% endif %}
-                <span class="detail-hint">詳しく見る</span>
+                <span class="detail-hint">詳しく見る(運航実績・気象情報)</span>
               </article>
               <dialog class="flight-dialog" id="detail-{{ day.date }}-{{ flight.raw_number }}">
                 <div class="dialog-header">

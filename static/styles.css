@@ -193,18 +193,19 @@ h1 {
 .flight-number { color: #eaf7ff; font-size: .86rem; font-weight: 750; letter-spacing: .03em; }
 .flight-time { margin-top: 4px; color: #fff; font-size: .76rem; }
 
-.probability { margin: 26px 0 20px; color: var(--blue); }
-.probability strong { font-size: clamp(2.45rem, 5vw, 3.5rem); line-height: 1; letter-spacing: -.065em; text-shadow: 0 0 24px rgba(90, 199, 255, .3); }
-.probability span { margin-left: 4px; font-size: 1.05rem; font-weight: 750; }
+.probability { margin: 24px 0 18px; color: var(--blue); }
+.probability strong { font-size: clamp(2.8rem, 5.8vw, 4.05rem); line-height: 1; letter-spacing: -.065em; text-shadow: 0 0 24px rgba(90, 199, 255, .3); }
+.probability span { margin-left: 4px; font-size: 1.12rem; font-weight: 750; }
+.probability small { display: block; margin-top: 5px; color: #fff; font-size: .66rem; font-weight: 700; letter-spacing: .04em; }
 .flight--low-probability .probability { color: var(--amber); }
 
 .details { display: grid; gap: 7px; color: #fff; font-size: .74rem; }
 .details span { display: flex; align-items: center; gap: 7px; }
 .details span::before { width: 4px; height: 4px; border-radius: 50%; background: var(--cyan); box-shadow: 0 0 8px var(--cyan); content: ""; }
-.model-probabilities { display: grid; gap: 8px; font-size: .76rem; }
-.model-probability { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin: 0; padding: 8px 10px; border: 1px solid currentColor; border-radius: 7px; background: rgba(255, 255, 255, .035); }
-.model-probability span { color: #fff; font-weight: 800; letter-spacing: .08em; }
-.model-probability strong { font-size: .9rem; }
+.model-probabilities { display: grid; gap: 8px; font-size: .86rem; }
+.model-probability { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin: 0; padding: 8px 10px; border: 1px solid rgba(255, 255, 255, .18); border-radius: 7px; background: rgba(255, 255, 255, .035); }
+.model-probability span { color: #fff; font-weight: 850; letter-spacing: .05em; }
+.model-probability strong { font-size: 1.02rem; }
 .model-probability--ok { color: var(--blue); box-shadow: inset 0 0 18px rgba(90, 199, 255, .08); }
 .model-probability--low { color: var(--amber); box-shadow: inset 0 0 18px rgba(255, 196, 94, .08); }
 .warning { margin-top: 14px; padding-top: 12px; border-top: 1px solid rgba(255, 196, 94, .18); color: #ffd083; font-size: .73rem; line-height: 1.55; }
