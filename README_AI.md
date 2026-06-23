@@ -117,6 +117,7 @@ GitHub Pagesは`main`へのpush時、手動実行時、6時間ごとのスケジ
 Windowsではリポジトリ内の仮想環境を優先します。
 
 ```powershell
+.\.venv\Scripts\python.exe -m pip install -r requirements-dev.txt
 .\.venv\Scripts\python.exe -m pytest -q
 .\.venv\Scripts\python.exe data_quality.py --backend sqlite --format markdown --output data_quality_report.md --fail-on none
 .\.venv\Scripts\python.exe build_static.py
@@ -152,7 +153,7 @@ $env:BIGQUERY_LOCATION = "asia-northeast1"
 - Repository Variables: `GCP_WORKLOAD_IDENTITY_PROVIDER`、`GCP_SERVICE_ACCOUNT`
 - GitHub ActionsはWorkload Identity FederationでGoogle Cloudへ認証します。サービスアカウント鍵をリポジトリへ保存しないでください。
 - Pages更新では`.cache/forecast_bundle.json`をActions Cacheに保存し、Open-Meteoの主予報取得に失敗した場合は前回成功データを使って公開ページを維持します。
-- `data_quality.py`はCI、Pages、日次収集でレポートを出します。`error`はworkflow失敗、`warning`は調査対象として扱います。
+- `data_quality.py`はCI、Pages、日次収集でレポートを出します。Pagesと日次収集では可用性を優先し、データ品質の指摘はworkflowを止めずStep Summary/artifactで確認します。
 
 ## 変更時チェックリスト
 
