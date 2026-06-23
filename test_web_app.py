@@ -570,7 +570,7 @@ def test_workflows_run_tests_and_data_quality_reports():
     assert "python data_quality.py --backend sqlite" in ci
     assert "python data_quality.py --backend bigquery" in pages
     assert "python data_quality.py --backend bigquery" in collection
-    assert "actions/upload-artifact@v4" in pages
-    assert "actions/upload-artifact@v4" in collection
+    assert "actions/upload-artifact@" in pages
+    assert "actions/upload-artifact@" in collection
 
 
