@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="description" content="羽田→八丈島便の運航傾向を、過去の運航実績と天気から見やすくするサイトです。">
   <title>八丈島運航統計予測</title>
-  <link rel="stylesheet" href="static/styles.css?v=20260623-11">
+  <link rel="stylesheet" href="static/styles.css?v=20260623-12">
   <script src="static/app.js?v=20260619-1" defer></script>
 </head>
 <body>
@@ -92,6 +92,17 @@
                       <div><dt>{{ model.label }}予報での参考運航確率</dt><dd><span class="probability-inline-symbol">{{ model.symbol }}</span>{{ model.probability }}%</dd></div>
                     {% endfor %}
                   </dl>
+                </section>
+                <section class="dialog-section">
+                  <h4>モデル別リスク</h4>
+                  <div class="model-risk-list">
+                    {% for model in flight.model_probabilities %}
+                      <article class="model-risk model-risk--{{ model.risk_tone }}">
+                        <strong><img class="model-flag" src="{{ model.flag_path }}" alt="{{ model.flag_alt }}">{{ model.label }}</strong>
+                        <span>{{ model.risk }}</span>
+                      </article>
+                    {% endfor %}
+                  </div>
                 </section>
                 <section class="dialog-section">
                   <h4>気象条件が近い過去の運航実績10件</h4>
