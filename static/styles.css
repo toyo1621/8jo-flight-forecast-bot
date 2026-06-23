@@ -211,8 +211,8 @@ h1 {
 .flight--low-probability { border-color: rgba(255, 196, 94, .35); }
 .flight-meta { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; white-space: nowrap; }
 .flight-number, .flight-time, .probability, .warning { margin: 0; }
-.flight-number { color: #eaf7ff; font-size: .86rem; font-weight: 750; letter-spacing: .03em; }
-.flight-time { color: #fff; font-size: .76rem; flex: 0 0 auto; }
+.flight-number { color: #eaf7ff; font-size: .98rem; font-weight: 750; letter-spacing: .03em; }
+.flight-time { color: #fff; font-size: .86rem; flex: 0 0 auto; }
 
 .probability { margin: 24px 0 18px; color: var(--blue); }
 .probability strong { font-size: clamp(2.8rem, 5.8vw, 4.05rem); line-height: 1; letter-spacing: -.065em; text-shadow: 0 0 24px rgba(90, 199, 255, .3); }
