@@ -74,6 +74,7 @@ def test_jma_forecast_requests_jma_seamless_model():
             "wind_gusts_10m": [8.0],
             "cloud_cover_low": [20.0],
             "visibility": [15000.0],
+            "precipitation": [0.0],
         }
     }
     with patch("web_app.requests.get", return_value=response) as get:
@@ -82,6 +83,7 @@ def test_jma_forecast_requests_jma_seamless_model():
     response.raise_for_status.assert_called_once()
     assert get.call_args.kwargs["params"]["models"] == "jma_seamless"
     assert result["2026-06-20T08:00"]["visibility"] == 15.0
+    assert result["2026-06-20T08:00"]["precipitation"] == 0.0
 
 
 def test_jma_reference_uses_main_forecast_for_missing_required_values():
@@ -91,13 +93,16 @@ def test_jma_reference_uses_main_forecast_for_missing_required_values():
         "wind_gusts": None,
         "cloud_cover_low": 20.0,
         "visibility": None,
+        "precipitation": None,
     }
 
     result = _prepare_reference_weather(candidate, SAMPLE_WEATHER["2026-06-20T08:00"])
 
     assert result["wind_direction"] == 180.0
     assert result["wind_speed"] == 5.0
-    assert result["wind_gusts"] is None
+    assert result["wind_gusts"] == 7.0
+    assert result["visibility"] == 15.0
+    assert result["precipitation"] is None
 
 
 def test_daily_forecast_skips_main_weather_without_required_values():
@@ -233,10 +238,31 @@ def test_probability_cap_is_97_percent():
 def test_low_cloud_and_gust_adjustments_each_use_09():
     history = [("通常", 210.0, 18.0)] * 3 + [("欠航", 210.0, 18.0)] * 6
     with patch("forecast_engine.load_history", return_value=history):
-        result = predict_flight_probability(210.0, 18.09, 24.4, 100.0, 12.2)
+        result = predict_flight_probability(210.0, 18.09, 18.5, 100.0, 12.2)
 
     assert result["data_count"] == 9
     assert result["probability"] == 27.0
+
+
+def test_severe_visibility_and_gust_adjustments_are_stronger():
+    history = [("通常", 210.0, 5.0)] * 10
+    with patch("forecast_engine.load_history", return_value=history):
+        low_visibility = predict_flight_probability(210.0, 5.0, 8.0, 20.0, 2.0)
+        severe_gust = predict_flight_probability(210.0, 5.0, 20.3, 20.0, 15.0)
+
+    assert low_visibility["probability"] == 45.0
+    assert severe_gust["probability"] == 55.0
+
+
+def test_precipitation_from_two_mm_adds_rain_risk():
+    history = [("通常", 180.0, 5.0)] * 10
+    with patch("forecast_engine.load_history", return_value=history):
+        dry = predict_flight_probability(180.0, 5.0, 8.0, 20.0, 15.0, precipitation=1.9)
+        rainy = predict_flight_probability(180.0, 5.0, 8.0, 20.0, 15.0, precipitation=2.0)
+
+    assert dry["probability"] == 97.0
+    assert rainy["probability"] == 85.0
+    assert "降水注意" in rainy["warning_msg"]
 
 
 def test_southerly_wind_warning_includes_boundary_values():
