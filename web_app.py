@@ -1,34 +1,38 @@
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timedelta
 from pathlib import Path
 from statistics import median
 
 import requests
 from flask import Flask, render_template
 
+from app_config import (
+    CONFIDENCE_GRADES,
+    ENSEMBLE_FORECAST_URL,
+    FLIGHTS,
+    FORECAST_DAYS,
+    HACHIJO_AIRPORT_LATITUDE,
+    HACHIJO_AIRPORT_LONGITUDE,
+    JMA_MODEL_NAME,
+    JST,
+    LOW_PROBABILITY_THRESHOLD,
+    MAIN_FORECAST_URL,
+    MODEL_DIFFERENCE_WARNING_POINTS,
+)
 from db_snapshot import restore_db
+from forecast_cache import load_cached_forecast_bundle, save_forecast_bundle
 from flight_metadata import flight_display_name
 from forecast_engine import find_similar_flights, predict_flight_probability
+from presentation import decorate_flight_for_display
 
 
 BASE_DIR = Path(__file__).resolve().parent
-FORECAST_URL = "https://api.open-meteo.com/v1/forecast"
-ENSEMBLE_URL = "https://ensemble-api.open-meteo.com/v1/ensemble"
-JST = timezone(timedelta(hours=9))
-# Open-Meteo counts today as day one; 11 days includes the date 10 days ahead.
-FORECAST_DAYS = 11
-MODEL_DIFFERENCE_WARNING_POINTS = 20.0
-FLIGHTS = (
-    {"number": "ANA1891", "time": "08:30", "forecast_hour": 8},
-    {"number": "ANA1893", "time": "13:10", "forecast_hour": 13},
-    {"number": "ANA1895", "time": "16:40", "forecast_hour": 17},
-)
 
 
 def _fetch_deterministic_forecast(model=None):
     params = {
-        "latitude": 33.115,
-        "longitude": 139.782,
+        "latitude": HACHIJO_AIRPORT_LATITUDE,
+        "longitude": HACHIJO_AIRPORT_LONGITUDE,
         "hourly": "wind_speed_10m,wind_direction_10m,wind_gusts_10m,cloud_cover_low,visibility",
         "wind_speed_unit": "ms",
         "timezone": "Asia/Tokyo",
@@ -37,7 +41,7 @@ def _fetch_deterministic_forecast(model=None):
     if model:
         params["models"] = model
     response = requests.get(
-        FORECAST_URL,
+        MAIN_FORECAST_URL,
         params=params,
         timeout=10,
     )
@@ -71,7 +75,7 @@ def fetch_forecast():
 
 
 def fetch_jma_forecast():
-    return _fetch_deterministic_forecast("jma_seamless")
+    return _fetch_deterministic_forecast(JMA_MODEL_NAME)
 
 
 def fetch_ensemble_forecast():
@@ -119,10 +123,10 @@ def _select_evenly(values, limit):
 
 def _fetch_ensemble_model(model, variables, max_members=None):
     response = requests.get(
-        ENSEMBLE_URL,
+        ENSEMBLE_FORECAST_URL,
         params={
-            "latitude": 33.115,
-            "longitude": 139.782,
+            "latitude": HACHIJO_AIRPORT_LATITUDE,
+            "longitude": HACHIJO_AIRPORT_LONGITUDE,
             "hourly": ",".join(variables),
             "models": model,
             "wind_speed_unit": "ms",
@@ -194,14 +198,9 @@ def calculate_confidence(ensemble_members, baseline_weather=None):
     low = probabilities[round((len(probabilities) - 1) * 0.1)]
     high = probabilities[round((len(probabilities) - 1) * 0.9)]
     spread = round(high - low, 1)
-    if spread <= 10:
-        grade, label = "A", "10ポイント以内"
-    elif spread <= 20:
-        grade, label = "B", "20ポイント以内"
-    elif spread <= 30:
-        grade, label = "C", "30ポイント以内"
-    elif spread <= 40:
-        grade, label = "D", "40ポイント以内"
+    for threshold, grade, label in CONFIDENCE_GRADES:
+        if spread <= threshold:
+            break
     else:
         grade, label = "E", "40ポイント超"
     return {
@@ -294,6 +293,59 @@ def _with_model_difference_warning(result, jma_probability):
     return result
 
 
+def _log_or_print(logger, message, exc):
+    if logger is None:
+        return
+    if hasattr(logger, "warning"):
+        logger.warning("%s: %s", message, exc)
+    else:
+        logger(f"{message}: {exc}")
+
+
+def load_forecast_bundle(logger=None):
+    cached = load_cached_forecast_bundle()
+    notices = []
+    try:
+        weather = fetch_forecast()
+    except (requests.RequestException, ValueError) as exc:
+        if cached:
+            _log_or_print(logger, "Main forecast unavailable; using cached forecast", exc)
+            notices.append("予報APIに接続できないため、前回取得した予報データを表示しています。")
+            return {
+                "weather": cached["weather"],
+                "jma": cached.get("jma", {}),
+                "ensembles": cached.get("ensembles", {}),
+                "notices": notices,
+                "source": "cache",
+            }
+        raise
+
+    try:
+        jma = fetch_jma_forecast()
+    except (requests.RequestException, ValueError) as exc:
+        _log_or_print(logger, "JMA forecast could not be loaded", exc)
+        jma = cached.get("jma", {}) if cached else {}
+        if jma:
+            notices.append("JMA予報は前回取得データを使用しています。")
+
+    try:
+        ensembles = fetch_ensemble_forecast()
+    except (requests.RequestException, ValueError) as exc:
+        _log_or_print(logger, "Ensemble forecast could not be loaded", exc)
+        ensembles = cached.get("ensembles", {}) if cached else {}
+        if ensembles:
+            notices.append("アンサンブル予報は前回取得データを使用しています。")
+
+    save_forecast_bundle(weather, jma, ensembles)
+    return {
+        "weather": weather,
+        "jma": jma,
+        "ensembles": ensembles,
+        "notices": notices,
+        "source": "live",
+    }
+
+
 def build_daily_forecasts(weather_by_time, ensembles_by_time=None, reference_date=None, current_time=None, jma_by_time=None):
     ensembles_by_time = ensembles_by_time or {}
     jma_by_time = jma_by_time or {}
@@ -328,20 +380,22 @@ def build_daily_forecasts(weather_by_time, ensembles_by_time=None, reference_dat
                 ensembles_by_time.get(timestamp, []), weather
             )
             flights.append(
-                {
-                    **flight,
-                    **weather,
-                    **result,
-                    "number": flight_display_name(flight["number"]),
-                    "raw_number": flight["number"],
-                    "similar_history": find_similar_flights(flight["number"], weather),
-                    "jma_weather": jma_weather,
-                    "jma_probability": jma_probability,
-                    "gfs_probability": model_probabilities.get("gfs_seamless"),
-                    "ecmwf_probability": model_probabilities.get("ecmwf_ifs025"),
-                    "confidence": confidence,
-                    "wind_direction_label": wind_direction_label(weather["wind_direction"]),
-                }
+                decorate_flight_for_display(
+                    {
+                        **flight,
+                        **weather,
+                        **result,
+                        "number": flight_display_name(flight["number"]),
+                        "raw_number": flight["number"],
+                        "similar_history": find_similar_flights(flight["number"], weather),
+                        "jma_weather": jma_weather,
+                        "jma_probability": jma_probability,
+                        "gfs_probability": model_probabilities.get("gfs_seamless"),
+                        "ecmwf_probability": model_probabilities.get("ecmwf_ifs025"),
+                        "confidence": confidence,
+                        "wind_direction_label": wind_direction_label(weather["wind_direction"]),
+                    }
+                )
             )
         if flights:
             confidence_values = [flight["confidence"] for flight in flights if flight["confidence"]]
@@ -377,24 +431,27 @@ def create_app():
         days = []
         try:
             restore_db(BASE_DIR / "flights.db", BASE_DIR / "data" / "flights_dump.sql")
-            weather = fetch_forecast()
-            try:
-                jma = fetch_jma_forecast()
-            except (requests.RequestException, ValueError) as exc:
-                app.logger.warning("JMA forecast could not be loaded: %s", exc)
-                jma = {}
-            try:
-                ensembles = fetch_ensemble_forecast()
-            except (requests.RequestException, ValueError) as exc:
-                app.logger.warning("Ensemble forecast could not be loaded: %s", exc)
-                ensembles = {}
-            days = build_daily_forecasts(weather, ensembles, jma_by_time=jma)
+            bundle = load_forecast_bundle(app.logger)
+            days = build_daily_forecasts(
+                bundle["weather"],
+                bundle["ensembles"],
+                jma_by_time=bundle["jma"],
+            )
+            notices = bundle["notices"]
         except (requests.RequestException, ValueError, OSError) as exc:
             app.logger.warning("Forecast could not be loaded: %s", exc)
             error = "現在、予報を取得できません。時間をおいてもう一度お試しください。"
+            notices = []
 
         updated_at = datetime.now(JST).strftime("%Y/%m/%d %H:%M")
-        return render_template("index.html", days=days, error=error, updated_at=updated_at)
+        return render_template(
+            "index.html",
+            days=days,
+            error=error,
+            updated_at=updated_at,
+            notices=notices,
+            low_probability_threshold=LOW_PROBABILITY_THRESHOLD,
+        )
 
     return app
 

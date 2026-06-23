@@ -14,6 +14,7 @@ __pycache__/
 *.pyo
 *.pyd
 .pytest_cache/
+.cache/
 
 # Generated GitHub Pages site
 dist/
