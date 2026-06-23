@@ -319,6 +319,21 @@ def test_orange_flight_style_depends_on_probability_below_sixty():
     assert ".flight--alert" not in stylesheet
 
 
+def test_flight_card_shows_model_reference_probabilities_with_threshold_styles():
+    template = (BASE_DIR / "templates" / "index.html").read_text(encoding="utf-8")
+    stylesheet = (BASE_DIR / "static" / "styles.css").read_text(encoding="utf-8")
+
+    assert 'class="model-probabilities"' in template
+    assert "GFS</span><strong>{{ flight.gfs_probability }}%" in template
+    assert "ECMWF</span><strong>{{ flight.ecmwf_probability }}%" in template
+    assert "JMA</span><strong>{{ flight.jma_probability }}%" in template
+    assert "{% if flight.gfs_probability >= 60 %}ok{% else %}low{% endif %}" in template
+    assert "{% if flight.ecmwf_probability >= 60 %}ok{% else %}low{% endif %}" in template
+    assert "{% if flight.jma_probability >= 60 %}ok{% else %}low{% endif %}" in template
+    assert ".model-probability--ok" in stylesheet
+    assert ".model-probability--low" in stylesheet
+
+
 def test_select_evenly_balances_ensemble_members():
     members = list(range(51))
 
@@ -368,8 +383,7 @@ def test_index_renders_forecast():
     assert "主予報: Open-Meteo標準予報" in body
     assert "主予報(Open-Meteo)での運航確率" in body
     assert "天候信頼度" in body
-    assert "風向 南 180°" in body
-    assert "低層雲量 20%" in body
+    assert "モデル別の参考運航確率" in body
     assert ">雲量<" not in body
     assert "なぜ作ったか" in body
     assert "ざっくりどういう仕組みか" in body
