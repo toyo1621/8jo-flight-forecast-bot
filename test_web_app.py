@@ -13,6 +13,8 @@ from web_app import (
     build_daily_forecasts,
     calculate_confidence,
     calculate_model_reference_probabilities,
+    calculate_model_reference_risks,
+    deterministic_risk_summary,
     fallback_confidence,
     _select_evenly,
     _prepare_reference_weather,
@@ -295,6 +297,36 @@ def test_model_reference_probabilities_use_each_models_median():
     assert probabilities == {"gfs_seamless": 20.0, "ecmwf_ifs025": 45.0}
 
 
+def test_model_reference_risks_summarize_each_model_members():
+    members = [
+        {"_model": "gfs_seamless", "wind_speed": 9.0},
+        {"_model": "gfs_seamless", "wind_speed": 12.0},
+        {"_model": "ecmwf_ifs025", "wind_speed": 4.0, "cloud_cover_low": 95.0},
+    ]
+
+    with patch(
+        "web_app.predict_flight_probability",
+        side_effect=[
+            {"warning_msg": "特になし"},
+            {"warning_msg": "強風注意 (予報風速: 12.0 m/s)"},
+            {"warning_msg": "低層雲の影響注意 (低層雲量 95.0%)"},
+        ],
+    ):
+        risks = calculate_model_reference_risks(members, SAMPLE_WEATHER["2026-06-20T08:00"])
+
+    assert risks == {
+        "gfs_seamless": "強風注意 (1/2通り)",
+        "ecmwf_ifs025": "低層雲の影響注意 (1/1通り)",
+    }
+
+
+def test_deterministic_risk_summary_uses_simple_labels():
+    assert deterministic_risk_summary({"warning_msg": "特になし"}) == "特になし"
+    assert deterministic_risk_summary(
+        {"warning_msg": "南風注意、突風注意 (予報突風: 16.0 m/s)"}
+    ) == "南風注意、突風注意"
+
+
 def test_confidence_note_uses_short_wording():
     template = (BASE_DIR / "templates" / "index.html").read_text(encoding="utf-8")
 
@@ -343,6 +375,8 @@ def test_flight_card_shows_model_reference_probabilities_with_threshold_styles()
     assert "{% for model in flight.model_probabilities %}" in template
     assert 'src="{{ model.flag_path }}"' in template
     assert "model-probability--{{ model.tone }}" in template
+    assert "モデル別リスク" in template
+    assert "model-risk--{{ model.risk_tone }}" in template
     assert "(Open-Meteo主予報)" in template
     assert "詳しく見る(運航実績・気象情報)" in template
     assert ".model-probability--ok" in stylesheet
@@ -403,6 +437,7 @@ def test_decorate_flight_for_display_builds_model_rows():
             "probability": 88.0,
             "gfs_probability": 75.0,
             "ecmwf_probability": 59.9,
+            "ecmwf_risk": "強風注意 (2/31通り)",
             "jma_probability": None,
         }
     )
@@ -415,6 +450,8 @@ def test_decorate_flight_for_display_builds_model_rows():
             "probability": 75.0,
             "symbol": "〇",
             "tone": "ok",
+            "risk": "特になし",
+            "risk_tone": "ok",
             "flag_path": "static/flags/us.svg",
             "flag_alt": "US",
         },
@@ -423,6 +460,8 @@ def test_decorate_flight_for_display_builds_model_rows():
             "probability": 59.9,
             "symbol": "△",
             "tone": "low",
+            "risk": "強風注意 (2/31通り)",
+            "risk_tone": "alert",
             "flag_path": "static/flags/eu.svg",
             "flag_alt": "EU",
         },
@@ -532,6 +571,7 @@ def test_index_renders_forecast():
     assert "GitHub Actionsで6時間ごとに再計算" in body
     assert "気象業法への配慮" in body
     assert "予報気象情報" in body
+    assert "モデル別リスク" in body
     assert "気象条件が近い過去の運航実績10件" in body
     assert "6ポイント以内" not in body
 
