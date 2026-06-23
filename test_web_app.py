@@ -324,14 +324,17 @@ def test_flight_card_shows_model_reference_probabilities_with_threshold_styles()
     stylesheet = (BASE_DIR / "static" / "styles.css").read_text(encoding="utf-8")
 
     assert 'class="model-probabilities"' in template
-    assert "GFS</span><strong>{{ flight.gfs_probability }}%" in template
-    assert "ECMWF</span><strong>{{ flight.ecmwf_probability }}%" in template
-    assert "JMA</span><strong>{{ flight.jma_probability }}%" in template
+    assert "GFS🇺🇸</span><strong>{{ flight.gfs_probability }}%" in template
+    assert "ECMWF🇪🇺</span><strong>{{ flight.ecmwf_probability }}%" in template
+    assert "JMA🇯🇵</span><strong>{{ flight.jma_probability }}%" in template
     assert "{% if flight.gfs_probability >= 60 %}ok{% else %}low{% endif %}" in template
     assert "{% if flight.ecmwf_probability >= 60 %}ok{% else %}low{% endif %}" in template
     assert "{% if flight.jma_probability >= 60 %}ok{% else %}low{% endif %}" in template
+    assert "(Open-Meteo主予報)" in template
+    assert "詳しく見る(運航実績・気象情報)" in template
     assert ".model-probability--ok" in stylesheet
     assert ".model-probability--low" in stylesheet
+    assert ".probability small" in stylesheet
 
 
 def test_select_evenly_balances_ensemble_members():
