@@ -10,6 +10,10 @@ DB_FILE = "flights.db"
 HACHIJOJIMA_LAT = 33.115
 HACHIJOJIMA_LON = 139.782
 HOURLY_FIELDS = "wind_speed_10m,wind_direction_10m,wind_gusts_10m,cloud_cover_low,visibility"
+HISTORICAL_FORECAST_URL = "https://historical-forecast-api.open-meteo.com/v1/forecast"
+HISTORICAL_FORECAST_SOURCE = "open_meteo_historical_forecast"
+LEGACY_VISIBILITY_SOURCE = "legacy_snapshot"
+UNKNOWN_REASON = "未確認"
 WEATHER_COLUMNS = (
     "wind_direction",
     "wind_speed",
@@ -25,7 +29,8 @@ def parse_date(value):
 
 def nearest_hour(scheduled_time):
     try:
-        time_obj = datetime.strptime(scheduled_time, "%H:%M")
+        fmt = "%H:%M:%S" if str(scheduled_time).count(":") == 2 else "%H:%M"
+        time_obj = datetime.strptime(str(scheduled_time), fmt)
     except (TypeError, ValueError):
         return 12
 
@@ -54,15 +59,16 @@ def date_chunks(dates, chunk_size=31):
     yield chunk_start, previous
 
 
-def endpoint_for_range(start_date, end_date):
-    archive_cutoff = date.today() - timedelta(days=5)
-    if end_date <= archive_cutoff:
-        return "https://archive-api.open-meteo.com/v1/archive"
-    return "https://api.open-meteo.com/v1/forecast"
+def ensure_columns(conn):
+    columns = {row[1] for row in conn.execute("PRAGMA table_info(flight_weather_logs)")}
+    if "visibility_source" not in columns:
+        conn.execute("ALTER TABLE flight_weather_logs ADD COLUMN visibility_source TEXT")
+    if "status_reason" not in columns:
+        conn.execute("ALTER TABLE flight_weather_logs ADD COLUMN status_reason TEXT")
+    conn.commit()
 
 
 def fetch_weather_range(start_date, end_date):
-    url = endpoint_for_range(start_date, end_date)
     params = {
         "latitude": HACHIJOJIMA_LAT,
         "longitude": HACHIJOJIMA_LON,
@@ -71,7 +77,7 @@ def fetch_weather_range(start_date, end_date):
         "start_date": start_date.isoformat(),
         "end_date": end_date.isoformat(),
     }
-    response = requests.get(url, params=params, timeout=30)
+    response = requests.get(HISTORICAL_FORECAST_URL, params=params, timeout=60)
     response.raise_for_status()
     return response.json().get("hourly", {})
 
@@ -113,6 +119,28 @@ def get_missing_rows(conn):
     return cursor.fetchall()
 
 
+def fill_legacy_visibility_sources(conn):
+    cursor = conn.execute("""
+        UPDATE flight_weather_logs
+        SET visibility_source = ?
+        WHERE visibility IS NOT NULL
+          AND (visibility_source IS NULL OR visibility_source = '')
+    """, (LEGACY_VISIBILITY_SOURCE,))
+    conn.commit()
+    return cursor.rowcount
+
+
+def mark_unconfirmed_cancellation_reasons(conn):
+    cursor = conn.execute("""
+        UPDATE flight_weather_logs
+        SET status_reason = ?
+        WHERE status IN ('欠航', '条件付き→引返欠航')
+          AND (status_reason IS NULL OR status_reason = '')
+    """, (UNKNOWN_REASON,))
+    conn.commit()
+    return cursor.rowcount
+
+
 def update_weather(conn, rows, weather_map):
     cursor = conn.cursor()
     updated = 0
@@ -128,11 +156,16 @@ def update_weather(conn, rows, weather_map):
 
         cursor.execute("""
             UPDATE flight_weather_logs
-            SET wind_direction = ?,
-                wind_speed = ?,
-                wind_gusts = ?,
-                cloud_cover_low = ?,
-                visibility = ?,
+            SET wind_direction = COALESCE(wind_direction, ?),
+                wind_speed = COALESCE(wind_speed, ?),
+                wind_gusts = COALESCE(wind_gusts, ?),
+                cloud_cover_low = COALESCE(cloud_cover_low, ?),
+                visibility = COALESCE(visibility, ?),
+                visibility_source = CASE
+                    WHEN visibility IS NULL AND ? IS NOT NULL THEN ?
+                    WHEN visibility_source IS NULL OR visibility_source = '' THEN ?
+                    ELSE visibility_source
+                END,
                 created_at = CURRENT_TIMESTAMP
             WHERE date = ? AND flight_number = ?
         """, (
@@ -141,6 +174,9 @@ def update_weather(conn, rows, weather_map):
             weather["wind_gusts"],
             weather["cloud_cover_low"],
             weather["visibility"],
+            weather["visibility"],
+            HISTORICAL_FORECAST_SOURCE,
+            LEGACY_VISIBILITY_SOURCE,
             date_str,
             flight_number,
         ))
@@ -154,16 +190,22 @@ def backfill_missing_weather(export_snapshot=False):
     restore_db()
     conn = sqlite3.connect(DB_FILE)
     try:
+        ensure_columns(conn)
+        source_updates = fill_legacy_visibility_sources(conn)
+        reason_updates = mark_unconfirmed_cancellation_reasons(conn)
+        print(f"既存の視程出典を補完: {source_updates} 件")
+        print(f"欠航理由未確認を明示: {reason_updates} 件")
+
         rows = get_missing_rows(conn)
         if not rows:
             print("気象データがNULLの行はありません。")
             return 0
 
-        dates = {parse_date(row[1]) for row in rows}
+        dates = {parse_date(row[0]) for row in rows}
         weather_map = {}
         fetch_errors = 0
         for start_date, end_date in date_chunks(dates):
-            print(f"Open-Meteoから {start_date} 〜 {end_date} の気象データを取得中...")
+            print(f"Open-Meteo Historical Forecastから {start_date} 〜 {end_date} の気象データを取得中...")
             try:
                 hourly_data = fetch_weather_range(start_date, end_date)
             except requests.RequestException as e:

@@ -14,6 +14,7 @@ load_dotenv()
 DB_FILE = "flights.db"
 HACHIJOJIMA_LAT = 33.115
 HACHIJOJIMA_LON = 139.782
+UNKNOWN_REASON = "未確認"
 
 FLIGHTS_SCHEDULE = [
     {"flight_number": "ANA1891", "scheduled_time": "08:30", "target_hour": 8},
@@ -51,6 +52,8 @@ def init_db():
         wind_gusts REAL,
         cloud_cover_low REAL,
         visibility REAL,
+        visibility_source TEXT,
+        status_reason TEXT,
         created_at TEXT DEFAULT CURRENT_TIMESTAMP,
         UNIQUE(date, flight_number)
     )
@@ -60,6 +63,18 @@ def init_db():
         cursor.execute("ALTER TABLE flight_weather_logs ADD COLUMN visibility REAL")
         conn.commit()
         print("既存のデータベースに visibility (視程) カラムを追加しました。")
+    except sqlite3.OperationalError:
+        pass
+    try:
+        cursor.execute("ALTER TABLE flight_weather_logs ADD COLUMN visibility_source TEXT")
+        conn.commit()
+        print("既存のデータベースに visibility_source (視程出典) カラムを追加しました。")
+    except sqlite3.OperationalError:
+        pass
+    try:
+        cursor.execute("ALTER TABLE flight_weather_logs ADD COLUMN status_reason TEXT")
+        conn.commit()
+        print("既存のデータベースに status_reason (運航理由) カラムを追加しました。")
     except sqlite3.OperationalError:
         pass
 
@@ -243,8 +258,9 @@ def save_flight_weather_logs(conn, flights_with_weather):
             cursor.execute("""
             INSERT INTO flight_weather_logs (
                 date, flight_number, scheduled_time, status,
-                wind_direction, wind_speed, wind_gusts, cloud_cover_low, visibility
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                wind_direction, wind_speed, wind_gusts, cloud_cover_low, visibility,
+                visibility_source, status_reason
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(date, flight_number) DO UPDATE SET
                 scheduled_time=excluded.scheduled_time,
                 status=excluded.status,
@@ -253,6 +269,8 @@ def save_flight_weather_logs(conn, flights_with_weather):
                 wind_gusts=excluded.wind_gusts,
                 cloud_cover_low=excluded.cloud_cover_low,
                 visibility=excluded.visibility,
+                visibility_source=excluded.visibility_source,
+                status_reason=excluded.status_reason,
                 created_at=CURRENT_TIMESTAMP
             """, (
                 item["date"],
@@ -264,6 +282,8 @@ def save_flight_weather_logs(conn, flights_with_weather):
                 item["wind_gusts"],
                 item["cloud_cover_low"],
                 item.get("visibility"),
+                "open_meteo_forecast" if item.get("visibility") is not None else None,
+                item.get("status_reason"),
             ))
             saved_count += 1
         except sqlite3.Error as e:
@@ -304,6 +324,8 @@ def main():
     for f in flights:
         weather = get_weather_data(f["date"], f["scheduled_time"])
         merged_item = {**f, **weather}
+        if merged_item.get("status") in {"欠航", "条件付き→引返欠航"}:
+            merged_item["status_reason"] = merged_item.get("status_reason") or UNKNOWN_REASON
         completed_data.append(merged_item)
 
     save_collected_data(conn, completed_data)

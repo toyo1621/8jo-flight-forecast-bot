@@ -76,3 +76,15 @@ def test_data_quality_fail_on_warning_is_configurable():
     assert should_fail(findings, "error") is False
     assert should_fail(findings, "warning") is True
     assert should_fail(findings, "none") is False
+
+
+def test_unconfirmed_cancellation_reason_is_tracked_as_info():
+    findings = analyze_records(
+        [_row(status="欠航", status_reason="未確認")],
+        today=date(2026, 6, 21),
+    )
+    codes = {finding.code: finding for finding in findings}
+
+    assert "missing_cancellation_reason" not in codes
+    assert codes["unconfirmed_cancellation_reason"].severity == "info"
+    assert should_fail(findings, "warning") is False
