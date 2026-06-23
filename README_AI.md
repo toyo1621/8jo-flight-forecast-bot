@@ -152,8 +152,12 @@ $env:BIGQUERY_LOCATION = "asia-northeast1"
 - Secret: `ODPT_API_KEY`
 - Repository Variables: `GCP_WORKLOAD_IDENTITY_PROVIDER`、`GCP_SERVICE_ACCOUNT`
 - GitHub ActionsはWorkload Identity FederationでGoogle Cloudへ認証します。サービスアカウント鍵をリポジトリへ保存しないでください。
+- 秘密情報や認証ファイルの扱いは`SECURITY.md`を正とします。`.env`、Google CloudのJSON鍵、BigQueryの個人データ入りexportをコミットしないでください。
 - Pages更新では`.cache/forecast_bundle.json`をActions Cacheに保存し、Open-Meteoの主予報取得に失敗した場合は前回成功データを使って公開ページを維持します。
 - `data_quality.py`はCI、Pages、日次収集でレポートを出します。Pagesと日次収集では可用性を優先し、データ品質の指摘はworkflowを止めずStep Summary/artifactで確認します。
+- workflowにはtimeoutとconcurrencyを設定しています。外部APIやBigQueryが遅い場合でも、Actionsが長時間滞留しない前提を維持してください。
+- データ修正や運用障害は`.github/ISSUE_TEMPLATE/`のテンプレートで記録します。欠航理由など未確認データはIssueに残し、推測でDBへ入れないでください。
+- DependabotがPython依存やGitHub Actionsを更新します。自動更新PRを閉じる場合は、同等の更新を別PRで取り込んだ理由をコメントしてください。
 
 ## 変更時チェックリスト
 
@@ -164,6 +168,7 @@ $env:BIGQUERY_LOCATION = "asia-northeast1"
 5. `.venv\Scripts\python.exe -m pytest -q`を実行します。
 6. `data_quality.py`を実行し、データ品質レポートを確認します。
 7. 公開後はキャッシュを避けたURLでGitHub PagesのHTML/CSSを確認します。
+8. GitHub ActionsのCI/Pages/Data CollectionバッジがREADMEで確認できる状態を維持します。
 
 ## 注意
 
