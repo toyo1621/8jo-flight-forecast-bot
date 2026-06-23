@@ -357,16 +357,16 @@ def test_index_renders_forecast():
 
     assert response.status_code == 200
     body = response.get_data(as_text=True)
-    assert "八丈島就航統計予測" in body
-    assert "羽田→八丈島便の就航傾向を、過去の運航実績と天気から見やすくするサイトです。" in body
+    assert "八丈島運航統計予測" in body
+    assert "羽田→八丈島便の運航傾向を、過去の運航実績と天気から見やすくするサイトです。" in body
     assert "GFS(アメリカ海洋大気庁)・ECMWF(欧州中期予報センター)" in body
     assert "主予報はOpen-Meteo標準予報を使用しています。" in body
     assert "更新 " in body
     assert "(6時間ごとに更新)" in body
-    assert "青: 就航確率60%以上" in body
-    assert "オレンジ: 就航確率60%未満" in body
+    assert "青: 運航確率60%以上" in body
+    assert "オレンジ: 運航確率60%未満" in body
     assert "主予報: Open-Meteo標準予報" in body
-    assert "主予報(Open-Meteo)での就航確率" in body
+    assert "主予報(Open-Meteo)での運航確率" in body
     assert "天候信頼度" in body
     assert "風向 南 180°" in body
     assert "低層雲量 20%" in body
@@ -374,7 +374,7 @@ def test_index_renders_forecast():
     assert "なぜ作ったか" in body
     assert "ざっくりどういう仕組みか" in body
     assert "GFS 31通りとECMWF 31通り、合計62通り" in body
-    assert "就航確率60%未満の便はオレンジ" in body
+    assert "運航確率60%未満の便はオレンジ" in body
     assert "GitHub Actionsで6時間ごとに再計算" in body
     assert "気象業法への配慮" in body
     assert "予報気象情報" in body
@@ -387,9 +387,9 @@ def test_history_template_includes_flight_name_and_visibility_fallback():
 
     assert "{{ history.date_label }} {{ history.flight_display_name }}" in template
     assert "/ 視程 {% if history.visibility is not none %}{{ history.visibility }} km{% else %}欠測{% endif %}" in template
-    assert "GFS予報での参考就航確率" in template
-    assert "ECMWF予報での参考就航確率" in template
-    assert "JMA予報での参考就航確率" in template
+    assert "GFS予報での参考運航確率" in template
+    assert "ECMWF予報での参考運航確率" in template
+    assert "JMA予報での参考運航確率" in template
 
 
 def test_index_handles_weather_api_error():
@@ -405,4 +405,5 @@ def test_health():
 
     assert response.status_code == 200
     assert response.get_json() == {"status": "ok"}
+
 
