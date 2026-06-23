@@ -17,6 +17,8 @@ from app_config import (
     PRECIPITATION_RISK_MM,
     SEVERE_GUST_PROBABILITY_MULTIPLIER,
     SEVERE_GUST_RISK_MS,
+    SEVERE_LOW_CLOUD_PROBABILITY_MULTIPLIER,
+    SEVERE_LOW_CLOUD_RISK_PERCENT,
     SEVERE_PRECIPITATION_PROBABILITY_MULTIPLIER,
     SEVERE_PRECIPITATION_RISK_MM,
     SEVERE_VISIBILITY_PROBABILITY_MULTIPLIER,
@@ -238,7 +240,10 @@ def predict_flight_probability(wind_direction, wind_speed, wind_gusts, cloud_cov
         warnings.append(f"降水注意 (予報降水量: {precipitation} mm/h)")
 
     if cloud_cover_low is not None and cloud_cover_low > LOW_CLOUD_RISK_PERCENT:
-        prob *= LOW_CLOUD_PROBABILITY_MULTIPLIER
+        if cloud_cover_low >= SEVERE_LOW_CLOUD_RISK_PERCENT:
+            prob *= SEVERE_LOW_CLOUD_PROBABILITY_MULTIPLIER
+        else:
+            prob *= LOW_CLOUD_PROBABILITY_MULTIPLIER
         warnings.append(f"低層雲の影響注意 (低層雲量 {cloud_cover_low}%)")
         
     # 3. 台風・強風による補正

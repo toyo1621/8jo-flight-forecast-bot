@@ -18,8 +18,10 @@ from web_app import (
     fallback_confidence,
     _select_evenly,
     _prepare_reference_weather,
+    _with_typhoon_proximity_risk,
     _with_model_difference_warning,
     fetch_jma_forecast,
+    fetch_haneda_forecast,
     load_forecast_bundle,
     wind_direction_label,
 )
@@ -34,6 +36,8 @@ SAMPLE_WEATHER = {
         "wind_gusts": 7.0,
         "cloud_cover_low": 20.0,
         "visibility": 15.0,
+        "pressure_msl": 1012.0,
+        "surface_pressure": 1002.0,
     }
 }
 
@@ -84,6 +88,30 @@ def test_jma_forecast_requests_jma_seamless_model():
     assert get.call_args.kwargs["params"]["models"] == "jma_seamless"
     assert result["2026-06-20T08:00"]["visibility"] == 15.0
     assert result["2026-06-20T08:00"]["precipitation"] == 0.0
+    assert result["2026-06-20T08:00"]["pressure_msl"] is None
+
+
+def test_haneda_forecast_requests_haneda_coordinates():
+    response = Mock()
+    response.json.return_value = {
+        "hourly": {
+            "time": ["2026-06-20T08:00"],
+            "wind_speed_10m": [5.0],
+            "wind_direction_10m": [180.0],
+            "wind_gusts_10m": [8.0],
+            "cloud_cover_low": [20.0],
+            "visibility": [15000.0],
+            "precipitation": [0.0],
+            "pressure_msl": [1004.8],
+            "surface_pressure": [1001.0],
+        }
+    }
+    with patch("web_app.requests.get", return_value=response) as get:
+        result = fetch_haneda_forecast()
+
+    assert get.call_args.kwargs["params"]["latitude"] == 35.5494
+    assert get.call_args.kwargs["params"]["longitude"] == 139.7798
+    assert result["2026-06-20T08:00"]["pressure_msl"] == 1004.8
 
 
 def test_jma_reference_uses_main_forecast_for_missing_required_values():
@@ -131,6 +159,27 @@ def test_model_difference_warning_uses_twenty_point_boundary():
     assert warned["warning_msg"] == "気象モデル差に注意"
     assert warned["alert_required"] is True
     assert quiet["warning_msg"] == "特になし"
+
+
+def test_typhoon_risk_uses_ensemble_downside_and_pressure():
+    result = {"probability": 97.0, "warning_msg": "特になし", "alert_required": False}
+    confidence = {
+        "source": "ensemble",
+        "spread": 70.0,
+        "low_probability": 20.0,
+    }
+
+    ensemble_warned = _with_typhoon_proximity_risk(result, confidence)
+    pressure_warned = _with_typhoon_proximity_risk(
+        result,
+        {"source": "ensemble", "spread": 20.0, "low_probability": 80.0},
+        haneda_weather={"pressure_msl": 1004.9},
+    )
+
+    assert ensemble_warned["probability"] == 58.2
+    assert ensemble_warned["warning_msg"] == "台風接近リスク"
+    assert ensemble_warned["alert_required"] is True
+    assert pressure_warned["probability"] == 58.2
 
 
 def test_today_flight_disappears_after_arrival_plus_30_minutes():
@@ -238,19 +287,21 @@ def test_probability_cap_is_97_percent():
 def test_low_cloud_and_gust_adjustments_each_use_09():
     history = [("通常", 210.0, 18.0)] * 3 + [("欠航", 210.0, 18.0)] * 6
     with patch("forecast_engine.load_history", return_value=history):
-        result = predict_flight_probability(210.0, 18.09, 18.5, 100.0, 12.2)
+        result = predict_flight_probability(210.0, 18.09, 18.5, 85.0, 12.2)
 
     assert result["data_count"] == 9
     assert result["probability"] == 27.0
 
 
-def test_severe_visibility_and_gust_adjustments_are_stronger():
+def test_severe_visibility_low_cloud_and_gust_adjustments_are_stronger():
     history = [("通常", 210.0, 5.0)] * 10
     with patch("forecast_engine.load_history", return_value=history):
         low_visibility = predict_flight_probability(210.0, 5.0, 8.0, 20.0, 2.0)
+        severe_low_cloud = predict_flight_probability(210.0, 5.0, 8.0, 96.0, 15.0)
         severe_gust = predict_flight_probability(210.0, 5.0, 20.3, 20.0, 15.0)
 
     assert low_visibility["probability"] == 45.0
+    assert severe_low_cloud["probability"] == 75.0
     assert severe_gust["probability"] == 55.0
 
 
@@ -519,10 +570,12 @@ def test_load_forecast_bundle_reuses_cached_optional_sources():
         "weather": SAMPLE_WEATHER,
         "jma": {"cached-jma": {"wind_direction": 180.0, "wind_speed": 5.0}},
         "ensembles": {"cached-ensemble": []},
+        "haneda": {"cached-haneda": {"pressure_msl": 1008.0}},
     }
 
     with (
         patch("web_app.fetch_forecast", return_value=SAMPLE_WEATHER),
+        patch("web_app.fetch_haneda_forecast", side_effect=ValueError("bad haneda")),
         patch("web_app.fetch_jma_forecast", side_effect=ValueError("bad jma")),
         patch("web_app.fetch_ensemble_forecast", side_effect=ValueError("bad ensemble")),
         patch("web_app.load_cached_forecast_bundle", return_value=cached),
@@ -531,11 +584,13 @@ def test_load_forecast_bundle_reuses_cached_optional_sources():
         bundle = load_forecast_bundle()
 
     assert bundle["source"] == "live"
+    assert bundle["haneda"] == cached["haneda"]
     assert bundle["jma"] == cached["jma"]
     assert bundle["ensembles"] == cached["ensembles"]
-    assert "JMA予報は前回取得データ" in bundle["notices"][0]
-    assert "アンサンブル予報は前回取得データ" in bundle["notices"][1]
-    save.assert_called_once_with(SAMPLE_WEATHER, cached["jma"], cached["ensembles"])
+    assert "羽田側の予報は前回取得データ" in bundle["notices"][0]
+    assert "JMA予報は前回取得データ" in bundle["notices"][1]
+    assert "アンサンブル予報は前回取得データ" in bundle["notices"][2]
+    save.assert_called_once_with(SAMPLE_WEATHER, cached["jma"], cached["ensembles"], cached["haneda"])
 
 
 def test_select_evenly_balances_ensemble_members():
@@ -566,6 +621,7 @@ def test_index_renders_forecast():
     }
     with (
         patch("web_app.fetch_forecast", return_value=SAMPLE_WEATHER),
+        patch("web_app.fetch_haneda_forecast", return_value={}),
         patch("web_app.fetch_jma_forecast", return_value={}),
         patch("web_app.fetch_ensemble_forecast", return_value={}),
         patch("web_app.predict_flight_probability", return_value=result),
