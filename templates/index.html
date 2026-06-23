@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="description" content="羽田→八丈島便の就航傾向を、過去の運航実績と天気から見やすくするサイトです。">
   <title>八丈島就航統計予測</title>
-  <link rel="stylesheet" href="static/styles.css?v=20260620-1">
+  <link rel="stylesheet" href="static/styles.css?v=20260623-1">
   <script src="static/app.js?v=20260619-1" defer></script>
 </head>
 <body>
@@ -14,8 +14,12 @@
       <p class="eyebrow">HND / HAC</p>
       <h1>八丈島就航統計予測</h1>
       <p class="lead">羽田→八丈島便の就航傾向を、過去の運航実績と天気から見やすくするサイトです。</p>
-      <p class="updated">更新 {{ updated_at }}</p>
+      <p class="updated">更新 {{ updated_at }} (6時間ごとに更新)</p>
       <p class="forecast-source">主予報はOpen-Meteo標準予報を使用しています。</p>
+      <div class="status-legend" aria-label="表示色の説明">
+        <span><i class="legend-dot legend-dot--blue" aria-hidden="true"></i>青: 就航確率60%以上</span>
+        <span><i class="legend-dot legend-dot--orange" aria-hidden="true"></i>オレンジ: 就航確率60%未満</span>
+      </div>
       <p class="confidence-help">天候信頼度は、Open-Meteo APIからオープンデータであるGFS(アメリカ海洋大気庁)・ECMWF(欧州中期予報センター)のアンサンブル予報をもとに、予測される天候のばらつきから判定しています。Aに近いほどブレが小さい見込みです。気象庁(JMA)の予報は独立した参考値として比較しています。</p>
     </header>
 
