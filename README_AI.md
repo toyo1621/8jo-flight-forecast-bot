@@ -143,7 +143,7 @@ $env:BIGQUERY_LOCATION = "asia-northeast1"
 .\.venv\Scripts\python.exe db_snapshot.py export
 ```
 
-`import_user_csv.py`は、未知・未確定の`?`または`？`を推測せずスキップします。欠航理由は`status_reason`へ分離します。Archive APIで視程が欠測する場合はHistorical Forecast APIで補完し、`visibility_source`へ出典を保存します。
+`import_user_csv.py`は、未知・未確定の`?`または`？`を推測せずスキップします。欠航理由は`status_reason`へ分離し、不明な欠航理由は`未確認`として明示します。Archive APIで視程が欠測する場合はHistorical Forecast APIで補完し、`visibility_source`へ出典を保存します。
 
 テストでは外部APIやBigQueryをモックし、認証不要で完走できる状態を維持してください。
 
@@ -173,7 +173,7 @@ $env:BIGQUERY_LOCATION = "asia-northeast1"
 ## 注意
 
 - ユーザーが入力・調査した過去実績を勝手に上書き、推測、削除しないでください。
-- 欠航理由が不明な場合は推測せず`NULL`のままにします。
+- 欠航理由が不明な場合は推測せず`未確認`として保存し、後でユーザー調査により置き換えます。
 - 気象データの欠測と0は区別してください。
 - Open-Meteo、ODPT、BigQueryの障害時にも、JMAやアンサンブルの一部欠損で全体を落とさない既存のフォールバックを維持してください。
 

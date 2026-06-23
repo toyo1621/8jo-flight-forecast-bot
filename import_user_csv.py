@@ -10,6 +10,7 @@ DB_FILE = "flights.db"
 DEFAULT_CSV_FILE = "user_raw_data.csv"
 HACHIJOJIMA_LAT = 33.115
 HACHIJOJIMA_LON = 139.782
+UNKNOWN_REASON = "未確認"
 
 FLIGHT_MAPPING = [
     {"col_idx": 1, "flight_number": "ANA1891", "scheduled_time": "08:30", "target_hour": 8},
@@ -31,6 +32,7 @@ def init_db():
         wind_gusts REAL,
         cloud_cover_low REAL,
         visibility REAL,
+        visibility_source TEXT,
         created_at TEXT DEFAULT CURRENT_TIMESTAMP,
         UNIQUE(date, flight_number)
     )
@@ -45,6 +47,12 @@ def init_db():
         cursor.execute("ALTER TABLE flight_weather_logs ADD COLUMN status_reason TEXT")
         conn.commit()
         print("既存のデータベースに status_reason (運航理由) カラムを追加しました。")
+    except sqlite3.OperationalError:
+        pass
+    try:
+        cursor.execute("ALTER TABLE flight_weather_logs ADD COLUMN visibility_source TEXT")
+        conn.commit()
+        print("既存のデータベースに visibility_source (視程出典) カラムを追加しました。")
     except sqlite3.OperationalError:
         pass
     conn.commit()
@@ -218,6 +226,8 @@ def main():
                     col_idx = f_map["col_idx"]
                     status_raw = rec["statuses"][col_idx - 1]
                     status, status_reason = parse_status(status_raw)
+                    if status in {"欠航", "条件付き→引返欠航"}:
+                        status_reason = status_reason or UNKNOWN_REASON
                     
                     if status is None:
                         # 取得していない、または不明なステータスはスキップ
@@ -259,8 +269,9 @@ def main():
                         cursor.execute("""
                         INSERT INTO flight_weather_logs (
                             date, flight_number, scheduled_time, status, status_reason,
-                            wind_direction, wind_speed, wind_gusts, cloud_cover_low, visibility
-                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                            wind_direction, wind_speed, wind_gusts, cloud_cover_low, visibility,
+                            visibility_source
+                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                         ON CONFLICT(date, flight_number) DO UPDATE SET
                             scheduled_time=excluded.scheduled_time,
                             status=excluded.status,
@@ -270,11 +281,13 @@ def main():
                             wind_gusts=excluded.wind_gusts,
                             cloud_cover_low=excluded.cloud_cover_low,
                             visibility=excluded.visibility,
+                            visibility_source=excluded.visibility_source,
                             created_at=CURRENT_TIMESTAMP
                         """, (
                             date_str, f_map["flight_number"], f_map["scheduled_time"],
                             status, status_reason, w["wind_direction"], w["wind_speed"],
-                            w["wind_gusts"], w["cloud_cover_low"], w["visibility"]
+                            w["wind_gusts"], w["cloud_cover_low"], w["visibility"],
+                            item["visibility_source"],
                         ))
 
         if args.backend in {"sqlite", "both"}:

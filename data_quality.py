@@ -21,6 +21,7 @@ NON_OPERATED_STATUSES = {"欠航", "条件付き→引返欠航"}
 KNOWN_STATUSES = OPERATED_STATUSES | NON_OPERATED_STATUSES
 REQUIRED_WEATHER_FIELDS = ("wind_direction", "wind_speed", "wind_gusts", "cloud_cover_low")
 REASON_REQUIRED_STATUSES = {"欠航", "条件付き→引返欠航"}
+UNCONFIRMED_REASON = "未確認"
 DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 TIME_RE = re.compile(r"^\d{2}:\d{2}(:\d{2})?$")
 
@@ -137,6 +138,15 @@ def analyze_records(records, today=None):
     ]
     if missing_reason_rows:
         findings.append(_finding("warning", "missing_cancellation_reason", "欠航・引返欠航に欠航理由がありません。", missing_reason_rows))
+
+    unconfirmed_reason_rows = [
+        row
+        for row in rows
+        if normalize_status(row.get("status")) in REASON_REQUIRED_STATUSES
+        and row.get("status_reason") == UNCONFIRMED_REASON
+    ]
+    if unconfirmed_reason_rows:
+        findings.append(_finding("info", "unconfirmed_cancellation_reason", "欠航理由が未確認として明示されています。", unconfirmed_reason_rows))
 
     for field in REQUIRED_WEATHER_FIELDS:
         missing = [row for row in rows if row.get(field) is None]
