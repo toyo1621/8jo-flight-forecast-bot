@@ -442,9 +442,9 @@ def _has_typhoon_proximity_risk(confidence, hachijo_weather=None, haneda_weather
     return ensemble_risk or _pressure_risk(hachijo_weather) or _pressure_risk(haneda_weather)
 
 
-def _with_typhoon_proximity_risk(result, confidence=None, hachijo_weather=None, haneda_weather=None):
+def _with_typhoon_proximity_risk(result, confidence=None, hachijo_weather=None, haneda_weather=None, force=False):
     result = dict(result)
-    if not _has_typhoon_proximity_risk(confidence, hachijo_weather, haneda_weather):
+    if not force and not _has_typhoon_proximity_risk(confidence, hachijo_weather, haneda_weather):
         return result
     result["probability"] = round(result["probability"] * TYPHOON_PROBABILITY_MULTIPLIER, 1)
     return _append_warning(result, "台風接近リスク")
@@ -464,6 +464,22 @@ def _with_typhoon_risk_summary(summary, has_typhoon_risk):
     if "台風接近リスク" in summary:
         return summary
     return f"{summary}、台風接近リスク"
+
+
+def _date_has_typhoon_proximity_risk(date_string, weather_by_time, ensembles_by_time, haneda_by_time):
+    for flight in FLIGHTS:
+        timestamp = f"{date_string}T{flight['forecast_hour']:02d}:00"
+        weather = weather_by_time.get(timestamp)
+        if (
+            weather is None
+            or weather.get("wind_direction") is None
+            or weather.get("wind_speed") is None
+        ):
+            continue
+        confidence = calculate_confidence(ensembles_by_time.get(timestamp, []), weather)
+        if _has_typhoon_proximity_risk(confidence, weather, haneda_by_time.get(timestamp)):
+            return True
+    return False
 
 
 def _log_or_print(logger, message, exc):
@@ -546,6 +562,12 @@ def build_daily_forecasts(
     days = []
     for date_string in dates:
         date = datetime.strptime(date_string, "%Y-%m-%d")
+        day_has_typhoon_risk = _date_has_typhoon_proximity_risk(
+            date_string,
+            weather_by_time,
+            ensembles_by_time,
+            haneda_by_time,
+        )
         flights = []
         for flight in FLIGHTS:
             if date.date() == current_time.date() and _flight_display_expired(date_string, flight["time"], current_time):
@@ -563,10 +585,22 @@ def build_daily_forecasts(
             jma_weather = _prepare_reference_weather(jma_by_time.get(timestamp), weather)
             jma_result = predict_flight_probability(**_prediction_weather(jma_weather)) if jma_weather is not None else None
             confidence = calculate_confidence(ensembles_by_time.get(timestamp, []), weather)
-            has_typhoon_risk = _has_typhoon_proximity_risk(confidence, weather, haneda_weather)
-            result = _with_typhoon_proximity_risk(result, confidence, weather, haneda_weather)
+            has_typhoon_risk = day_has_typhoon_risk or _has_typhoon_proximity_risk(confidence, weather, haneda_weather)
+            result = _with_typhoon_proximity_risk(
+                result,
+                confidence,
+                weather,
+                haneda_weather,
+                force=day_has_typhoon_risk,
+            )
             if jma_result is not None:
-                jma_result = _with_typhoon_proximity_risk(jma_result, confidence, weather, haneda_weather)
+                jma_result = _with_typhoon_proximity_risk(
+                    jma_result,
+                    confidence,
+                    weather,
+                    haneda_weather,
+                    force=day_has_typhoon_risk,
+                )
             jma_probability = jma_result["probability"] if jma_result is not None else None
             model_probabilities = calculate_model_reference_probabilities(
                 ensembles_by_time.get(timestamp, []), weather
