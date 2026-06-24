@@ -165,8 +165,8 @@ def test_typhoon_risk_uses_ensemble_downside_and_pressure():
     result = {"probability": 97.0, "warning_msg": "特になし", "alert_required": False}
     confidence = {
         "source": "ensemble",
-        "spread": 70.0,
-        "low_probability": 30.8,
+        "spread": 58.4,
+        "low_probability": 38.6,
     }
 
     ensemble_warned = _with_typhoon_proximity_risk(result, confidence)
