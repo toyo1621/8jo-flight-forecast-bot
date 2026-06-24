@@ -165,8 +165,8 @@ def test_typhoon_risk_uses_ensemble_downside_and_pressure():
     result = {"probability": 97.0, "warning_msg": "特になし", "alert_required": False}
     confidence = {
         "source": "ensemble",
-        "spread": 70.0,
-        "low_probability": 20.0,
+        "spread": 58.4,
+        "low_probability": 38.6,
     }
 
     ensemble_warned = _with_typhoon_proximity_risk(result, confidence)
@@ -180,6 +180,38 @@ def test_typhoon_risk_uses_ensemble_downside_and_pressure():
     assert ensemble_warned["warning_msg"] == "台風接近リスク"
     assert ensemble_warned["alert_required"] is True
     assert pressure_warned["probability"] == 58.2
+
+
+def test_typhoon_risk_applies_to_all_flights_on_same_day():
+    base_weather = {
+        "wind_direction": 240.0,
+        "wind_speed": 4.0,
+        "wind_gusts": 8.0,
+        "cloud_cover_low": 20.0,
+        "visibility": 15.0,
+        "precipitation": 0.0,
+        "pressure_msl": 1010.0,
+        "surface_pressure": 1000.0,
+    }
+    weather = {
+        "2026-06-28T08:00": {**base_weather, "pressure_msl": 1004.8},
+        "2026-06-28T13:00": base_weather,
+        "2026-06-28T17:00": base_weather,
+    }
+    result = {"probability": 97.0, "warning_msg": "特になし", "alert_required": False}
+
+    with (
+        patch("web_app.predict_flight_probability", return_value=result),
+        patch("web_app.find_similar_flights", return_value=[]),
+    ):
+        days = build_daily_forecasts(
+            weather,
+            reference_date=date(2026, 6, 24),
+            current_time=datetime(2026, 6, 24, 10, 0, tzinfo=JST),
+        )
+
+    assert [flight["probability"] for flight in days[0]["flights"]] == [58.2, 58.2, 58.2]
+    assert all("台風接近リスク" in flight["warning_msg"] for flight in days[0]["flights"])
 
 
 def test_today_flight_disappears_after_arrival_plus_30_minutes():
