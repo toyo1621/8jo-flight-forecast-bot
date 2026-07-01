@@ -1,6 +1,6 @@
 import json
 import os
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 
 from app_config import JST
@@ -9,10 +9,21 @@ from app_config import JST
 BASE_DIR = Path(__file__).resolve().parent
 DEFAULT_CACHE_FILE = BASE_DIR / ".cache" / "forecast_bundle.json"
 CACHE_VERSION = 1
+DEFAULT_CACHE_MAX_AGE = timedelta(hours=3)
 
 
 def _cache_file():
     return Path(os.getenv("FORECAST_CACHE_FILE", DEFAULT_CACHE_FILE))
+
+
+def _cache_max_age():
+    minutes = os.getenv("FORECAST_CACHE_MAX_AGE_MINUTES")
+    if not minutes:
+        return DEFAULT_CACHE_MAX_AGE
+    try:
+        return timedelta(minutes=max(0, int(minutes)))
+    except ValueError:
+        return DEFAULT_CACHE_MAX_AGE
 
 
 def save_forecast_bundle(weather, jma=None, ensembles=None, haneda=None, cache_file=None):
@@ -40,3 +51,19 @@ def load_cached_forecast_bundle(cache_file=None):
     if payload.get("version") != CACHE_VERSION or not payload.get("weather"):
         return None
     return payload
+
+
+def is_cached_forecast_fresh(payload, now=None, max_age=None):
+    if not payload or not payload.get("cached_at"):
+        return False
+    try:
+        cached_at = datetime.fromisoformat(payload["cached_at"])
+    except (TypeError, ValueError):
+        return False
+    now = now or datetime.now(JST)
+    if cached_at.tzinfo is None:
+        cached_at = cached_at.replace(tzinfo=JST)
+    if now.tzinfo is None:
+        now = now.replace(tzinfo=JST)
+    max_age = max_age if max_age is not None else _cache_max_age()
+    return now - cached_at <= max_age

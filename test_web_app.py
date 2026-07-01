@@ -599,6 +599,7 @@ def test_load_forecast_bundle_uses_cached_main_forecast_on_api_error():
 
 def test_load_forecast_bundle_reuses_cached_optional_sources():
     cached = {
+        "cached_at": datetime.now(JST).isoformat(),
         "weather": SAMPLE_WEATHER,
         "jma": {"cached-jma": {"wind_direction": 180.0, "wind_speed": 5.0}},
         "ensembles": {"cached-ensemble": []},
@@ -623,6 +624,35 @@ def test_load_forecast_bundle_reuses_cached_optional_sources():
     assert "JMA予報は前回取得データ" in bundle["notices"][1]
     assert "アンサンブル予報は前回取得データ" in bundle["notices"][2]
     save.assert_called_once_with(SAMPLE_WEATHER, cached["jma"], cached["ensembles"], cached["haneda"])
+
+
+def test_load_forecast_bundle_does_not_reuse_stale_cached_optional_sources():
+    cached = {
+        "cached_at": "2020-01-01T00:00:00+09:00",
+        "weather": SAMPLE_WEATHER,
+        "jma": {"cached-jma": {"wind_direction": 180.0, "wind_speed": 5.0}},
+        "ensembles": {"cached-ensemble": [{"wind_direction": 180.0, "wind_speed": 12.0}]},
+        "haneda": {"cached-haneda": {"pressure_msl": 1004.0}},
+    }
+
+    with (
+        patch("web_app.fetch_forecast", return_value=SAMPLE_WEATHER),
+        patch("web_app.fetch_haneda_forecast", side_effect=ValueError("bad haneda")),
+        patch("web_app.fetch_jma_forecast", side_effect=ValueError("bad jma")),
+        patch("web_app.fetch_ensemble_forecast", side_effect=ValueError("bad ensemble")),
+        patch("web_app.load_cached_forecast_bundle", return_value=cached),
+        patch("web_app.save_forecast_bundle") as save,
+    ):
+        bundle = load_forecast_bundle()
+
+    assert bundle["source"] == "live"
+    assert bundle["haneda"] == {}
+    assert bundle["jma"] == {}
+    assert bundle["ensembles"] == {}
+    assert "羽田側の予報を取得できませんでした。" in bundle["notices"][0]
+    assert "JMA予報を取得できませんでした。" in bundle["notices"][1]
+    assert "アンサンブル予報を取得できませんでした。" in bundle["notices"][2]
+    save.assert_called_once_with(SAMPLE_WEATHER, {}, {}, {})
 
 
 def test_select_evenly_balances_ensemble_members():
