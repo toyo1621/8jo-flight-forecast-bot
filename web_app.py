@@ -28,7 +28,7 @@ from app_config import (
     TYPHOON_SURFACE_PRESSURE_RISK_HPA,
 )
 from db_snapshot import restore_db
-from forecast_cache import load_cached_forecast_bundle, save_forecast_bundle
+from forecast_cache import is_cached_forecast_fresh, load_cached_forecast_bundle, save_forecast_bundle
 from flight_metadata import flight_display_name
 from forecast_engine import find_similar_flights, predict_flight_probability
 from presentation import decorate_flight_for_display
@@ -493,6 +493,7 @@ def _log_or_print(logger, message, exc):
 
 def load_forecast_bundle(logger=None):
     cached = load_cached_forecast_bundle()
+    fresh_cached = cached if is_cached_forecast_fresh(cached) else None
     notices = []
     try:
         weather = fetch_forecast()
@@ -514,25 +515,31 @@ def load_forecast_bundle(logger=None):
         haneda = fetch_haneda_forecast()
     except (requests.RequestException, ValueError) as exc:
         _log_or_print(logger, "Haneda forecast could not be loaded", exc)
-        haneda = cached.get("haneda", {}) if cached else {}
+        haneda = fresh_cached.get("haneda", {}) if fresh_cached else {}
         if haneda:
             notices.append("羽田側の予報は前回取得データを使用しています。")
+        else:
+            notices.append("羽田側の予報を取得できませんでした。")
 
     try:
         jma = fetch_jma_forecast()
     except (requests.RequestException, ValueError) as exc:
         _log_or_print(logger, "JMA forecast could not be loaded", exc)
-        jma = cached.get("jma", {}) if cached else {}
+        jma = fresh_cached.get("jma", {}) if fresh_cached else {}
         if jma:
             notices.append("JMA予報は前回取得データを使用しています。")
+        else:
+            notices.append("JMA予報を取得できませんでした。")
 
     try:
         ensembles = fetch_ensemble_forecast()
     except (requests.RequestException, ValueError) as exc:
         _log_or_print(logger, "Ensemble forecast could not be loaded", exc)
-        ensembles = cached.get("ensembles", {}) if cached else {}
+        ensembles = fresh_cached.get("ensembles", {}) if fresh_cached else {}
         if ensembles:
             notices.append("アンサンブル予報は前回取得データを使用しています。")
+        else:
+            notices.append("アンサンブル予報を取得できませんでした。")
 
     save_forecast_bundle(weather, jma, ensembles, haneda)
     return {
