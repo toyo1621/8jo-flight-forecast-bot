@@ -1,15 +1,16 @@
-.site-logo {
+.footer-logo {
   display: block;
-  width: 64px;
-  height: 64px;
-  margin: 0 0 14px;
-  filter: drop-shadow(0 12px 24px rgba(0, 6, 15, .34));
+  width: 38px;
+  height: 38px;
+  margin: 0 auto 18px;
+  opacity: .62;
+  filter: drop-shadow(0 8px 18px rgba(0, 6, 15, .24));
 }
 
 @media (max-width: 480px) {
-  .site-logo {
-    width: 54px;
-    height: 54px;
-    margin-bottom: 12px;
+  .footer-logo {
+    width: 34px;
+    height: 34px;
+    margin-bottom: 14px;
   }
 }
