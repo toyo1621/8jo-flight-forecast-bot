@@ -54,6 +54,8 @@ def build_site(output_dir=DIST_DIR):
         bundle["weather"],
         bundle["ensembles"],
         jma_by_time=bundle["jma"],
+        haneda_by_time=bundle["haneda"],
+        typhoon_impacts_by_date=bundle["typhoon_impacts"],
     )
     updated_at = datetime.now(JST).strftime("%Y/%m/%d %H:%M")
     with app.app_context():

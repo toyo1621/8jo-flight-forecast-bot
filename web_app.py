@@ -21,11 +21,10 @@ from app_config import (
     LOW_PROBABILITY_THRESHOLD,
     MAIN_FORECAST_URL,
     MODEL_DIFFERENCE_WARNING_POINTS,
-    TYPHOON_ENSEMBLE_LOW_PROBABILITY_RISK_PERCENT,
-    TYPHOON_ENSEMBLE_SPREAD_RISK_POINTS,
-    TYPHOON_PRESSURE_MSL_RISK_HPA,
-    TYPHOON_PROBABILITY_MULTIPLIER,
-    TYPHOON_SURFACE_PRESSURE_RISK_HPA,
+    TYPHOON_IMPACT_API_URL,
+    TYPHOON_IMPACT_LABELS,
+    TYPHOON_IMPACT_MULTIPLIERS,
+    TYPHOON_IMPACT_SOURCE,
 )
 from db_snapshot import restore_db
 from forecast_cache import is_cached_forecast_fresh, load_cached_forecast_bundle, save_forecast_bundle
@@ -103,6 +102,39 @@ def fetch_haneda_forecast():
         latitude=HANEDA_AIRPORT_LATITUDE,
         longitude=HANEDA_AIRPORT_LONGITUDE,
     )
+
+
+def fetch_typhoon_impacts():
+    response = requests.get(
+        TYPHOON_IMPACT_API_URL,
+        params={"source": TYPHOON_IMPACT_SOURCE},
+        timeout=15,
+    )
+    response.raise_for_status()
+    payload = response.json()
+    if not isinstance(payload, dict) or payload.get("source") != TYPHOON_IMPACT_SOURCE:
+        raise ValueError("台風影響度APIのデータソースが正しくありません。")
+
+    days = payload.get("days")
+    if not isinstance(days, list) or not days:
+        raise ValueError("台風影響度APIの日別データがありません。")
+
+    valid_levels = {"low", *TYPHOON_IMPACT_MULTIPLIERS}
+    impacts = {}
+    for day in days:
+        if not isinstance(day, dict):
+            continue
+        targets = day.get("targets")
+        target = targets.get("flight", {}) if isinstance(targets, dict) else {}
+        if not isinstance(target, dict):
+            target = {}
+        level = target.get("riskLevel") or day.get("summaryRiskLevel")
+        date_string = day.get("date")
+        if isinstance(date_string, str) and level in valid_levels:
+            impacts[date_string] = level
+    if not impacts:
+        raise ValueError("台風影響度APIに利用可能な飛行機向け影響度がありません。")
+    return impacts
 
 
 def fetch_ensemble_forecast():
@@ -420,66 +452,39 @@ def _append_warning(result, warning):
     return result
 
 
-def _pressure_risk(weather):
-    if not weather:
-        return False
-    pressure_msl = weather.get("pressure_msl")
-    surface_pressure = weather.get("surface_pressure")
-    return (
-        pressure_msl is not None and pressure_msl <= TYPHOON_PRESSURE_MSL_RISK_HPA
-    ) or (
-        surface_pressure is not None and surface_pressure <= TYPHOON_SURFACE_PRESSURE_RISK_HPA
-    )
+def _typhoon_risk_warning(risk_level):
+    label = TYPHOON_IMPACT_LABELS.get(risk_level)
+    return f"台風接近リスク{label}" if label else None
 
 
-def _has_typhoon_proximity_risk(confidence, hachijo_weather=None, haneda_weather=None):
-    ensemble_risk = (
-        confidence is not None
-        and confidence.get("source") == "ensemble"
-        and confidence.get("spread", 0) >= TYPHOON_ENSEMBLE_SPREAD_RISK_POINTS
-        and confidence.get("low_probability", 100) <= TYPHOON_ENSEMBLE_LOW_PROBABILITY_RISK_PERCENT
-    )
-    return ensemble_risk or _pressure_risk(hachijo_weather) or _pressure_risk(haneda_weather)
-
-
-def _with_typhoon_proximity_risk(result, confidence=None, hachijo_weather=None, haneda_weather=None, force=False):
+def _with_typhoon_impact(result, risk_level):
     result = dict(result)
-    if not force and not _has_typhoon_proximity_risk(confidence, hachijo_weather, haneda_weather):
+    multiplier = TYPHOON_IMPACT_MULTIPLIERS.get(risk_level)
+    warning = _typhoon_risk_warning(risk_level)
+    if multiplier is None or warning is None:
         return result
-    result["probability"] = round(result["probability"] * TYPHOON_PROBABILITY_MULTIPLIER, 1)
-    return _append_warning(result, "台風接近リスク")
+    result["probability"] = round(result["probability"] * multiplier, 1)
+    return _append_warning(result, warning)
 
 
-def _with_typhoon_probability_adjustment(probability, has_typhoon_risk):
-    if probability is None or not has_typhoon_risk:
+def _with_typhoon_probability_adjustment(probability, risk_level):
+    multiplier = TYPHOON_IMPACT_MULTIPLIERS.get(risk_level)
+    if probability is None or multiplier is None:
         return probability
-    return round(probability * TYPHOON_PROBABILITY_MULTIPLIER, 1)
+    return round(probability * multiplier, 1)
 
 
-def _with_typhoon_risk_summary(summary, has_typhoon_risk):
-    if not has_typhoon_risk:
+def _with_typhoon_risk_summary(summary, risk_level):
+    warning = _typhoon_risk_warning(risk_level)
+    if warning is None:
         return summary
     if not summary or summary == "特になし":
-        return "台風接近リスク"
-    if "台風接近リスク" in summary:
+        return warning
+    if warning in summary:
         return summary
-    return f"{summary}、台風接近リスク"
-
-
-def _date_has_typhoon_proximity_risk(date_string, weather_by_time, ensembles_by_time, haneda_by_time):
-    for flight in FLIGHTS:
-        timestamp = f"{date_string}T{flight['forecast_hour']:02d}:00"
-        weather = weather_by_time.get(timestamp)
-        if (
-            weather is None
-            or weather.get("wind_direction") is None
-            or weather.get("wind_speed") is None
-        ):
-            continue
-        confidence = calculate_confidence(ensembles_by_time.get(timestamp, []), weather)
-        if _has_typhoon_proximity_risk(confidence, weather, haneda_by_time.get(timestamp)):
-            return True
-    return False
+    if "台風接近リスク" in summary:
+        return summary.replace("台風接近リスク", warning, 1)
+    return f"{summary}、{warning}"
 
 
 def _log_or_print(logger, message, exc):
@@ -506,6 +511,7 @@ def load_forecast_bundle(logger=None):
                 "jma": cached.get("jma", {}),
                 "ensembles": cached.get("ensembles", {}),
                 "haneda": cached.get("haneda", {}),
+                "typhoon_impacts": cached.get("typhoon_impacts", {}),
                 "notices": notices,
                 "source": "cache",
             }
@@ -541,12 +547,29 @@ def load_forecast_bundle(logger=None):
         else:
             notices.append("アンサンブル予報を取得できませんでした。")
 
-    save_forecast_bundle(weather, jma, ensembles, haneda)
+    try:
+        typhoon_impacts = fetch_typhoon_impacts()
+    except (requests.RequestException, ValueError) as exc:
+        _log_or_print(logger, "Typhoon impact scores could not be loaded", exc)
+        typhoon_impacts = fresh_cached.get("typhoon_impacts", {}) if fresh_cached else {}
+        if typhoon_impacts:
+            notices.append("台風影響度は前回取得データを使用しています。")
+        else:
+            notices.append("台風影響度を取得できなかったため、台風補正は適用していません。")
+
+    save_forecast_bundle(
+        weather,
+        jma,
+        ensembles,
+        haneda,
+        typhoon_impacts=typhoon_impacts,
+    )
     return {
         "weather": weather,
         "jma": jma,
         "ensembles": ensembles,
         "haneda": haneda,
+        "typhoon_impacts": typhoon_impacts,
         "notices": notices,
         "source": "live",
     }
@@ -559,22 +582,19 @@ def build_daily_forecasts(
     current_time=None,
     jma_by_time=None,
     haneda_by_time=None,
+    typhoon_impacts_by_date=None,
 ):
     ensembles_by_time = ensembles_by_time or {}
     jma_by_time = jma_by_time or {}
     haneda_by_time = haneda_by_time or {}
+    typhoon_impacts_by_date = typhoon_impacts_by_date or {}
     current_time = current_time or datetime.now(JST)
     reference_date = reference_date or current_time.date()
     dates = sorted({timestamp[:10] for timestamp in weather_by_time})
     days = []
     for date_string in dates:
         date = datetime.strptime(date_string, "%Y-%m-%d")
-        day_has_typhoon_risk = _date_has_typhoon_proximity_risk(
-            date_string,
-            weather_by_time,
-            ensembles_by_time,
-            haneda_by_time,
-        )
+        typhoon_risk_level = typhoon_impacts_by_date.get(date_string, "low")
         flights = []
         for flight in FLIGHTS:
             if date.date() == current_time.date() and _flight_display_expired(date_string, flight["time"], current_time):
@@ -587,40 +607,26 @@ def build_daily_forecasts(
                 or weather.get("wind_speed") is None
             ):
                 continue
-            haneda_weather = haneda_by_time.get(timestamp)
             result = predict_flight_probability(**_prediction_weather(weather))
             jma_weather = _prepare_reference_weather(jma_by_time.get(timestamp), weather)
             jma_result = predict_flight_probability(**_prediction_weather(jma_weather)) if jma_weather is not None else None
             confidence = calculate_confidence(ensembles_by_time.get(timestamp, []), weather)
-            has_typhoon_risk = day_has_typhoon_risk or _has_typhoon_proximity_risk(confidence, weather, haneda_weather)
-            result = _with_typhoon_proximity_risk(
-                result,
-                confidence,
-                weather,
-                haneda_weather,
-                force=day_has_typhoon_risk,
-            )
+            result = _with_typhoon_impact(result, typhoon_risk_level)
             if jma_result is not None:
-                jma_result = _with_typhoon_proximity_risk(
-                    jma_result,
-                    confidence,
-                    weather,
-                    haneda_weather,
-                    force=day_has_typhoon_risk,
-                )
+                jma_result = _with_typhoon_impact(jma_result, typhoon_risk_level)
             jma_probability = jma_result["probability"] if jma_result is not None else None
             model_probabilities = calculate_model_reference_probabilities(
                 ensembles_by_time.get(timestamp, []), weather
             )
             model_probabilities = {
-                model: _with_typhoon_probability_adjustment(probability, has_typhoon_risk)
+                model: _with_typhoon_probability_adjustment(probability, typhoon_risk_level)
                 for model, probability in model_probabilities.items()
             }
             model_risks = calculate_model_reference_risks(
                 ensembles_by_time.get(timestamp, []), weather
             )
             model_risks = {
-                model: _with_typhoon_risk_summary(risk, has_typhoon_risk)
+                model: _with_typhoon_risk_summary(risk, typhoon_risk_level)
                 for model, risk in model_risks.items()
             }
             result = _with_model_difference_warning(result, jma_probability)
@@ -636,7 +642,7 @@ def build_daily_forecasts(
                         "jma_weather": jma_weather,
                         "jma_probability": jma_probability,
                         "jma_risk": _with_typhoon_risk_summary(
-                            deterministic_risk_summary(jma_result), has_typhoon_risk
+                            deterministic_risk_summary(jma_result), typhoon_risk_level
                         ) if jma_result is not None else None,
                         "gfs_probability": model_probabilities.get("gfs_seamless"),
                         "gfs_risk": model_risks.get("gfs_seamless"),
@@ -687,6 +693,7 @@ def create_app():
                 bundle["ensembles"],
                 jma_by_time=bundle["jma"],
                 haneda_by_time=bundle["haneda"],
+                typhoon_impacts_by_date=bundle["typhoon_impacts"],
             )
             notices = bundle["notices"]
         except (requests.RequestException, ValueError, OSError) as exc:

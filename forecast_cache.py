@@ -26,7 +26,14 @@ def _cache_max_age():
         return DEFAULT_CACHE_MAX_AGE
 
 
-def save_forecast_bundle(weather, jma=None, ensembles=None, haneda=None, cache_file=None):
+def save_forecast_bundle(
+    weather,
+    jma=None,
+    ensembles=None,
+    haneda=None,
+    cache_file=None,
+    typhoon_impacts=None,
+):
     path = Path(cache_file) if cache_file is not None else _cache_file()
     path.parent.mkdir(parents=True, exist_ok=True)
     payload = {
@@ -36,6 +43,7 @@ def save_forecast_bundle(weather, jma=None, ensembles=None, haneda=None, cache_f
         "jma": jma or {},
         "ensembles": ensembles or {},
         "haneda": haneda or {},
+        "typhoon_impacts": typhoon_impacts or {},
     }
     path.write_text(json.dumps(payload, ensure_ascii=False), encoding="utf-8")
 

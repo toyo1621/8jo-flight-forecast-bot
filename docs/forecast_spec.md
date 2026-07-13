@@ -24,8 +24,10 @@
 
 ### 対応ロジックの設計
 * **急変注意アラートの表示**:
-  * 八丈島側または羽田側の気圧が低い場合、またはGFS・ECMWFアンサンブルの中央80%幅が50ポイント以上かつ下位10%が45%以下の場合を「台風接近リスク」と判定します。
-  * 台風接近リスク時は、主予報、GFS、ECMWF、JMAの表示確率に0.6を掛け、Web UI上に「台風接近リスク」を表示します。
+  * [八丈島・東京方面 台風影響目安](https://8jo-typhoon-ensemble.toyo1621.workers.dev/?source=jma)の公開JSON APIをJMAモードで取得し、日別の飛行機向け影響度を使います。
+  * APIの`low`は補正なし、`medium`は台風接近リスク小、`high`はリスク中、`severe`はリスク大として扱います。
+  * リスク小・中・大では、主予報、GFS、ECMWF、JMAの表示確率にそれぞれ0.9・0.8・0.7を掛けます。同じ日の全便へ同じ倍率を適用します。
+  * APIを取得できない場合は台風補正を新規適用せず、直近3時間以内のキャッシュがあれば前回の影響度を使用します。
 
 ### 島民知見に基づく暫定リスク条件
 
@@ -64,7 +66,7 @@
 将来的に予測スクリプトを作る際は、上記のルールを反映した以下のようなハイブリッドモデルを実装します。
 
 ```python
-def calculate_flight_probability(wind_speed, wind_direction, cloud_cover_low, visibility, is_typhoon_warning):
+def calculate_flight_probability(wind_speed, wind_direction, cloud_cover_low, visibility, typhoon_impact_level):
     # 1. ベースとなる風向・風速からの確率算出 (過去統計)
     base_prob = get_wind_historical_probability(wind_speed, wind_direction)
     
@@ -74,11 +76,12 @@ def calculate_flight_probability(wind_speed, wind_direction, cloud_cover_low, vi
     elif cloud_cover_low > 80:
         base_prob *= 0.9  # 低層雲が厚い場合も引き下げ
         
-    # 3. 台風警告時の補正 & アラートフラグ
-    alert_required = False
-    if is_typhoon_warning:
-        base_prob *= 0.6
-        alert_required = True
+    # 3. 外部サイトの台風影響度による補正 & アラートフラグ
+    typhoon_multipliers = {"medium": 0.9, "high": 0.8, "severe": 0.7}
+    multiplier = typhoon_multipliers.get(typhoon_impact_level)
+    alert_required = multiplier is not None
+    if multiplier is not None:
+        base_prob *= multiplier
         
     # 4. 機材繰り等を考慮した 100% 排除のキャップ処理
     final_prob = min(base_prob, 97.0)  # 最高でも97%にする
