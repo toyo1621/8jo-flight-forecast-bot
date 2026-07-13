@@ -17,7 +17,7 @@ from web_app import (
 
 
 DIST_DIR = BASE_DIR / "dist"
-FAVICON_VERSION = "20260713-1"
+FAVICON_VERSION = "20260713-2"
 
 
 def add_brand_assets(html):
@@ -32,13 +32,14 @@ def add_brand_assets(html):
             ),
             1,
         )
-    if "class=\"site-logo\"" not in html:
+    if "class=\"footer-logo\"" not in html:
         html = html.replace(
-            "      <p class=\"eyebrow\">HND / HAC</p>",
+            "    <footer>\n      <p>運航可否は最終的に航空会社の判断に従ってください。最新の運航情報はANA公式サイトでご確認ください。</p>",
             (
-                f"      <img class=\"site-logo\" src=\"static/logo.svg?v={FAVICON_VERSION}\" "
+                "    <footer>\n"
+                f"      <img class=\"footer-logo\" src=\"static/logo.svg?v={FAVICON_VERSION}\" "
                 "alt=\"\" aria-hidden=\"true\">\n"
-                "      <p class=\"eyebrow\">HND / HAC</p>"
+                "      <p>運航可否は最終的に航空会社の判断に従ってください。最新の運航情報はANA公式サイトでご確認ください。</p>"
             ),
             1,
         )
