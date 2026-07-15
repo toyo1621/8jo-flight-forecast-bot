@@ -15,10 +15,10 @@ jobs:
     timeout-minutes: 10
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v7
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
 
       - name: Set up Python
-        uses: actions/setup-python@v6
+        uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
         with:
           python-version: "3.12"
           cache: pip
@@ -32,25 +32,8 @@ jobs:
       - name: Run tests
         run: python -m pytest -q
 
-      - name: Restore local SQLite snapshot
-        run: python db_snapshot.py restore
+      - name: Lint Python
+        run: python -m ruff check .
 
-      - name: Run local data quality smoke check
-        run: python data_quality.py --backend sqlite --format markdown --output data_quality_report.md --fail-on none
-
-      - name: Add data quality report to summary
-        if: always()
-        run: |
-          if [ -f data_quality_report.md ]; then
-            cat data_quality_report.md >> "$GITHUB_STEP_SUMMARY"
-          else
-            echo "Data quality report was not generated." >> "$GITHUB_STEP_SUMMARY"
-          fi
-
-      - name: Upload data quality report
-        if: always()
-        uses: actions/upload-artifact@v7
-        with:
-          name: data-quality-report
-          path: data_quality_report.md
-          if-no-files-found: ignore
+      - name: Audit Python dependencies
+        run: python -m pip_audit -r requirements.txt

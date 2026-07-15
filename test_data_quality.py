@@ -55,21 +55,29 @@ def test_data_quality_finds_errors_and_warnings():
 
 def test_data_quality_markdown_report_includes_summary_and_examples():
     findings = analyze_records(
-        [_row(status="条件付き→引返欠航", status_reason=None)],
+        [
+            _row(status="条件付き→引返欠航", status_reason=None),
+            _row(flight_number="ANA1893"),
+            _row(flight_number="ANA1895"),
+        ],
         today=date(2026, 6, 21),
     )
 
-    report = format_markdown(findings, 1)
+    report = format_markdown(findings, 3)
 
     assert "# Data Quality Report" in report
-    assert "Records checked: 1" in report
+    assert "Records checked: 3" in report
     assert "`missing_cancellation_reason`" in report
     assert "2026-06-20 ANA1891" in report
 
 
 def test_data_quality_fail_on_warning_is_configurable():
     findings = analyze_records(
-        [_row(status="欠航", status_reason=None)],
+        [
+            _row(status="欠航", status_reason=None),
+            _row(flight_number="ANA1893"),
+            _row(flight_number="ANA1895"),
+        ],
         today=date(2026, 6, 21),
     )
 
@@ -80,7 +88,11 @@ def test_data_quality_fail_on_warning_is_configurable():
 
 def test_unconfirmed_cancellation_reason_is_tracked_as_info():
     findings = analyze_records(
-        [_row(status="欠航", status_reason="未確認")],
+        [
+            _row(status="欠航", status_reason="未確認"),
+            _row(flight_number="ANA1893"),
+            _row(flight_number="ANA1895"),
+        ],
         today=date(2026, 6, 21),
     )
     codes = {finding.code: finding for finding in findings}
@@ -88,3 +100,18 @@ def test_unconfirmed_cancellation_reason_is_tracked_as_info():
     assert "missing_cancellation_reason" not in codes
     assert codes["unconfirmed_cancellation_reason"].severity == "info"
     assert should_fail(findings, "warning") is False
+
+
+def test_missing_prediction_history_is_an_error():
+    findings = analyze_records(
+        [
+            _row(flight_number="ANA1891"),
+            _row(flight_number="ANA1893", wind_speed=None),
+            _row(flight_number="ANA1895"),
+        ],
+        today=date(2026, 6, 21),
+    )
+    codes = {finding.code: finding for finding in findings}
+
+    assert codes["missing_prediction_history"].severity == "error"
+    assert codes["missing_prediction_history"].examples == ["ANA1893"]

@@ -22,10 +22,10 @@ jobs:
     timeout-minutes: 20
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v7
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
 
       - name: Set up Python
-        uses: actions/setup-python@v6
+        uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
         with:
           python-version: "3.12"
           cache: pip
@@ -35,7 +35,7 @@ jobs:
         run: pip install -r requirements.txt
 
       - name: Restore forecast API cache
-        uses: actions/cache@v6
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
         with:
           path: .cache/forecast_bundle.json
           key: forecast-api-cache-${{ github.run_id }}
@@ -43,19 +43,18 @@ jobs:
             forecast-api-cache-
 
       - name: Authenticate to Google Cloud
-        uses: google-github-actions/auth@v3
+        uses: google-github-actions/auth@7c6bc770dae815cd3e89ee6cdf493a5fab2cc093 # v3
         with:
           workload_identity_provider: ${{ vars.GCP_WORKLOAD_IDENTITY_PROVIDER }}
           service_account: ${{ vars.GCP_SERVICE_ACCOUNT }}
 
       - name: Check BigQuery data quality
         env:
-          FORECAST_DATA_BACKEND: bigquery
           GCP_PROJECT_ID: hachijo-flight-forecast
           BIGQUERY_DATASET: flight_forecast
           BIGQUERY_TABLE: flight_weather_logs
           BIGQUERY_LOCATION: asia-northeast1
-        run: python data_quality.py --backend bigquery --format markdown --output data_quality_report.md --fail-on none
+        run: python data_quality.py --format markdown --output data_quality_report.md --fail-on error
 
       - name: Add data quality report to summary
         if: always()
@@ -68,7 +67,7 @@ jobs:
 
       - name: Upload data quality report
         if: always()
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: pages-data-quality-report
           path: data_quality_report.md
@@ -76,7 +75,6 @@ jobs:
 
       - name: Build static forecast
         env:
-          FORECAST_DATA_BACKEND: bigquery
           GCP_PROJECT_ID: hachijo-flight-forecast
           BIGQUERY_DATASET: flight_forecast
           BIGQUERY_TABLE: flight_weather_logs
@@ -84,10 +82,10 @@ jobs:
         run: python build_static.py
 
       - name: Configure Pages
-        uses: actions/configure-pages@v6
+        uses: actions/configure-pages@45bfe0192ca1faeb007ade9deae92b16b8254a0d # v6
 
       - name: Upload Pages artifact
-        uses: actions/upload-pages-artifact@v5
+        uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5
         with:
           path: dist
 
@@ -101,5 +99,5 @@ jobs:
     steps:
       - name: Deploy to GitHub Pages
         id: deployment
-        uses: actions/deploy-pages@v5
+        uses: actions/deploy-pages@cd2ce8fcbc39b97be8ca5fce6e763baed58fa128 # v5
 

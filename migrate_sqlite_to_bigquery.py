@@ -5,33 +5,19 @@ from pathlib import Path
 
 from google.cloud import bigquery
 
-from flight_metadata import flight_display_name, normalize_database_status
-
-
-DEFAULT_PROJECT = "hachijo-flight-forecast"
-DEFAULT_DATASET = "flight_forecast"
-DEFAULT_TABLE = "flight_weather_logs"
-DEFAULT_LOCATION = "asia-northeast1"
-DEFAULT_DB = Path(__file__).resolve().parent / "flights.db"
-
-SCHEMA = (
-    bigquery.SchemaField("date", "DATE", mode="REQUIRED"),
-    bigquery.SchemaField("flight_number", "STRING", mode="REQUIRED"),
-    bigquery.SchemaField("flight_display_name", "STRING"),
-    bigquery.SchemaField("scheduled_time", "TIME"),
-    bigquery.SchemaField("status", "STRING"),
-    bigquery.SchemaField("wind_direction", "FLOAT"),
-    bigquery.SchemaField("wind_speed", "FLOAT"),
-    bigquery.SchemaField("wind_gusts", "FLOAT"),
-    bigquery.SchemaField("cloud_cover_low", "FLOAT"),
-    bigquery.SchemaField("visibility", "FLOAT"),
-    bigquery.SchemaField("visibility_source", "STRING"),
-    bigquery.SchemaField("status_reason", "STRING"),
-    bigquery.SchemaField("created_at", "TIMESTAMP"),
-    bigquery.SchemaField("migrated_at", "TIMESTAMP", mode="REQUIRED"),
+from bigquery_schema import (
+    DEFAULT_DATASET,
+    DEFAULT_LOCATION,
+    DEFAULT_PROJECT,
+    DEFAULT_TABLE,
+    SCHEMA,
+    ensure_destination,
 )
+from bigquery_storage import build_upsert_sql
+from flight_metadata import VALID_STORED_STATUSES, flight_display_name, normalize_database_status
 
-COLUMNS = tuple(field.name for field in SCHEMA)
+
+DEFAULT_DB = Path(__file__).resolve().parent / "flights.db"
 
 
 def read_sqlite_rows(db_file):
@@ -62,6 +48,8 @@ def normalize_row(row, migrated_at=None):
     if scheduled_time and scheduled_time.count(":") == 1:
         scheduled_time = f"{scheduled_time}:00"
     status = normalize_database_status(row["status"])
+    if status not in VALID_STORED_STATUSES:
+        raise ValueError(f"Unsupported flight status: {row['status']}")
     status_reason = "遅延" if row["status"] == "遅延" else row["status_reason"]
     return {
         "date": row["date"],
@@ -81,17 +69,6 @@ def normalize_row(row, migrated_at=None):
     }
 
 
-def ensure_destination(client, dataset_id, table_id, location):
-    dataset_ref = bigquery.Dataset(f"{client.project}.{dataset_id}")
-    dataset_ref.location = location
-    client.create_dataset(dataset_ref, exists_ok=True)
-
-    table_ref = bigquery.Table(f"{client.project}.{dataset_id}.{table_id}", schema=SCHEMA)
-    table_ref.time_partitioning = bigquery.TimePartitioning(field="date")
-    table_ref.clustering_fields = ["flight_number", "status"]
-    client.create_table(table_ref, exists_ok=True)
-
-
 def migrate(db_file, project, dataset_id, table_id, location):
     rows = read_sqlite_rows(db_file)
     if not rows:
@@ -108,23 +85,12 @@ def migrate(db_file, project, dataset_id, table_id, location):
         schema=SCHEMA,
         write_disposition=bigquery.WriteDisposition.WRITE_TRUNCATE,
     )
-    client.load_table_from_json(payload, staging, job_config=job_config).result()
+    try:
+        client.load_table_from_json(payload, staging, job_config=job_config).result()
 
-    update_columns = [column for column in COLUMNS if column not in {"date", "flight_number"}]
-    update_clause = ",\n        ".join(f"T.{column} = S.{column}" for column in update_columns)
-    column_list = ", ".join(COLUMNS)
-    value_list = ", ".join(f"S.{column}" for column in COLUMNS)
-    merge_sql = f"""
-    MERGE `{destination}` T
-    USING `{staging}` S
-    ON T.date = S.date AND T.flight_number = S.flight_number
-    WHEN MATCHED THEN UPDATE SET
-        {update_clause}
-    WHEN NOT MATCHED THEN
-      INSERT ({column_list}) VALUES ({value_list})
-    """
-    client.query(merge_sql).result()
-    client.delete_table(staging, not_found_ok=True)
+        client.query(build_upsert_sql(destination, staging)).result()
+    finally:
+        client.delete_table(staging, not_found_ok=True)
 
     count = next(iter(client.query(f"SELECT COUNT(*) AS total FROM `{destination}`").result())).total
     print(f"移行完了: SQLite {len(rows)}件 / BigQuery {count}件")

@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="description" content="羽田→八丈島便の運航傾向を、過去の運航実績と天気から見やすくするサイトです。">
-  <title>八丈島運航統計予測</title>
+  <title>八丈島便 運航統計参考値</title>
   <link rel="stylesheet" href="static/styles.css?v=20260623-12">
   <script src="static/app.js?v=20260619-1" defer></script>
 </head>
@@ -13,16 +13,16 @@
   <main class="container">
     <header class="header">
       <p class="eyebrow">HND / HAC</p>
-      <h1>八丈島運航統計予測</h1>
-      <p class="lead">羽田→八丈島便の運航傾向を、過去の運航実績と天気から見やすくするサイトです。</p>
-      <p class="updated">更新 {{ updated_at }} (6時間ごとに更新)</p>
+      <h1>八丈島便 運航統計参考値</h1>
+      <p class="lead">羽田→八丈島便の運航傾向を、同じ便の過去実績と天気から見やすくするサイトです。</p>
+      <p class="updated">予報データ取得 {{ updated_at }} (6時間ごとに更新)</p>
       <p class="forecast-source">主予報はOpen-Meteo標準予報を使用しています。</p>
       <div class="status-legend" aria-label="表示色の説明">
-        <span><i class="legend-dot legend-dot--blue" aria-hidden="true"></i>青: 運航確率{{ low_threshold }}%以上</span>
-        <span><i class="legend-dot legend-dot--orange" aria-hidden="true"></i>オレンジ: 運航確率{{ low_threshold }}%未満</span>
+        <span><i class="legend-dot legend-dot--blue" aria-hidden="true"></i>青: 統計参考値{{ low_threshold }}%以上</span>
+        <span><i class="legend-dot legend-dot--orange" aria-hidden="true"></i>オレンジ: 統計参考値{{ low_threshold }}%未満</span>
       </div>
       <div class="quick-guide" aria-label="画面の見方">
-        <p><strong>見方:</strong> ◎95%以上 / 〇75%以上 / △35%以上 / ×35%未満。GFS・ECMWF・JMAは別モデルで計算した参考値です。</p>
+        <p><strong>見方:</strong> ◎95%以上 / 〇75%以上 / △35%以上 / ×35%未満。表示する%は、同じ便の類似実績から算出した未校正の統計参考値で、将来の運航確率ではありません。GFS・ECMWF・JMAは別モデルで計算した参考値です。</p>
         <p>天候信頼度は、複数の天気予測で結果がどれくらいブレるかを示します。Aに近いほどブレが小さい見込みです。</p>
       </div>
     </header>
@@ -57,8 +57,8 @@
                   <p class="flight-number">{{ flight.number }}</p>
                   <p class="flight-time">{{ flight.time }} 着</p>
                 </div>
-                <p class="probability"><span class="probability-symbol">{{ flight.probability_symbol }}</span><strong>{{ flight.probability }}</strong><span class="probability-unit">%</span><small>(Open-Meteo主予報)</small></p>
-                <div class="model-probabilities" aria-label="モデル別の参考運航確率">
+                <p class="probability"><span class="probability-symbol">{{ flight.probability_symbol }}</span><strong>{{ flight.probability }}</strong><span class="probability-unit">%</span><small>(Open-Meteo主予報 / 統計参考値)</small></p>
+                <div class="model-probabilities" aria-label="モデル別の統計参考値">
                   {% for model in flight.model_probabilities %}
                     <p class="model-probability model-probability--{{ model.tone }}">
                       <span><img class="model-flag" src="{{ model.flag_path }}" alt="{{ model.flag_alt }}">{{ model.label }}</span><strong><span class="probability-inline-symbol">{{ model.symbol }}</span>{{ model.probability }}%</strong>
@@ -89,9 +89,10 @@
                     <div><dt>視程</dt><dd>{{ flight.visibility }} km</dd></div>
                     <div><dt>降水量</dt><dd>{% if flight.precipitation is not none %}{{ flight.precipitation }} mm/h{% else %}欠測{% endif %}</dd></div>
                     <div><dt>気圧</dt><dd>{% if flight.pressure_msl is not none %}{{ flight.pressure_msl }} hPa{% else %}欠測{% endif %}</dd></div>
-                    <div><dt>主予報(Open-Meteo)での運航確率</dt><dd><span class="probability-inline-symbol">{{ flight.probability_symbol }}</span>{{ flight.probability }}%</dd></div>
+                    <div><dt>主予報(Open-Meteo)での統計参考値</dt><dd><span class="probability-inline-symbol">{{ flight.probability_symbol }}</span>{{ flight.probability }}%</dd></div>
+                    <div><dt>過去実績の集計対象</dt><dd>{{ flight.number }} / {{ flight.data_count }}件</dd></div>
                     {% for model in flight.model_probabilities %}
-                      <div><dt>{{ model.label }}予報での参考運航確率</dt><dd><span class="probability-inline-symbol">{{ model.symbol }}</span>{{ model.probability }}%</dd></div>
+                      <div><dt>{{ model.label }}予報での統計参考値</dt><dd><span class="probability-inline-symbol">{{ model.symbol }}</span>{{ model.probability }}%</dd></div>
                     {% endfor %}
                   </dl>
                 </section>
@@ -143,14 +144,14 @@
         <h3>ざっくりどういう仕組みか</h3>
         <ol class="system-flow">
           <li>主予報には、<a href="https://open-meteo.com/en/docs" rel="noreferrer">Open-Meteo標準予報</a>の風向・風速・最大瞬間風速・低層雲量・視程・降水量・気圧を使います。</li>
-          <li>BigQueryに保存した過去の運航実績から、予報と風向・風速が近い事例を探して、各便の運航確率を計算します。</li>
-          <li>視程不良、降水、低層雲量80%超、強風・突風、台風接近リスクの場合は確率を補正します。上限は97%です。</li>
+          <li>BigQueryに保存した同じ便の過去実績から、予報と風向・風速が近い事例を探して、運航統計参考値を計算します。</li>
+          <li>視程不良、降水、低層雲量80%超、強風・突風、台風接近リスクの場合は参考値を補正します。上限は97%です。</li>
           <li>詳細画面では、低視程・低層雲・強風など、その日の問題点を重視して近い過去実績10件を表示します。</li>
           <li>GFS 31通りとECMWF 31通り、合計62通りのアンサンブル予報から天候信頼度A〜Eを判定します。</li>
           <li>日本周辺の短期予報ではJMAが効きやすいと考え、短期はJMA参考値と主予報との差を特に確認します。GFS・ECMWFも残し、モデルごとの見方の違いを比較できるようにしています。</li>
           <li>台風接近リスクは、<a href="https://8jo-typhoon-ensemble.toyo1621.workers.dev/?source=jma" rel="noreferrer">八丈島・東京方面 台風影響目安</a>の飛行機向け影響度を使います。注意度lowは補正なし、medium・high・severeをリスク小・中・大として、運航率に0.9・0.8・0.7を掛けます。</li>
-          <li>GFS・ECMWF・<a href="https://open-meteo.com/en/docs/jma-api" rel="noreferrer">気象庁(JMA)予報</a>で計算した値は、詳細画面に比較用の参考運航確率として表示します。主予報とJMAの差が20ポイント以上なら「気象モデル差に注意」と表示します。</li>
-          <li>運航確率{{ low_threshold }}%未満の便はオレンジで表示し、当日便は到着予定時刻の30分後を過ぎると非表示にします。</li>
+          <li>GFS・ECMWF・<a href="https://open-meteo.com/en/docs/jma-api" rel="noreferrer">気象庁(JMA)予報</a>で計算した値は、詳細画面に比較用の統計参考値として表示します。主予報とJMAの差が20ポイント以上なら「気象モデル差に注意」と表示します。</li>
+          <li>統計参考値{{ low_threshold }}%未満の便はオレンジで表示し、当日便は到着予定時刻の30分後を過ぎると非表示にします。</li>
         </ol>
         <p>GitHub Actionsで6時間ごとに再計算し、静的サイトとして公開しています。</p>
       </article>
@@ -167,7 +168,9 @@
 
     <footer>
       <p>運航可否は最終的に航空会社の判断に従ってください。最新の運航情報はANA公式サイトでご確認ください。</p>
-      <p>天候信頼度は、アンサンブル予報の中央80%における運航確率の幅から算出します。A: 10ポイント以内、B: 20以内、C: 30以内、D: 40以内、E: 40超。</p>
+      <p>表示する%は統計的な校正・精度検証が未実施の参考値であり、実際の運航確率ではありません。</p>
+      <p>天候信頼度は、アンサンブル予報の中央80%における統計参考値の幅から算出します。A: 10ポイント以内、B: 20以内、C: 30以内、D: 40以内、E: 40超。</p>
+      <p>気象データ: <a href="https://open-meteo.com/" rel="noreferrer">Open-Meteo</a> / 運航実績: <a href="https://www.odpt.org/" rel="noreferrer">公共交通オープンデータセンター</a></p>
     </footer>
   </main>
 </body>

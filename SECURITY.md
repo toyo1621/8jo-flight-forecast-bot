@@ -18,10 +18,12 @@ Service account JSON keys should not be created for this repository. If a key or
 
 ## Dependency Updates
 
-Dependabot checks Python and GitHub Actions dependencies weekly. Dependency PRs should pass CI before merging. If an automated update fails because a test is too version-specific, loosen the test only when the behavior remains covered.
+Dependabot checks Python and GitHub Actions dependencies weekly. CI runs `pip-audit`, and CodeQL scans Python changes and the default branch. Dependency PRs should pass CI before merging. If an automated update fails because a test is too version-specific, loosen the test only when the behavior remains covered.
 
 ## Reporting Issues
 
-For data corrections, use the data correction issue template. For failed updates, stale pages, or suspected credential exposure, open an incident issue and include the relevant GitHub Actions run URL.
+Report suspected vulnerabilities or credential exposure privately through the repository's **Security > Advisories > New draft security advisory** flow. Do not include secrets in a public issue. Revoke an exposed credential before investigating its use.
+
+For non-sensitive data corrections and failed updates, use the appropriate issue template and include the relevant GitHub Actions run URL.
 
 This project displays statistical reference values, not official weather forecasts or airline operation decisions.

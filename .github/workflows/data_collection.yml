@@ -6,8 +6,12 @@ on:
     # 最終便の運航ステータス確定後にデータを回収します
     - cron: '0 12 * * *'
   workflow_dispatch:
-    # GitHubのWeb画面から手動でいつでも即時起動できるボタンを有効化
-    # 動作確認や過去データの手動回収時に便利です
+    inputs:
+      cleanup_only:
+        description: 未取得・未対応ステータス行の削除だけを実行する
+        required: false
+        default: false
+        type: boolean
 
 permissions:
   contents: read
@@ -25,14 +29,11 @@ jobs:
     steps:
       # 1. リポジトリのコードを取得
       - name: Checkout repository
-        uses: actions/checkout@v7
-        with:
-          # 最新の変更を反映してプッシュするために履歴を全取得
-          fetch-depth: 0
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
 
       # 2. Python環境のセットアップ
       - name: Set up Python
-        uses: actions/setup-python@v6
+        uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
         with:
           python-version: '3.11'
           cache: 'pip' # pipのキャッシュを有効化して高速化
@@ -45,7 +46,7 @@ jobs:
           pip install -r requirements.txt
 
       - name: Authenticate to Google Cloud
-        uses: google-github-actions/auth@v3
+        uses: google-github-actions/auth@7c6bc770dae815cd3e89ee6cdf493a5fab2cc093 # v3
         with:
           workload_identity_provider: ${{ vars.GCP_WORKLOAD_IDENTITY_PROVIDER }}
           service_account: ${{ vars.GCP_SERVICE_ACCOUNT }}
@@ -53,9 +54,9 @@ jobs:
       # 5. データ収集スクリプトの実行
       # GitHub Secrets に登録した ODPT_API_KEY を環境変数に渡します
       - name: Run data collector
+        if: ${{ github.event_name != 'workflow_dispatch' || inputs.cleanup_only != true }}
         env:
           ODPT_API_KEY: ${{ secrets.ODPT_API_KEY }}
-          FORECAST_DATA_BACKEND: bigquery
           GCP_PROJECT_ID: hachijo-flight-forecast
           BIGQUERY_DATASET: flight_forecast
           BIGQUERY_TABLE: flight_weather_logs
@@ -63,15 +64,23 @@ jobs:
         run: |
           python data_collector.py
 
-      - name: Check BigQuery data quality
-        if: always()
+      - name: Clean unresolved BigQuery rows
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.cleanup_only == true }}
         env:
-          FORECAST_DATA_BACKEND: bigquery
           GCP_PROJECT_ID: hachijo-flight-forecast
           BIGQUERY_DATASET: flight_forecast
           BIGQUERY_TABLE: flight_weather_logs
           BIGQUERY_LOCATION: asia-northeast1
-        run: python data_quality.py --backend bigquery --format markdown --output data_quality_report.md --fail-on none
+        run: python data_collector.py --cleanup-only
+
+      - name: Check BigQuery data quality
+        if: always()
+        env:
+          GCP_PROJECT_ID: hachijo-flight-forecast
+          BIGQUERY_DATASET: flight_forecast
+          BIGQUERY_TABLE: flight_weather_logs
+          BIGQUERY_LOCATION: asia-northeast1
+        run: python data_quality.py --format markdown --output data_quality_report.md --fail-on error
 
       - name: Add data quality report to summary
         if: always()
@@ -84,7 +93,7 @@ jobs:
 
       - name: Upload data quality report
         if: always()
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: collection-data-quality-report
           path: data_quality_report.md

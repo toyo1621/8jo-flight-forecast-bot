@@ -8,8 +8,8 @@ from app_config import JST
 
 BASE_DIR = Path(__file__).resolve().parent
 DEFAULT_CACHE_FILE = BASE_DIR / ".cache" / "forecast_bundle.json"
-CACHE_VERSION = 1
-DEFAULT_CACHE_MAX_AGE = timedelta(hours=3)
+CACHE_VERSION = 3
+DEFAULT_CACHE_MAX_AGE = timedelta(hours=7)
 
 
 def _cache_file():
@@ -30,22 +30,30 @@ def save_forecast_bundle(
     weather,
     jma=None,
     ensembles=None,
-    haneda=None,
     cache_file=None,
     typhoon_impacts=None,
+    source_updated_at=None,
 ):
     path = Path(cache_file) if cache_file is not None else _cache_file()
     path.parent.mkdir(parents=True, exist_ok=True)
+    cached_at = datetime.now(JST).isoformat()
+    provided_timestamps = source_updated_at or {}
     payload = {
         "version": CACHE_VERSION,
-        "cached_at": datetime.now(JST).isoformat(),
+        "cached_at": cached_at,
         "weather": weather,
         "jma": jma or {},
         "ensembles": ensembles or {},
-        "haneda": haneda or {},
         "typhoon_impacts": typhoon_impacts or {},
+        "source_updated_at": {
+            "weather": provided_timestamps.get("weather", cached_at),
+            "jma": provided_timestamps.get("jma", cached_at),
+            "ensembles": provided_timestamps.get("ensembles", cached_at),
+            "typhoon_impacts": provided_timestamps.get("typhoon_impacts", cached_at),
+        },
     }
     path.write_text(json.dumps(payload, ensure_ascii=False), encoding="utf-8")
+    return payload
 
 
 def load_cached_forecast_bundle(cache_file=None):
@@ -61,11 +69,21 @@ def load_cached_forecast_bundle(cache_file=None):
     return payload
 
 
-def is_cached_forecast_fresh(payload, now=None, max_age=None):
-    if not payload or not payload.get("cached_at"):
+def forecast_source_timestamp(payload, source="weather"):
+    if not payload:
+        return None
+    timestamps = payload.get("source_updated_at")
+    if isinstance(timestamps, dict) and timestamps.get(source):
+        return timestamps[source]
+    return payload.get("cached_at")
+
+
+def is_cached_forecast_fresh(payload, now=None, max_age=None, source="weather"):
+    timestamp = forecast_source_timestamp(payload, source)
+    if not timestamp:
         return False
     try:
-        cached_at = datetime.fromisoformat(payload["cached_at"])
+        cached_at = datetime.fromisoformat(timestamp)
     except (TypeError, ValueError):
         return False
     now = now or datetime.now(JST)
@@ -74,4 +92,17 @@ def is_cached_forecast_fresh(payload, now=None, max_age=None):
     if now.tzinfo is None:
         now = now.replace(tzinfo=JST)
     max_age = max_age if max_age is not None else _cache_max_age()
-    return now - cached_at <= max_age
+    age = now - cached_at
+    return timedelta(0) <= age <= max_age
+
+
+def format_forecast_timestamp(value):
+    if not value:
+        return None
+    try:
+        timestamp = datetime.fromisoformat(value)
+    except (TypeError, ValueError):
+        return None
+    if timestamp.tzinfo is None:
+        timestamp = timestamp.replace(tzinfo=JST)
+    return timestamp.astimezone(JST).strftime("%Y/%m/%d %H:%M")

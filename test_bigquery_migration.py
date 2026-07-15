@@ -1,6 +1,8 @@
 import sqlite3
 from datetime import datetime, timezone
 
+import pytest
+
 from migrate_sqlite_to_bigquery import SCHEMA, normalize_row, read_sqlite_rows
 
 
@@ -68,4 +70,18 @@ def test_migration_preserves_status_reason(tmp_path):
 
     assert result["status"] == "欠航"
     assert result["status_reason"] == "台風"
+
+
+def test_migration_rejects_unresolved_status(tmp_path):
+    db_file = tmp_path / "flights.db"
+    conn = sqlite3.connect(db_file)
+    conn.execute(BASE_SCHEMA)
+    conn.execute(
+        "INSERT INTO flight_weather_logs VALUES ('2026-01-01', 'ANA1891', '08:30', NULL, NULL, NULL, NULL, NULL, NULL, NULL)"
+    )
+    conn.commit()
+    conn.close()
+
+    with pytest.raises(ValueError, match="Unsupported flight status"):
+        normalize_row(read_sqlite_rows(db_file)[0])
 

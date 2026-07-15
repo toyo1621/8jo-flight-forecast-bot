@@ -5,13 +5,13 @@ from datetime import timedelta
 import requests
 from google.cloud import bigquery
 
+from app_config import FLIGHTS, HACHIJO_AIRPORT_LATITUDE, HACHIJO_AIRPORT_LONGITUDE
 from bigquery_storage import settings, table_path
 
 
 HISTORICAL_FORECAST_URL = "https://historical-forecast-api.open-meteo.com/v1/forecast"
-LATITUDE = 33.115
-LONGITUDE = 139.782
 SOURCE = "open_meteo_historical_forecast"
+FORECAST_HOUR_BY_FLIGHT = {flight["number"]: flight["forecast_hour"] for flight in FLIGHTS}
 
 
 def _date_chunks(start, end, days=60):
@@ -28,8 +28,8 @@ def fetch_visibility(start, end):
         response = requests.get(
             HISTORICAL_FORECAST_URL,
             params={
-                "latitude": LATITUDE,
-                "longitude": LONGITUDE,
+                "latitude": HACHIJO_AIRPORT_LATITUDE,
+                "longitude": HACHIJO_AIRPORT_LONGITUDE,
                 "start_date": chunk_start.isoformat(),
                 "end_date": chunk_end.isoformat(),
                 "hourly": "visibility",
@@ -45,13 +45,6 @@ def fetch_visibility(start, end):
     return values
 
 
-def nearest_hour(scheduled_time):
-    hour = scheduled_time.hour
-    if scheduled_time.minute >= 30:
-        hour = (hour + 1) % 24
-    return hour
-
-
 def backfill(dry_run=False):
     config = settings()
     client = bigquery.Client(project=config["project"], location=config["location"])
@@ -62,7 +55,7 @@ def backfill(dry_run=False):
     rows = list(
         client.query(
             f"""
-            SELECT date, flight_number, scheduled_time
+            SELECT date, flight_number
             FROM `{destination}`
             WHERE visibility IS NULL
             ORDER BY date, flight_number
@@ -76,7 +69,9 @@ def backfill(dry_run=False):
     visibility = fetch_visibility(rows[0].date, rows[-1].date)
     updates = []
     for row in rows:
-        hour = nearest_hour(row.scheduled_time)
+        hour = FORECAST_HOUR_BY_FLIGHT.get(row.flight_number)
+        if hour is None:
+            continue
         timestamp = f"{row.date.isoformat()}T{hour:02d}:00"
         value = visibility.get(timestamp)
         if value is not None:

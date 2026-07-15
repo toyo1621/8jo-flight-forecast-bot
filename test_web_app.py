@@ -1,9 +1,11 @@
+import re
 from datetime import date, datetime, timedelta, timezone
 from unittest.mock import Mock, patch
 
 from flask import render_template
 
 from app_config import LOW_PROBABILITY_THRESHOLD
+from forecast_cache import is_cached_forecast_fresh, save_forecast_bundle
 from forecast_engine import MAX_PROBABILITY, find_similar_flights, predict_flight_probability
 from presentation import decorate_flight_for_display
 from web_app import (
@@ -22,7 +24,6 @@ from web_app import (
     _with_typhoon_risk_summary,
     _with_model_difference_warning,
     fetch_jma_forecast,
-    fetch_haneda_forecast,
     fetch_typhoon_impacts,
     load_forecast_bundle,
     wind_direction_label,
@@ -52,7 +53,10 @@ def test_build_daily_forecasts():
         "data_count": 10,
         "step_used": 1,
     }
-    with patch("web_app.predict_flight_probability", return_value=result):
+    with (
+        patch("web_app.predict_flight_probability", return_value=result),
+        patch("web_app.find_similar_flights", return_value=[]),
+    ):
         days = build_daily_forecasts(
             SAMPLE_WEATHER,
             reference_date=date(2026, 6, 19),
@@ -93,29 +97,6 @@ def test_jma_forecast_requests_jma_seamless_model():
     assert result["2026-06-20T08:00"]["pressure_msl"] is None
 
 
-def test_haneda_forecast_requests_haneda_coordinates():
-    response = Mock()
-    response.json.return_value = {
-        "hourly": {
-            "time": ["2026-06-20T08:00"],
-            "wind_speed_10m": [5.0],
-            "wind_direction_10m": [180.0],
-            "wind_gusts_10m": [8.0],
-            "cloud_cover_low": [20.0],
-            "visibility": [15000.0],
-            "precipitation": [0.0],
-            "pressure_msl": [1004.8],
-            "surface_pressure": [1001.0],
-        }
-    }
-    with patch("web_app.requests.get", return_value=response) as get:
-        result = fetch_haneda_forecast()
-
-    assert get.call_args.kwargs["params"]["latitude"] == 35.5494
-    assert get.call_args.kwargs["params"]["longitude"] == 139.7798
-    assert result["2026-06-20T08:00"]["pressure_msl"] == 1004.8
-
-
 def test_typhoon_impacts_use_jma_flight_risk_levels():
     response = Mock()
     response.json.return_value = {
@@ -140,6 +121,30 @@ def test_typhoon_impacts_use_jma_flight_risk_levels():
     response.raise_for_status.assert_called_once()
     assert get.call_args.kwargs["params"] == {"source": "jma"}
     assert impacts == {"2026-07-13": "low", "2026-07-14": "medium"}
+
+
+def test_typhoon_impacts_do_not_fall_back_to_summary_risk():
+    response = Mock()
+    response.json.return_value = {
+        "source": "jma",
+        "days": [
+            {
+                "date": "2026-07-13",
+                "summaryRiskLevel": "severe",
+                "targets": {"flight": {}},
+            },
+            {
+                "date": "2026-07-14",
+                "summaryRiskLevel": "low",
+                "targets": {"flight": {"riskLevel": "medium"}},
+            },
+        ],
+    }
+
+    with patch("web_app.requests.get", return_value=response):
+        impacts = fetch_typhoon_impacts()
+
+    assert impacts == {"2026-07-14": "medium"}
 
 
 def test_jma_reference_uses_main_forecast_for_missing_required_values():
@@ -267,6 +272,25 @@ def test_low_typhoon_impact_does_not_adjust_next_week():
     assert all("台風接近リスク" not in flight["warning_msg"] for flight in days[0]["flights"])
 
 
+def test_missing_typhoon_impact_is_not_assumed_low():
+    result = {"probability": 97.0, "warning_msg": "特になし", "alert_required": False}
+    weather = {"2026-06-28T08:00": SAMPLE_WEATHER["2026-06-20T08:00"]}
+
+    with (
+        patch("web_app.predict_flight_probability", return_value=result),
+        patch("web_app.find_similar_flights", return_value=[]),
+    ):
+        days = build_daily_forecasts(
+            weather,
+            reference_date=date(2026, 6, 24),
+            current_time=datetime(2026, 6, 24, 10, 0, tzinfo=JST),
+            typhoon_impacts_by_date={},
+        )
+
+    assert days[0]["flights"][0]["probability"] == 97.0
+    assert "台風接近リスク" not in days[0]["flights"][0]["warning_msg"]
+
+
 def test_today_flight_disappears_after_arrival_plus_30_minutes():
     weather = {
         f"2026-06-20T{hour:02d}:00": SAMPLE_WEATHER["2026-06-20T08:00"]
@@ -274,7 +298,10 @@ def test_today_flight_disappears_after_arrival_plus_30_minutes():
     }
     current_time = datetime(2026, 6, 20, 9, 1, tzinfo=JST)
 
-    with patch("web_app.predict_flight_probability", return_value={"probability": 88.0}):
+    with (
+        patch("web_app.predict_flight_probability", return_value={"probability": 88.0}),
+        patch("web_app.find_similar_flights", return_value=[]),
+    ):
         days = build_daily_forecasts(weather, current_time=current_time)
 
     assert [flight["raw_number"] for flight in days[0]["flights"]] == ["ANA1893", "ANA1895"]
@@ -283,7 +310,10 @@ def test_today_flight_disappears_after_arrival_plus_30_minutes():
 def test_today_flight_remains_at_exactly_arrival_plus_30_minutes():
     current_time = datetime(2026, 6, 20, 9, 0, tzinfo=JST)
 
-    with patch("web_app.predict_flight_probability", return_value={"probability": 88.0}):
+    with (
+        patch("web_app.predict_flight_probability", return_value={"probability": 88.0}),
+        patch("web_app.find_similar_flights", return_value=[]),
+    ):
         days = build_daily_forecasts(SAMPLE_WEATHER, current_time=current_time)
 
     assert days[0]["flights"][0]["raw_number"] == "ANA1891"
@@ -367,6 +397,22 @@ def test_probability_cap_is_97_percent():
 
     assert MAX_PROBABILITY == 97.0
     assert result["probability"] == 97.0
+
+
+def test_probability_history_is_filtered_by_flight_number():
+    history = [
+        ("ANA1891", "運航", 180.0, 5.0),
+        ("ANA1891", "欠航", 180.0, 5.0),
+        ("ANA1893", "欠航", 180.0, 5.0),
+        ("ANA1893", "欠航", 180.0, 5.0),
+    ]
+    with patch("forecast_engine.load_history", return_value=history):
+        first = predict_flight_probability(180.0, 5.0, 8.0, 20.0, 15.0, flight_number="ANA1891")
+        second = predict_flight_probability(180.0, 5.0, 8.0, 20.0, 15.0, flight_number="ANA1893")
+
+    assert first["probability"] == 50.0
+    assert second["probability"] == 0.0
+    assert first["history_flight_number"] == "ANA1891"
 
 
 def test_low_cloud_and_gust_adjustments_each_use_09():
@@ -539,7 +585,7 @@ def test_flight_card_shows_model_reference_probabilities_with_threshold_styles()
     assert "model-probability--{{ model.tone }}" in template
     assert "モデル別リスク" in template
     assert "model-risk--{{ model.risk_tone }}" in template
-    assert "(Open-Meteo主予報)" in template
+    assert "(Open-Meteo主予報 / 統計参考値)" in template
     assert "詳しく見る(運航実績・気象情報)" in template
     assert ".model-probability--ok" in stylesheet
     assert ".model-probability--low" in stylesheet
@@ -632,6 +678,7 @@ def test_decorate_flight_for_display_builds_model_rows():
 
 def test_load_forecast_bundle_uses_cached_main_forecast_on_api_error():
     cached = {
+        "cached_at": datetime.now(JST).isoformat(),
         "weather": SAMPLE_WEATHER,
         "jma": {"2026-06-20T08:00": SAMPLE_WEATHER["2026-06-20T08:00"]},
         "ensembles": {"2026-06-20T08:00": []},
@@ -646,6 +693,7 @@ def test_load_forecast_bundle_uses_cached_main_forecast_on_api_error():
 
     assert bundle["source"] == "cache"
     assert bundle["weather"] == SAMPLE_WEATHER
+    assert bundle["data_updated_at"] == cached["cached_at"]
     assert "前回取得した予報データ" in bundle["notices"][0]
     save.assert_not_called()
 
@@ -656,13 +704,11 @@ def test_load_forecast_bundle_reuses_cached_optional_sources():
         "weather": SAMPLE_WEATHER,
         "jma": {"cached-jma": {"wind_direction": 180.0, "wind_speed": 5.0}},
         "ensembles": {"cached-ensemble": []},
-        "haneda": {"cached-haneda": {"pressure_msl": 1008.0}},
         "typhoon_impacts": {"2026-06-20": "medium"},
     }
 
     with (
         patch("web_app.fetch_forecast", return_value=SAMPLE_WEATHER),
-        patch("web_app.fetch_haneda_forecast", side_effect=ValueError("bad haneda")),
         patch("web_app.fetch_jma_forecast", side_effect=ValueError("bad jma")),
         patch("web_app.fetch_ensemble_forecast", side_effect=ValueError("bad ensemble")),
         patch("web_app.fetch_typhoon_impacts", side_effect=ValueError("bad typhoon")),
@@ -672,20 +718,22 @@ def test_load_forecast_bundle_reuses_cached_optional_sources():
         bundle = load_forecast_bundle()
 
     assert bundle["source"] == "live"
-    assert bundle["haneda"] == cached["haneda"]
     assert bundle["jma"] == cached["jma"]
     assert bundle["ensembles"] == cached["ensembles"]
     assert bundle["typhoon_impacts"] == cached["typhoon_impacts"]
-    assert "羽田側の予報は前回取得データ" in bundle["notices"][0]
-    assert "JMA予報は前回取得データ" in bundle["notices"][1]
-    assert "アンサンブル予報は前回取得データ" in bundle["notices"][2]
-    assert "台風影響度は前回取得データ" in bundle["notices"][3]
+    assert "JMA予報は前回取得データ" in bundle["notices"][0]
+    assert "アンサンブル予報は前回取得データ" in bundle["notices"][1]
+    assert "台風影響度は前回取得データ" in bundle["notices"][2]
     save.assert_called_once_with(
         SAMPLE_WEATHER,
         cached["jma"],
         cached["ensembles"],
-        cached["haneda"],
         typhoon_impacts=cached["typhoon_impacts"],
+        source_updated_at={
+            "jma": cached["cached_at"],
+            "ensembles": cached["cached_at"],
+            "typhoon_impacts": cached["cached_at"],
+        },
     )
 
 
@@ -695,13 +743,11 @@ def test_load_forecast_bundle_does_not_reuse_stale_cached_optional_sources():
         "weather": SAMPLE_WEATHER,
         "jma": {"cached-jma": {"wind_direction": 180.0, "wind_speed": 5.0}},
         "ensembles": {"cached-ensemble": [{"wind_direction": 180.0, "wind_speed": 12.0}]},
-        "haneda": {"cached-haneda": {"pressure_msl": 1004.0}},
         "typhoon_impacts": {"2026-06-20": "severe"},
     }
 
     with (
         patch("web_app.fetch_forecast", return_value=SAMPLE_WEATHER),
-        patch("web_app.fetch_haneda_forecast", side_effect=ValueError("bad haneda")),
         patch("web_app.fetch_jma_forecast", side_effect=ValueError("bad jma")),
         patch("web_app.fetch_ensemble_forecast", side_effect=ValueError("bad ensemble")),
         patch("web_app.fetch_typhoon_impacts", side_effect=ValueError("bad typhoon")),
@@ -711,15 +757,105 @@ def test_load_forecast_bundle_does_not_reuse_stale_cached_optional_sources():
         bundle = load_forecast_bundle()
 
     assert bundle["source"] == "live"
-    assert bundle["haneda"] == {}
     assert bundle["jma"] == {}
     assert bundle["ensembles"] == {}
     assert bundle["typhoon_impacts"] == {}
-    assert "羽田側の予報を取得できませんでした。" in bundle["notices"][0]
-    assert "JMA予報を取得できませんでした。" in bundle["notices"][1]
-    assert "アンサンブル予報を取得できませんでした。" in bundle["notices"][2]
-    assert "台風影響度を取得できなかったため" in bundle["notices"][3]
-    save.assert_called_once_with(SAMPLE_WEATHER, {}, {}, {}, typhoon_impacts={})
+    assert "JMA予報を取得できませんでした。" in bundle["notices"][0]
+    assert "アンサンブル予報を取得できませんでした。" in bundle["notices"][1]
+    assert "台風影響度を取得できなかったため" in bundle["notices"][2]
+    save.assert_called_once_with(
+        SAMPLE_WEATHER,
+        {},
+        {},
+        typhoon_impacts={},
+        source_updated_at={},
+    )
+
+
+def test_optional_cache_source_cannot_be_refreshed_indefinitely():
+    current = datetime.now(JST)
+    cached = {
+        "cached_at": current.isoformat(),
+        "source_updated_at": {
+            "weather": current.isoformat(),
+            "jma": (current - timedelta(hours=8)).isoformat(),
+            "ensembles": current.isoformat(),
+            "typhoon_impacts": current.isoformat(),
+        },
+        "weather": SAMPLE_WEATHER,
+        "jma": {"stale-jma": SAMPLE_WEATHER["2026-06-20T08:00"]},
+        "ensembles": {},
+        "typhoon_impacts": {"2026-06-20": "low"},
+    }
+
+    with (
+        patch("web_app.fetch_forecast", return_value=SAMPLE_WEATHER),
+        patch("web_app.fetch_jma_forecast", side_effect=ValueError("bad jma")),
+        patch("web_app.fetch_ensemble_forecast", return_value={}),
+        patch("web_app.fetch_typhoon_impacts", return_value={"2026-06-20": "low"}),
+        patch("web_app.load_cached_forecast_bundle", return_value=cached),
+        patch("web_app.save_forecast_bundle", return_value={}),
+    ):
+        bundle = load_forecast_bundle()
+
+    assert bundle["jma"] == {}
+    assert "JMA予報を取得できませんでした。" in bundle["notices"]
+
+
+def test_save_forecast_bundle_preserves_cached_source_timestamp(tmp_path):
+    old_timestamp = "2026-07-15T01:00:00+09:00"
+
+    payload = save_forecast_bundle(
+        SAMPLE_WEATHER,
+        jma={"cached-jma": SAMPLE_WEATHER["2026-06-20T08:00"]},
+        cache_file=tmp_path / "forecast.json",
+        source_updated_at={"jma": old_timestamp},
+    )
+
+    assert payload["source_updated_at"]["jma"] == old_timestamp
+    assert payload["source_updated_at"]["weather"] == payload["cached_at"]
+
+
+def test_load_forecast_bundle_rejects_stale_main_cache():
+    cached = {
+        "cached_at": "2020-01-01T00:00:00+09:00",
+        "weather": SAMPLE_WEATHER,
+    }
+    with (
+        patch("web_app.fetch_forecast", side_effect=ValueError("bad data")),
+        patch("web_app.load_cached_forecast_bundle", return_value=cached),
+    ):
+        try:
+            load_forecast_bundle()
+        except ValueError as exc:
+            assert str(exc) == "bad data"
+        else:
+            raise AssertionError("stale main cache must not be used")
+
+
+def test_future_dated_cache_is_not_fresh():
+    now = datetime(2026, 7, 15, 12, 0, tzinfo=JST)
+    payload = {"cached_at": (now + timedelta(minutes=1)).isoformat(), "weather": SAMPLE_WEATHER}
+
+    assert is_cached_forecast_fresh(payload, now=now) is False
+
+
+def test_partial_typhoon_coverage_is_reported():
+    weather = {
+        "2026-07-15T08:00": SAMPLE_WEATHER["2026-06-20T08:00"],
+        "2026-07-16T08:00": SAMPLE_WEATHER["2026-06-20T08:00"],
+    }
+    with (
+        patch("web_app.fetch_forecast", return_value=weather),
+        patch("web_app.fetch_jma_forecast", return_value={}),
+        patch("web_app.fetch_ensemble_forecast", return_value={}),
+        patch("web_app.fetch_typhoon_impacts", return_value={"2026-07-15": "low"}),
+        patch("web_app.load_cached_forecast_bundle", return_value=None),
+        patch("web_app.save_forecast_bundle", return_value={}),
+    ):
+        bundle = load_forecast_bundle()
+
+    assert "2026-07-16の台風影響度は未取得" in bundle["notices"][0]
 
 
 def test_select_evenly_balances_ensemble_members():
@@ -750,11 +886,11 @@ def test_index_renders_forecast():
     }
     with (
         patch("web_app.fetch_forecast", return_value=SAMPLE_WEATHER),
-        patch("web_app.fetch_haneda_forecast", return_value={}),
         patch("web_app.fetch_jma_forecast", return_value={}),
         patch("web_app.fetch_ensemble_forecast", return_value={}),
         patch("web_app.fetch_typhoon_impacts", return_value={"2026-06-20": "low"}),
         patch("web_app.predict_flight_probability", return_value=result),
+        patch("web_app.find_similar_flights", return_value=[]),
         patch("web_app._flight_display_expired", return_value=False),
         app.test_client() as client,
     ):
@@ -762,19 +898,20 @@ def test_index_renders_forecast():
 
     assert response.status_code == 200
     body = response.get_data(as_text=True)
-    assert "八丈島運航統計予測" in body
-    assert "羽田→八丈島便の運航傾向を、過去の運航実績と天気から見やすくするサイトです。" in body
+    assert "八丈島便 運航統計参考値" in body
+    assert "羽田→八丈島便の運航傾向を、同じ便の過去実績と天気から見やすくするサイトです。" in body
     assert "天候信頼度は、Open-Meteo APIからオープンデータ" not in body
     assert "GFS・ECMWF・JMAは別モデルで計算した参考値" in body
     assert "主予報はOpen-Meteo標準予報を使用しています。" in body
-    assert "更新 " in body
+    assert "予報データ取得 " in body
     assert "(6時間ごとに更新)" in body
-    assert "青: 運航確率60%以上" in body
-    assert "オレンジ: 運航確率60%未満" in body
+    assert "青: 統計参考値60%以上" in body
+    assert "オレンジ: 統計参考値60%未満" in body
     assert "主予報: Open-Meteo標準予報" in body
-    assert "主予報(Open-Meteo)での運航確率" in body
+    assert "主予報(Open-Meteo)での統計参考値" in body
     assert "天候信頼度" in body
-    assert "モデル別の参考運航確率" in body
+    assert "モデル別の統計参考値" in body
+    assert "未校正の統計参考値で、将来の運航確率ではありません" in body
     assert ">雲量<" not in body
     assert "なぜ作ったか" in body
     assert "ざっくりどういう仕組みか" in body
@@ -782,7 +919,7 @@ def test_index_renders_forecast():
     assert "短期はJMA参考値と主予報との差を特に確認" in body
     assert "八丈島・東京方面 台風影響目安" in body
     assert "運航率に0.9・0.8・0.7を掛けます" in body
-    assert "運航確率60%未満の便はオレンジ" in body
+    assert "統計参考値60%未満の便はオレンジ" in body
     assert "GitHub Actionsで6時間ごとに再計算" in body
     assert "気象業法への配慮" in body
     assert "予報気象情報" in body
@@ -796,7 +933,7 @@ def test_history_template_includes_flight_name_and_visibility_fallback():
 
     assert "{{ history.date_label }} {{ history.flight_display_name }}" in template
     assert "/ 視程 {% if history.visibility is not none %}{{ history.visibility }} km{% else %}欠測{% endif %}" in template
-    assert "{{ model.label }}予報での参考運航確率" in template
+    assert "{{ model.label }}予報での統計参考値" in template
 
 
 def test_index_handles_weather_api_error():
@@ -819,14 +956,22 @@ def test_health():
 
 def test_workflows_run_tests_and_data_quality_reports():
     ci = (BASE_DIR / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8")
+    codeql = (BASE_DIR / ".github" / "workflows" / "codeql.yml").read_text(encoding="utf-8")
     pages = (BASE_DIR / ".github" / "workflows" / "pages.yml").read_text(encoding="utf-8")
     collection = (BASE_DIR / ".github" / "workflows" / "data_collection.yml").read_text(encoding="utf-8")
 
     assert "python -m pytest -q" in ci
-    assert "python data_quality.py --backend sqlite" in ci
-    assert "python data_quality.py --backend bigquery" in pages
-    assert "python data_quality.py --backend bigquery" in collection
+    assert "python -m ruff check ." in ci
+    assert "python -m pip_audit -r requirements.txt" in ci
+    assert "github/codeql-action/analyze@" in codeql
+    assert "python data_quality.py --format markdown" in pages
+    assert "python data_quality.py --format markdown" in collection
     assert "actions/upload-artifact@" in pages
     assert "actions/upload-artifact@" in collection
+    assert "--fail-on error" in pages
+    assert "--fail-on error" in collection
+    for workflow in (ci, codeql, pages, collection):
+        assert re.search(r"uses:\s+[^\s@]+@[0-9a-f]{40}", workflow)
+        assert re.search(r"uses:\s+[^\s@]+@v\d+", workflow) is None
 
 

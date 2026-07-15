@@ -30,6 +30,11 @@ DATABASE_STATUS_LABELS = {
     "運航(条件付)": "運航(条件付)",
 }
 
+OPERATED_STATUSES = frozenset({"運航", "運航(条件付)"})
+NON_OPERATED_STATUSES = frozenset({"欠航", "条件付き→引返欠航"})
+VALID_STORED_STATUSES = OPERATED_STATUSES | NON_OPERATED_STATUSES
+VALID_HISTORY_STATUSES = frozenset(STATUS_LABELS) | frozenset(STATUS_LABELS.values()) | VALID_STORED_STATUSES
+
 
 def flight_display_name(flight_number):
     return FLIGHT_DISPLAY_NAMES.get(flight_number, flight_number)

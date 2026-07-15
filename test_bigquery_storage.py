@@ -1,4 +1,6 @@
-from unittest.mock import patch
+from unittest.mock import Mock, patch
+
+import pytest
 
 import bigquery_storage
 from data_collector import STATUS_MAPPING, get_demo_flight_data, save_collected_data
@@ -41,14 +43,82 @@ def test_normalize_item_uses_database_status_and_visibility_source():
     assert result["visibility_source"] == "open_meteo_archive"
 
 
-def test_collector_uses_bigquery_backend(monkeypatch):
-    monkeypatch.setenv("FORECAST_DATA_BACKEND", "bigquery")
-    items = [{"date": "2026-06-19", "flight_number": "ANA1891"}]
+def test_collector_uses_bigquery_backend():
+    items = [
+        {
+            **flight,
+            "wind_direction": 180.0,
+            "wind_speed": 5.0,
+            "wind_gusts": 8.0,
+            "cloud_cover_low": 20.0,
+            "visibility": 15.0,
+        }
+        for flight in get_demo_flight_data()
+    ]
 
-    with patch("data_collector.upsert_flight_weather_logs", return_value=1) as upsert:
-        save_collected_data(None, items)
+    with patch("data_collector.upsert_flight_weather_logs", return_value=3) as upsert:
+        save_collected_data(items)
 
     upsert.assert_called_once_with(items)
+
+
+def test_normalize_item_rejects_unresolved_status():
+    with pytest.raises(ValueError, match="Unsupported flight status"):
+        bigquery_storage._normalize_item(
+            {
+                "date": "2026-06-19",
+                "flight_number": "ANA1891",
+                "status": "未取得",
+            },
+            "2026-06-19T00:00:00+00:00",
+        )
+
+
+def test_upsert_merge_preserves_valid_values_and_known_reason():
+    client = Mock(project="hachijo-flight-forecast")
+    client.load_table_from_json.return_value.result.return_value = None
+    client.query.return_value.result.return_value = None
+    item = {
+        "date": "2026-06-19",
+        "flight_number": "ANA1891",
+        "scheduled_time": "08:30",
+        "status": "欠航",
+        "status_reason": "未確認",
+        "wind_direction": 180.0,
+        "wind_speed": 5.0,
+    }
+
+    with (
+        patch("bigquery_storage.bigquery.Client", return_value=client),
+        patch("bigquery_storage.ensure_destination"),
+    ):
+        assert bigquery_storage.upsert_flight_weather_logs([item]) == 1
+
+    merge_sql = client.query.call_args.args[0]
+    assert "wind_direction = COALESCE(S.wind_direction, T.wind_direction)" in merge_sql
+    assert "wind_speed = COALESCE(S.wind_speed, T.wind_speed)" in merge_sql
+    assert "S.status_reason IS NULL OR S.status_reason = '未確認'" in merge_sql
+    client.delete_table.assert_called_once()
+
+
+def test_upsert_removes_staging_table_when_load_fails():
+    client = Mock(project="hachijo-flight-forecast")
+    client.load_table_from_json.return_value.result.side_effect = RuntimeError("load failed")
+    item = {
+        "date": "2026-06-19",
+        "flight_number": "ANA1891",
+        "scheduled_time": "08:30",
+        "status": "運航",
+    }
+
+    with (
+        patch("bigquery_storage.bigquery.Client", return_value=client),
+        patch("bigquery_storage.ensure_destination"),
+        pytest.raises(RuntimeError, match="load failed"),
+    ):
+        bigquery_storage.upsert_flight_weather_logs([item])
+
+    client.delete_table.assert_called_once()
 
 
 def test_demo_data_is_only_created_explicitly():

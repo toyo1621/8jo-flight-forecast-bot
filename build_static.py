@@ -1,15 +1,11 @@
 import shutil
-import os
-from datetime import datetime
-from pathlib import Path
 
 from flask import render_template
 
 from app_config import LOW_PROBABILITY_THRESHOLD
-from db_snapshot import restore_db
+from forecast_cache import format_forecast_timestamp
 from web_app import (
     BASE_DIR,
-    JST,
     app,
     build_daily_forecasts,
     load_forecast_bundle,
@@ -23,9 +19,9 @@ FAVICON_VERSION = "20260713-2"
 def add_brand_assets(html):
     if "static/favicon.svg" not in html:
         html = html.replace(
-            "  <title>八丈島運航統計予測</title>",
+            "  <title>八丈島便 運航統計参考値</title>",
             (
-                "  <title>八丈島運航統計予測</title>\n"
+                "  <title>八丈島便 運航統計参考値</title>\n"
                 f"  <link rel=\"icon\" type=\"image/svg+xml\" href=\"static/favicon.svg?v={FAVICON_VERSION}\">\n"
                 f"  <link rel=\"apple-touch-icon\" href=\"static/logo.svg?v={FAVICON_VERSION}\">\n"
                 f"  <link rel=\"stylesheet\" href=\"static/favicon-brand.css?v={FAVICON_VERSION}\">"
@@ -47,17 +43,14 @@ def add_brand_assets(html):
 
 
 def build_site(output_dir=DIST_DIR):
-    if os.getenv("FORECAST_DATA_BACKEND", "sqlite").lower() != "bigquery":
-        restore_db(BASE_DIR / "flights.db", BASE_DIR / "data" / "flights_dump.sql")
     bundle = load_forecast_bundle(print)
     days = build_daily_forecasts(
         bundle["weather"],
         bundle["ensembles"],
         jma_by_time=bundle["jma"],
-        haneda_by_time=bundle["haneda"],
         typhoon_impacts_by_date=bundle["typhoon_impacts"],
     )
-    updated_at = datetime.now(JST).strftime("%Y/%m/%d %H:%M")
+    updated_at = format_forecast_timestamp(bundle.get("data_updated_at")) or "取得時刻不明"
     with app.app_context():
         html = render_template(
             "index.html",

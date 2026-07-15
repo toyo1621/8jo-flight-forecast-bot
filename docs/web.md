@@ -1,36 +1,32 @@
 # Web application
 
-The Flask application shows a seven-day forecast for the three daily ANA flights
-from Haneda to Hachijojima.
+The Flask application renders an 11-day statistical reference for the three daily ANA flights from Haneda to Hachijojima. The displayed percentages are uncalibrated statistical reference values, not validated probabilities.
 
 ## Run locally
 
-```powershell
+```bash
 python -m venv .venv
-.\.venv\Scripts\Activate.ps1
-pip install -r requirements.txt
+source .venv/bin/activate
+pip install -r requirements-dev.txt
 flask --app web_app run
 ```
 
-Open <http://127.0.0.1:5000/>.
+Open <http://127.0.0.1:5000/>. BigQuery Application Default Credentials are required because operational history is read only from BigQuery.
 
-The application restores `flights.db` from `data/flights_dump.sql` when the local
-database does not exist. It then retrieves the current seven-day weather forecast
-from Open-Meteo. No API key is required for the web page.
+## Static build and GitHub Pages
 
-## Deploy
+```bash
+python build_static.py
+```
 
-The included `Procfile` starts the application with Gunicorn:
+The `Deploy forecast site to Pages` workflow builds `dist/` every six hours and deploys it to GitHub Pages. The displayed update time is the acquisition time of the forecast bundle actually in use. A main forecast cache is accepted only when it is at most seven hours old.
+
+## Dynamic deployment
+
+The included `Procfile` starts the Flask application with Gunicorn:
 
 ```text
 web: gunicorn web_app:app
 ```
 
-Configure the hosting platform to install `requirements.txt` and use `/health` as
-its health-check path.
-
-## GitHub Pages
-
-The `Deploy forecast site to Pages` workflow builds a static copy of the forecast
-every six hours and deploys `dist/` to GitHub Pages. In the repository settings,
-select **Settings > Pages > Build and deployment > Source > GitHub Actions** once.
+Use `/health` as the health-check path. Store no database dump or service-account key in the deployment artifact.

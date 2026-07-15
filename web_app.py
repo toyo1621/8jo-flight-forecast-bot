@@ -12,8 +12,6 @@ from app_config import (
     ENSEMBLE_FORECAST_URL,
     FLIGHTS,
     FORECAST_DAYS,
-    HANEDA_AIRPORT_LATITUDE,
-    HANEDA_AIRPORT_LONGITUDE,
     HACHIJO_AIRPORT_LATITUDE,
     HACHIJO_AIRPORT_LONGITUDE,
     JMA_MODEL_NAME,
@@ -26,8 +24,13 @@ from app_config import (
     TYPHOON_IMPACT_MULTIPLIERS,
     TYPHOON_IMPACT_SOURCE,
 )
-from db_snapshot import restore_db
-from forecast_cache import is_cached_forecast_fresh, load_cached_forecast_bundle, save_forecast_bundle
+from forecast_cache import (
+    forecast_source_timestamp,
+    format_forecast_timestamp,
+    is_cached_forecast_fresh,
+    load_cached_forecast_bundle,
+    save_forecast_bundle,
+)
 from flight_metadata import flight_display_name
 from forecast_engine import find_similar_flights, predict_flight_probability
 from presentation import decorate_flight_for_display
@@ -97,13 +100,6 @@ def fetch_jma_forecast():
     return _fetch_deterministic_forecast(JMA_MODEL_NAME)
 
 
-def fetch_haneda_forecast():
-    return _fetch_deterministic_forecast(
-        latitude=HANEDA_AIRPORT_LATITUDE,
-        longitude=HANEDA_AIRPORT_LONGITUDE,
-    )
-
-
 def fetch_typhoon_impacts():
     response = requests.get(
         TYPHOON_IMPACT_API_URL,
@@ -128,7 +124,7 @@ def fetch_typhoon_impacts():
         target = targets.get("flight", {}) if isinstance(targets, dict) else {}
         if not isinstance(target, dict):
             target = {}
-        level = target.get("riskLevel") or day.get("summaryRiskLevel")
+        level = target.get("riskLevel")
         date_string = day.get("date")
         if isinstance(date_string, str) and level in valid_levels:
             impacts[date_string] = level
@@ -269,11 +265,12 @@ def _prepare_reference_weather(candidate, fallback):
     return prepared
 
 
-def calculate_confidence(ensemble_members, baseline_weather=None):
+def calculate_confidence(ensemble_members, baseline_weather=None, flight_number=None):
     baseline_weather = baseline_weather or {}
     probabilities = sorted(
         predict_flight_probability(
-            **_prediction_weather({**baseline_weather, **{key: value for key, value in weather.items() if key != "_model"}})
+            **_prediction_weather({**baseline_weather, **{key: value for key, value in weather.items() if key != "_model"}}),
+            flight_number=flight_number,
         )["probability"]
         for weather in ensemble_members
     )
@@ -299,7 +296,7 @@ def calculate_confidence(ensemble_members, baseline_weather=None):
     }
 
 
-def calculate_model_reference_probabilities(ensemble_members, baseline_weather=None):
+def calculate_model_reference_probabilities(ensemble_members, baseline_weather=None, flight_number=None):
     baseline_weather = baseline_weather or {}
     probabilities = {}
     for member in ensemble_members:
@@ -307,7 +304,10 @@ def calculate_model_reference_probabilities(ensemble_members, baseline_weather=N
         if not model:
             continue
         weather = {key: value for key, value in member.items() if key != "_model"}
-        probability = predict_flight_probability(**_prediction_weather({**baseline_weather, **weather}))["probability"]
+        probability = predict_flight_probability(
+            **_prediction_weather({**baseline_weather, **weather}),
+            flight_number=flight_number,
+        )["probability"]
         probabilities.setdefault(model, []).append(probability)
     return {
         model: round(median(values), 1)
@@ -349,7 +349,7 @@ def _format_risk_summary(counts, total):
     )
 
 
-def calculate_model_reference_risks(ensemble_members, baseline_weather=None):
+def calculate_model_reference_risks(ensemble_members, baseline_weather=None, flight_number=None):
     baseline_weather = baseline_weather or {}
     risk_counts = {}
     totals = Counter()
@@ -358,7 +358,10 @@ def calculate_model_reference_risks(ensemble_members, baseline_weather=None):
         if not model:
             continue
         weather = {key: value for key, value in member.items() if key != "_model"}
-        result = predict_flight_probability(**_prediction_weather({**baseline_weather, **weather}))
+        result = predict_flight_probability(
+            **_prediction_weather({**baseline_weather, **weather}),
+            flight_number=flight_number,
+        )
         totals[model] += 1
         risk_counts.setdefault(model, Counter()).update(_risk_labels(result.get("warning_msg")))
 
@@ -496,43 +499,69 @@ def _log_or_print(logger, message, exc):
         logger(f"{message}: {exc}")
 
 
+def _append_typhoon_coverage_notice(notices, weather, impacts):
+    if not impacts:
+        return
+    forecast_dates = sorted({timestamp[:10] for timestamp in weather})
+    missing_dates = [date_string for date_string in forecast_dates if date_string not in impacts]
+    if not missing_dates:
+        return
+    if len(missing_dates) == 1:
+        period = missing_dates[0]
+    else:
+        period = f"{missing_dates[0]}〜{missing_dates[-1]}"
+    notices.append(f"{period}の台風影響度は未取得のため、台風補正を適用していません。")
+
+
 def load_forecast_bundle(logger=None):
     cached = load_cached_forecast_bundle()
-    fresh_cached = cached if is_cached_forecast_fresh(cached) else None
+    fresh_cached = cached if is_cached_forecast_fresh(cached, source="weather") else None
     notices = []
+
+    def cached_source(source):
+        if cached and is_cached_forecast_fresh(cached, source=source):
+            return cached.get(source, {})
+        return {}
+
     try:
         weather = fetch_forecast()
     except (requests.RequestException, ValueError) as exc:
-        if cached:
+        if fresh_cached:
             _log_or_print(logger, "Main forecast unavailable; using cached forecast", exc)
             notices.append("予報APIに接続できないため、前回取得した予報データを表示しています。")
+            cached_jma = cached_source("jma")
+            cached_ensembles = cached_source("ensembles")
+            cached_typhoon_impacts = cached_source("typhoon_impacts")
+            if not cached_jma:
+                notices.append("有効期限内のJMA予報キャッシュがありません。")
+            if not cached_ensembles:
+                notices.append("有効期限内のアンサンブル予報キャッシュがありません。")
+            if not cached_typhoon_impacts:
+                notices.append("有効期限内の台風影響度キャッシュがないため、台風補正は適用していません。")
+            _append_typhoon_coverage_notice(
+                notices,
+                fresh_cached["weather"],
+                cached_typhoon_impacts,
+            )
             return {
-                "weather": cached["weather"],
-                "jma": cached.get("jma", {}),
-                "ensembles": cached.get("ensembles", {}),
-                "haneda": cached.get("haneda", {}),
-                "typhoon_impacts": cached.get("typhoon_impacts", {}),
+                "weather": fresh_cached["weather"],
+                "jma": cached_jma,
+                "ensembles": cached_ensembles,
+                "typhoon_impacts": cached_typhoon_impacts,
                 "notices": notices,
                 "source": "cache",
+                "data_updated_at": forecast_source_timestamp(fresh_cached, "weather"),
             }
         raise
 
-    try:
-        haneda = fetch_haneda_forecast()
-    except (requests.RequestException, ValueError) as exc:
-        _log_or_print(logger, "Haneda forecast could not be loaded", exc)
-        haneda = fresh_cached.get("haneda", {}) if fresh_cached else {}
-        if haneda:
-            notices.append("羽田側の予報は前回取得データを使用しています。")
-        else:
-            notices.append("羽田側の予報を取得できませんでした。")
-
+    source_updated_at = {}
     try:
         jma = fetch_jma_forecast()
     except (requests.RequestException, ValueError) as exc:
         _log_or_print(logger, "JMA forecast could not be loaded", exc)
-        jma = fresh_cached.get("jma", {}) if fresh_cached else {}
+        jma = cached_source("jma")
         if jma:
+            source_updated_at["jma"] = forecast_source_timestamp(cached, "jma")
             notices.append("JMA予報は前回取得データを使用しています。")
         else:
             notices.append("JMA予報を取得できませんでした。")
@@ -541,8 +570,9 @@ def load_forecast_bundle(logger=None):
         ensembles = fetch_ensemble_forecast()
     except (requests.RequestException, ValueError) as exc:
         _log_or_print(logger, "Ensemble forecast could not be loaded", exc)
-        ensembles = fresh_cached.get("ensembles", {}) if fresh_cached else {}
+        ensembles = cached_source("ensembles")
         if ensembles:
+            source_updated_at["ensembles"] = forecast_source_timestamp(cached, "ensembles")
             notices.append("アンサンブル予報は前回取得データを使用しています。")
         else:
             notices.append("アンサンブル予報を取得できませんでした。")
@@ -551,27 +581,32 @@ def load_forecast_bundle(logger=None):
         typhoon_impacts = fetch_typhoon_impacts()
     except (requests.RequestException, ValueError) as exc:
         _log_or_print(logger, "Typhoon impact scores could not be loaded", exc)
-        typhoon_impacts = fresh_cached.get("typhoon_impacts", {}) if fresh_cached else {}
+        typhoon_impacts = cached_source("typhoon_impacts")
         if typhoon_impacts:
+            source_updated_at["typhoon_impacts"] = forecast_source_timestamp(cached, "typhoon_impacts")
             notices.append("台風影響度は前回取得データを使用しています。")
         else:
             notices.append("台風影響度を取得できなかったため、台風補正は適用していません。")
 
-    save_forecast_bundle(
+    _append_typhoon_coverage_notice(notices, weather, typhoon_impacts)
+    saved = save_forecast_bundle(
         weather,
         jma,
         ensembles,
-        haneda,
         typhoon_impacts=typhoon_impacts,
+        source_updated_at=source_updated_at,
     )
+    data_updated_at = (
+        forecast_source_timestamp(saved, "weather") if isinstance(saved, dict) else None
+    ) or datetime.now(JST).isoformat()
     return {
         "weather": weather,
         "jma": jma,
         "ensembles": ensembles,
-        "haneda": haneda,
         "typhoon_impacts": typhoon_impacts,
         "notices": notices,
         "source": "live",
+        "data_updated_at": data_updated_at,
     }
 
 
@@ -581,12 +616,10 @@ def build_daily_forecasts(
     reference_date=None,
     current_time=None,
     jma_by_time=None,
-    haneda_by_time=None,
     typhoon_impacts_by_date=None,
 ):
     ensembles_by_time = ensembles_by_time or {}
     jma_by_time = jma_by_time or {}
-    haneda_by_time = haneda_by_time or {}
     typhoon_impacts_by_date = typhoon_impacts_by_date or {}
     current_time = current_time or datetime.now(JST)
     reference_date = reference_date or current_time.date()
@@ -594,7 +627,7 @@ def build_daily_forecasts(
     days = []
     for date_string in dates:
         date = datetime.strptime(date_string, "%Y-%m-%d")
-        typhoon_risk_level = typhoon_impacts_by_date.get(date_string, "low")
+        typhoon_risk_level = typhoon_impacts_by_date.get(date_string)
         flights = []
         for flight in FLIGHTS:
             if date.date() == current_time.date() and _flight_display_expired(date_string, flight["time"], current_time):
@@ -607,23 +640,41 @@ def build_daily_forecasts(
                 or weather.get("wind_speed") is None
             ):
                 continue
-            result = predict_flight_probability(**_prediction_weather(weather))
+            result = predict_flight_probability(
+                **_prediction_weather(weather),
+                flight_number=flight["number"],
+            )
             jma_weather = _prepare_reference_weather(jma_by_time.get(timestamp), weather)
-            jma_result = predict_flight_probability(**_prediction_weather(jma_weather)) if jma_weather is not None else None
-            confidence = calculate_confidence(ensembles_by_time.get(timestamp, []), weather)
+            jma_result = (
+                predict_flight_probability(
+                    **_prediction_weather(jma_weather),
+                    flight_number=flight["number"],
+                )
+                if jma_weather is not None
+                else None
+            )
+            confidence = calculate_confidence(
+                ensembles_by_time.get(timestamp, []),
+                weather,
+                flight_number=flight["number"],
+            )
             result = _with_typhoon_impact(result, typhoon_risk_level)
             if jma_result is not None:
                 jma_result = _with_typhoon_impact(jma_result, typhoon_risk_level)
             jma_probability = jma_result["probability"] if jma_result is not None else None
             model_probabilities = calculate_model_reference_probabilities(
-                ensembles_by_time.get(timestamp, []), weather
+                ensembles_by_time.get(timestamp, []),
+                weather,
+                flight_number=flight["number"],
             )
             model_probabilities = {
                 model: _with_typhoon_probability_adjustment(probability, typhoon_risk_level)
                 for model, probability in model_probabilities.items()
             }
             model_risks = calculate_model_reference_risks(
-                ensembles_by_time.get(timestamp, []), weather
+                ensembles_by_time.get(timestamp, []),
+                weather,
+                flight_number=flight["number"],
             )
             model_risks = {
                 model: _with_typhoon_risk_summary(risk, typhoon_risk_level)
@@ -685,28 +736,27 @@ def create_app():
     def index():
         error = None
         days = []
+        updated_at = None
         try:
-            restore_db(BASE_DIR / "flights.db", BASE_DIR / "data" / "flights_dump.sql")
             bundle = load_forecast_bundle(app.logger)
             days = build_daily_forecasts(
                 bundle["weather"],
                 bundle["ensembles"],
                 jma_by_time=bundle["jma"],
-                haneda_by_time=bundle["haneda"],
                 typhoon_impacts_by_date=bundle["typhoon_impacts"],
             )
             notices = bundle["notices"]
+            updated_at = format_forecast_timestamp(bundle.get("data_updated_at"))
         except (requests.RequestException, ValueError, OSError) as exc:
             app.logger.warning("Forecast could not be loaded: %s", exc)
             error = "現在、予報を取得できません。時間をおいてもう一度お試しください。"
             notices = []
 
-        updated_at = datetime.now(JST).strftime("%Y/%m/%d %H:%M")
         return render_template(
             "index.html",
             days=days,
             error=error,
-            updated_at=updated_at,
+            updated_at=updated_at or "取得できません",
             notices=notices,
             low_probability_threshold=LOW_PROBABILITY_THRESHOLD,
         )
@@ -718,5 +768,5 @@ app = create_app()
 
 
 if __name__ == "__main__":
-    app.run(debug=True)
+    app.run()
 

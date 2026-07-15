@@ -1,8 +1,3 @@
-import sqlite3
-import os
-from functools import lru_cache
-from pathlib import Path
-
 from app_config import (
     FALLBACK_MATCH_ANGLE_DEGREES,
     FALLBACK_MATCH_WIND_SPEED_MS,
@@ -32,64 +27,15 @@ from app_config import (
     WIND_PROBABILITY_MULTIPLIER,
 )
 from bigquery_storage import fetch_detailed_history, fetch_history
-from flight_metadata import flight_display_name, normalize_status
-
-DB_FILE = Path(__file__).resolve().parent / "flights.db"
+from flight_metadata import OPERATED_STATUSES, VALID_STORED_STATUSES, normalize_status
 
 
 def load_history():
-    backend = os.getenv("FORECAST_DATA_BACKEND", "sqlite").lower()
-    if backend == "bigquery":
-        return fetch_history()
-
-    if not DB_FILE.exists():
-        return []
-    conn = sqlite3.connect(DB_FILE)
-    try:
-        return conn.execute(
-            """
-            SELECT status, wind_direction, wind_speed
-            FROM flight_weather_logs
-            WHERE status IS NOT NULL
-              AND wind_direction IS NOT NULL
-              AND wind_speed IS NOT NULL
-            """
-        ).fetchall()
-    finally:
-        conn.close()
+    return fetch_history()
 
 
-@lru_cache(maxsize=1)
 def load_detailed_history():
-    backend = os.getenv("FORECAST_DATA_BACKEND", "sqlite").lower()
-    if backend == "bigquery":
-        return fetch_detailed_history()
-    if not DB_FILE.exists():
-        return []
-
-    conn = sqlite3.connect(DB_FILE)
-    conn.row_factory = sqlite3.Row
-    try:
-        columns = {row[1] for row in conn.execute("PRAGMA table_info(flight_weather_logs)")}
-        reason_column = "status_reason" if "status_reason" in columns else "NULL AS status_reason"
-        rows = conn.execute(
-            f"""
-            SELECT date, flight_number, status, {reason_column}, wind_direction,
-                   wind_speed, wind_gusts, cloud_cover_low, visibility
-            FROM flight_weather_logs
-            WHERE status IS NOT NULL AND wind_direction IS NOT NULL AND wind_speed IS NOT NULL
-            """
-        ).fetchall()
-        return [
-            {
-                **dict(row),
-                "status": normalize_status(row["status"]),
-                "flight_display_name": flight_display_name(row["flight_number"]),
-            }
-            for row in rows
-        ]
-    finally:
-        conn.close()
+    return fetch_detailed_history()
 
 
 def _weather_similarity_score(row, weather):
@@ -153,7 +99,15 @@ def find_similar_flights(flight_number, weather, limit=10):
         )
     return similar
 
-def predict_flight_probability(wind_direction, wind_speed, wind_gusts, cloud_cover_low, visibility, precipitation=None):
+def predict_flight_probability(
+    wind_direction,
+    wind_speed,
+    wind_gusts,
+    cloud_cover_low,
+    visibility,
+    precipitation=None,
+    flight_number=None,
+):
     """
     入力された気象条件から、八丈島便の運航確率を予測する。
     
@@ -168,14 +122,28 @@ def predict_flight_probability(wind_direction, wind_speed, wind_gusts, cloud_cov
     Returns:
         dict: 予測結果 (probability, alert_required, warning_msg, data_count, step_used)
     """
-    history = load_history()
+    history = []
+    for row in load_history():
+        if len(row) == 4:
+            historical_flight, status, historical_direction, historical_speed = row
+        else:
+            historical_flight = None
+            status, historical_direction, historical_speed = row
+        normalized_status = normalize_status(status)
+        if normalized_status not in VALID_STORED_STATUSES:
+            continue
+        if flight_number is not None and historical_flight != flight_number:
+            continue
+        history.append((normalized_status, historical_direction, historical_speed))
     if not history:
+        scope = f"{flight_number}の" if flight_number else ""
         return {
             "probability": MAX_PROBABILITY,
             "alert_required": False,
-            "warning_msg": "過去データを取得できないため、デフォルト値を返します。",
+            "warning_msg": f"{scope}過去データを取得できないため、デフォルト値を返します。",
             "data_count": 0,
-            "step_used": 0
+            "step_used": 0,
+            "history_flight_number": flight_number,
         }
         
     matching_rows = []
@@ -206,7 +174,7 @@ def predict_flight_probability(wind_direction, wind_speed, wind_gusts, cloud_cov
         total = len(matching_rows)
         score_sum = 0.0
         for (status,) in matching_rows:
-            if normalize_status(status) in ["運航", "通常", "遅延", "運航(条件付)"]:
+            if status in OPERATED_STATUSES:
                 score_sum += 1.0
             else:
                 score_sum += 0.0
@@ -274,6 +242,7 @@ def predict_flight_probability(wind_direction, wind_speed, wind_gusts, cloud_cov
         "alert_required": alert_required,
         "warning_msg": warning_msg,
         "data_count": len(matching_rows),
-        "step_used": step_used
+        "step_used": step_used,
+        "history_flight_number": flight_number,
     }
 

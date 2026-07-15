@@ -1,132 +1,92 @@
 # 運用Runbook
 
-この文書は、八丈島運航統計予測を安定運用するための確認・復旧手順です。
-
 ## 定常監視
 
-毎日または更新後に確認するもの:
+- `Deploy forecast site to Pages`: 6時間ごとの生成・公開とData Quality Reportが成功していること
+- `Daily Flight & Weather Data Collection`: 毎日21:00 JSTの3便収集が成功していること
+- `CodeQL`と`CI`: mainとPull Requestの検査が成功していること
+- [公開サイト](https://toyo1621.github.io/8jo-flight-forecast-bot/): 予報データ取得時刻、11日分の表示、詳細ダイアログを確認すること
 
-- GitHub Actions `Deploy forecast site to Pages`
-  - 6時間ごとの静的サイト生成が成功していること
-  - Step summary の `Data Quality Report` に error がないこと
-- GitHub Actions `Daily Flight & Weather Data Collection`
-  - 毎日21:00 JST前後の運航実績収集が成功していること
-  - Data Quality Report に重複、未知ステータス、未知便名がないこと
-- 公開サイト
-  - [https://toyo1621.github.io/8jo-flight-forecast-bot/](https://toyo1621.github.io/8jo-flight-forecast-bot/)
-  - 更新時刻が古すぎないこと
-  - 便カードと詳細画面が開けること
+Data Quality Reportの`error`はPagesと日次収集を失敗させます。エラーを無視して公開を更新しません。
 
 ## 障害時の優先順位
 
-1. 公開サイトが表示されているか確認
-2. Pages workflow の直近失敗を確認
-3. Data Quality Report の error を確認
-4. 外部API障害か、BigQuery/認証/コード変更の問題かを切り分け
-5. 必要に応じて手動で workflow dispatch を実行
+1. 公開済みサイトが表示できるか確認します。
+2. Pagesまたは日次収集の直近ログとData Quality Reportを確認します。
+3. Open-Meteo、台風影響度API、ODPT、BigQuery認証、コード変更のどこで失敗したか切り分けます。
+4. データを推測で補わず、原因解消後にworkflowを手動実行します。
 
-## よくある障害と対応
+## Open-Meteo障害
 
-### Open-Meteo が一時的に失敗
+主予報の取得に失敗した場合、7時間以内のキャッシュがあればその取得時刻と注意文を表示します。期限切れキャッシュしかない場合は新しいPagesを公開しません。JMAやアンサンブルだけが失敗した場合は、主予報を維持し、該当モデルのキャッシュ利用または欠測を表示します。
 
-症状:
+## 台風影響度の欠測
 
-- Pages build で予報取得エラー
-- サイト上に「前回取得した予報データを表示しています」と出る
+- API全体が失敗した場合: 7時間以内のキャッシュを使用し、なければ補正なしと通知します。
+- 一部の日付がない場合: その日を`low`と見なさず、補正を適用していない日付範囲を通知します。
+- 現在の表示範囲には、当日を含む11日分が必要です。
 
-対応:
+## ODPT・日次収集障害
 
-- まずは公開サイトが前回データで表示されていることを確認
-- 次の6時間更新を待つ
-- 急ぐ場合は `Deploy forecast site to Pages` を手動実行
+取得失敗、対象3便不足、未対応ステータス、気象欠測ではBigQueryを更新しません。失敗を欠航へ変換しないでください。
 
-### BigQuery認証エラー
-
-症状:
-
-- `google-github-actions/auth` または BigQuery query が失敗
-
-確認:
-
-- Repository Variables
-  - `GCP_WORKLOAD_IDENTITY_PROVIDER`
-  - `GCP_SERVICE_ACCOUNT`
-- サービスアカウントに BigQuery の読み書き権限があるか
-- `BIGQUERY_LOCATION=asia-northeast1` が設定されているか
-
-### ODPT APIエラー
-
-症状:
-
-- `Daily Flight & Weather Data Collection` が失敗
-
-確認:
+確認項目:
 
 - GitHub Secret `ODPT_API_KEY`
-- ODPT側の一時障害
-- 手元で `python data_collector.py --demo` が通るか
+- ODPTとOpen-Meteoの応答
+- 実行時刻が最終便の結果確定後か
+- Workload Identity FederationとBigQuery書き込み権限
 
-### データ品質エラー
+既存の未取得・未対応ステータス行だけを掃除する場合は、`Daily Flight & Weather Data Collection`を`cleanup_only=true`で手動実行します。これは外部APIを呼びません。
 
-Data Quality Report の severity が `error` の場合、公開ページは可用性を優先して維持しつつ、最優先で調査します。PR/CIでは品質チェックを確認し、運用者が修正判断を行います。
+## BigQuery認証障害
+
+Repository Variablesの`GCP_WORKLOAD_IDENTITY_PROVIDER`と`GCP_SERVICE_ACCOUNT`、サービスアカウントの最小権限、`BIGQUERY_LOCATION=asia-northeast1`を確認します。JSONサービスアカウント鍵を追加して回避しないでください。
+
+## データ品質エラー
 
 代表例:
 
-- `duplicate_date_flight`: 同じ日付・同じ便が重複
-- `unknown_flight_number`: 対象外の便名
-- `unknown_status`: 正規化できない運航ステータス
+- `duplicate_date_flight`: `date + flight_number`の重複
+- `missing_status`: 空ステータス
+- `unknown_status`: 未対応ステータス
+- `unknown_flight_number`: 対象外便
 - `invalid_date`: 日付形式不正
 
-対応:
+修正手順:
 
-1. BigQueryコンソールで該当レコードを確認
-2. 正しい値を調査
-3. 必要ならCSVを修正して `import_user_csv.py --backend both` で再投入
-4. `python data_quality.py --backend bigquery --format markdown --output data_quality_report.md` で再確認
+1. BigQueryで対象行と出典を確認します。
+2. 正しい値を確認できた場合だけ修正します。
+3. 未取得・未対応ステータスなら`--cleanup-only`を使用します。
+4. 必要ならCSVを修正し、`python import_user_csv.py --csv path/to/data.csv`でBigQueryへ再投入します。
+5. `python data_quality.py --format markdown --output data_quality_report.md --fail-on error`で再確認します。
 
-## ローカル確認コマンド
+## ローカル検証
 
-```powershell
-.\.venv\Scripts\python.exe -m pytest -q
-.\.venv\Scripts\python.exe data_quality.py --backend sqlite --format markdown --output data_quality_report.md --fail-on none
-.\.venv\Scripts\python.exe build_static.py
+```bash
+python -m pytest -q
+python -m compileall -q .
+python data_quality.py --format markdown --output data_quality_report.md --fail-on error
+python build_static.py
 ```
 
-BigQueryを使う場合:
-
-```powershell
-$env:FORECAST_DATA_BACKEND = "bigquery"
-$env:GCP_PROJECT_ID = "hachijo-flight-forecast"
-$env:BIGQUERY_DATASET = "flight_forecast"
-$env:BIGQUERY_TABLE = "flight_weather_logs"
-$env:BIGQUERY_LOCATION = "asia-northeast1"
-.\.venv\Scripts\python.exe data_quality.py --backend bigquery --format markdown --output data_quality_report.md
-.\.venv\Scripts\python.exe build_static.py
-```
-
-## 手動公開確認
-
-```powershell
-$ts=[DateTimeOffset]::UtcNow.ToUnixTimeSeconds()
-$url="https://toyo1621.github.io/8jo-flight-forecast-bot/?verify=$ts"
-$html=(Invoke-WebRequest -Uri $url -UseBasicParsing).Content
-$html.Contains("八丈島運航統計予測")
-```
+品質検査と静的生成にはBigQuery Application Default Credentialsが必要です。
 
 ## データ修正の原則
 
-- 欠航理由が不明な場合は推測しない
-- `通常` はDB投入時に `運航` へ正規化
-- `条件付き→就航`、`条件付→運航` は `運航(条件付)` へ統一
-- `date + flight_number` を一意キーとして扱う
-- 視程補完値は実測ではなく数値予報値であることを忘れない
+- 取得失敗や不明ステータスを欠航と推測しない
+- 欠航理由を推測しない
+- 既知値を`NULL`や`未確認`で劣化させない
+- `date + flight_number`を一意キーとする
+- 視程補完値は実測ではなく数値予報値として`visibility_source`を残す
+- SQLダンプやDBファイルをGitHubへ置かない
 
-## 将来Cloud Runへ移行する場合
+## 公開後確認
 
-Cloud Run移行時に追加で必要になるもの:
+キャッシュ回避クエリを付けて公開HTMLを確認します。
 
-- Cloud Run用のヘルスチェックと最小インスタンス方針
-- Secret Manager連携
-- Cloud Logging/Monitoringのアラート
-- リクエスト単位のキャッシュ戦略
-- 管理画面の認証
+```text
+https://toyo1621.github.io/8jo-flight-forecast-bot/?verify=<timestamp>
+```
+
+サイト名「八丈島便 運航統計参考値」、実データの取得時刻、未校正の注意書き、台風影響度の欠測通知を確認します。

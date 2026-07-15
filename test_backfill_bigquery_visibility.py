@@ -1,6 +1,6 @@
-from datetime import date, time
+from datetime import date
 
-from backfill_bigquery_visibility import _date_chunks, nearest_hour
+from backfill_bigquery_visibility import FORECAST_HOUR_BY_FLIGHT, _date_chunks
 
 
 def test_date_chunks_cover_range_without_overlap():
@@ -12,8 +12,6 @@ def test_date_chunks_cover_range_without_overlap():
     ]
 
 
-def test_nearest_hour_rounds_arrival_time():
-    assert nearest_hour(time(8, 29)) == 8
-    assert nearest_hour(time(8, 30)) == 9
-    assert nearest_hour(time(16, 40)) == 17
+def test_backfill_uses_shared_flight_forecast_hours():
+    assert FORECAST_HOUR_BY_FLIGHT == {"ANA1891": 8, "ANA1893": 13, "ANA1895": 17}
 

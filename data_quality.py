@@ -1,8 +1,6 @@
 import argparse
 import json
-import os
 import re
-import sqlite3
 from collections import Counter, defaultdict
 from dataclasses import asdict, dataclass
 from datetime import date, datetime
@@ -10,17 +8,18 @@ from pathlib import Path
 
 from google.cloud import bigquery
 
+from app_config import JST
 from bigquery_storage import settings, table_path
-from flight_metadata import FLIGHT_DISPLAY_NAMES, normalize_status
+from flight_metadata import (
+    FLIGHT_DISPLAY_NAMES,
+    NON_OPERATED_STATUSES,
+    VALID_STORED_STATUSES,
+    normalize_status,
+)
 
 
-BASE_DIR = Path(__file__).resolve().parent
-DB_FILE = BASE_DIR / "flights.db"
-OPERATED_STATUSES = {"運航", "通常", "遅延", "運航(条件付)"}
-NON_OPERATED_STATUSES = {"欠航", "条件付き→引返欠航"}
-KNOWN_STATUSES = OPERATED_STATUSES | NON_OPERATED_STATUSES
 REQUIRED_WEATHER_FIELDS = ("wind_direction", "wind_speed", "wind_gusts", "cloud_cover_low")
-REASON_REQUIRED_STATUSES = {"欠航", "条件付き→引返欠航"}
+REASON_REQUIRED_STATUSES = NON_OPERATED_STATUSES
 UNCONFIRMED_REASON = "未確認"
 DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 TIME_RE = re.compile(r"^\d{2}:\d{2}(:\d{2})?$")
@@ -58,31 +57,6 @@ def _parse_date(value):
     return None
 
 
-def fetch_sqlite_records(db_file=DB_FILE):
-    if not Path(db_file).exists():
-        return []
-    conn = sqlite3.connect(db_file)
-    conn.row_factory = sqlite3.Row
-    try:
-        columns = {row[1] for row in conn.execute("PRAGMA table_info(flight_weather_logs)")}
-        selected = [
-            "date",
-            "flight_number",
-            "scheduled_time",
-            "status",
-            "wind_direction",
-            "wind_speed",
-            "wind_gusts",
-            "cloud_cover_low",
-            "visibility",
-        ]
-        optional = ["status_reason", "visibility_source"]
-        selected.extend(column if column in columns else f"NULL AS {column}" for column in optional)
-        return [dict(row) for row in conn.execute(f"SELECT {', '.join(selected)} FROM flight_weather_logs")]
-    finally:
-        conn.close()
-
-
 def fetch_bigquery_records():
     config = settings()
     client = bigquery.Client(project=config["project"], location=config["location"])
@@ -96,7 +70,7 @@ def fetch_bigquery_records():
 
 
 def analyze_records(records, today=None):
-    today = today or datetime.now().date()
+    today = today or datetime.now(JST).date()
     findings = []
     rows = [dict(row) for row in records]
 
@@ -126,10 +100,30 @@ def analyze_records(records, today=None):
         findings.append(_finding("error", "missing_status", "status が空です。", missing_status_rows))
 
     invalid_status_rows = [
-        row for row in rows if row.get("status") and normalize_status(row["status"]) not in KNOWN_STATUSES
+        row for row in rows if row.get("status") and normalize_status(row["status"]) not in VALID_STORED_STATUSES
     ]
     if invalid_status_rows:
         findings.append(_finding("error", "unknown_status", "未対応の運航ステータスが含まれています。", invalid_status_rows))
+
+    prediction_history_flights = {
+        row.get("flight_number")
+        for row in rows
+        if row.get("flight_number") in FLIGHT_DISPLAY_NAMES
+        and normalize_status(row.get("status")) in VALID_STORED_STATUSES
+        and row.get("wind_direction") is not None
+        and row.get("wind_speed") is not None
+    }
+    missing_prediction_history = sorted(set(FLIGHT_DISPLAY_NAMES) - prediction_history_flights)
+    if missing_prediction_history:
+        findings.append(
+            _finding(
+                "error",
+                "missing_prediction_history",
+                "統計参考値を算出できる履歴がない対象便があります。",
+                len(missing_prediction_history),
+                missing_prediction_history,
+            )
+        )
 
     missing_reason_rows = [
         row
@@ -241,13 +235,12 @@ def should_fail(findings, fail_on):
 
 def main():
     parser = argparse.ArgumentParser(description="Check flight/weather data quality.")
-    parser.add_argument("--backend", choices=("sqlite", "bigquery"), default=os.getenv("FORECAST_DATA_BACKEND", "sqlite").lower())
     parser.add_argument("--format", choices=("text", "markdown", "json"), default="text")
     parser.add_argument("--output")
     parser.add_argument("--fail-on", choices=("none", "error", "warning"), default="error")
     args = parser.parse_args()
 
-    records = fetch_bigquery_records() if args.backend == "bigquery" else fetch_sqlite_records()
+    records = fetch_bigquery_records()
     findings = analyze_records(records)
     if args.format == "json":
         output = json.dumps(

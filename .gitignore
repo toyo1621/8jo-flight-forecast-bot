@@ -4,9 +4,18 @@
 # Local databases
 *.db
 flights.db-journal
+data/flights_dump.sql
+*.sql
 
 # Environment variables (Credentials)
 .env
+.env.*
+!.env.example
+*service-account*.json
+application_default_credentials.json
+credentials.json
+*.pem
+*.key
 
 # Python cache files
 __pycache__/
