@@ -376,6 +376,11 @@ def calculate_model_reference_risks(ensemble_members, baseline_weather=None, fli
     }
 
 
+def deterministic_risk_summary(result):
+    labels = set(_risk_labels(result.get("warning_msg")))
+    return "、".join(label for label in RISK_LABELS if label in labels) or "特になし"
+
+
 def fallback_confidence(target_date, reference_date):
     lead_days = max((target_date - reference_date).days, 0)
     if lead_days == 0:
@@ -653,6 +658,8 @@ def build_daily_forecasts(
                         "gfs_risk": model_risks.get("gfs_seamless"),
                         "ecmwf_probability": model_probabilities.get("ecmwf_ifs025"),
                         "ecmwf_risk": model_risks.get("ecmwf_ifs025"),
+                        "jma_probability": result["probability"],
+                        "jma_risk": deterministic_risk_summary(result),
                         "confidence": confidence,
                         "wind_direction_label": wind_direction_label(weather["wind_direction"]),
                     }

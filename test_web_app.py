@@ -16,6 +16,7 @@ from web_app import (
     calculate_confidence,
     calculate_model_reference_probabilities,
     calculate_model_reference_risks,
+    deterministic_risk_summary,
     fallback_confidence,
     _select_evenly,
     _supplement_primary_forecast,
@@ -64,6 +65,8 @@ def test_build_daily_forecasts():
     assert days[0]["date_label"] == "6/20"
     assert days[0]["flights"][0]["number"] == "ANA1891(1便)"
     assert days[0]["flights"][0]["probability"] == 88.0
+    assert days[0]["flights"][0]["jma_probability"] == 88.0
+    assert [model["label"] for model in days[0]["flights"][0]["model_probabilities"]] == ["JMA"]
     assert days[0]["flights"][0]["wind_direction_label"] == "南"
     assert days[0]["confidence"]["grade"] == "B"
 
@@ -574,6 +577,13 @@ def test_model_reference_risks_summarize_each_model_members():
     }
 
 
+def test_deterministic_risk_summary_keeps_jma_risk_labels():
+    assert deterministic_risk_summary({"warning_msg": "特になし"}) == "特になし"
+    assert deterministic_risk_summary(
+        {"warning_msg": "突風注意 (予報突風: 16.0 m/s)、台風接近リスク小"}
+    ) == "突風注意、台風接近リスク"
+
+
 def test_confidence_note_uses_short_wording():
     template = (BASE_DIR / "templates" / "index.html").read_text(encoding="utf-8")
 
@@ -599,7 +609,7 @@ def test_template_includes_quick_guide_for_non_experts():
 
     assert 'class="quick-guide"' in template
     assert "◎95%以上 / 〇75%以上 / △35%以上 / ×35%未満" in template
-    assert "主予報はJMAモデル、GFS・ECMWFは比較用の参考値" in template
+    assert "比較欄にはGFS・ECMWF・JMAを併記" in template
     assert ".quick-guide" in stylesheet
 
 
@@ -646,6 +656,7 @@ def test_probability_symbol_thresholds_render_in_template():
         "probability": 96.0,
         "gfs_probability": 76.0,
         "ecmwf_probability": 34.9,
+        "jma_probability": 96.0,
         "warning_msg": "なし",
         "wind_direction": 180.0,
         "wind_direction_label": "南",
@@ -668,6 +679,8 @@ def test_probability_symbol_thresholds_render_in_template():
     assert "◎</span><strong>96.0" in body
     assert "〇</span>76.0%" in body
     assert "×</span>34.9%" in body
+    assert "JP" in body
+    assert "JMA" in body
 
 
 def test_flag_icon_assets_exist():
@@ -683,6 +696,8 @@ def test_decorate_flight_for_display_builds_model_rows():
             "gfs_probability": 75.0,
             "ecmwf_probability": 59.9,
             "ecmwf_risk": "強風注意 (2/31通り)",
+            "jma_probability": 88.0,
+            "jma_risk": "特になし",
         }
     )
 
@@ -708,6 +723,16 @@ def test_decorate_flight_for_display_builds_model_rows():
             "risk_tone": "alert",
             "flag_path": "static/flags/eu.svg",
             "flag_alt": "EU",
+        },
+        {
+            "label": "JMA",
+            "probability": 88.0,
+            "symbol": "〇",
+            "tone": "ok",
+            "risk": "特になし",
+            "risk_tone": "ok",
+            "flag_path": "static/flags/jp.svg",
+            "flag_alt": "JP",
         },
     ]
 
@@ -939,7 +964,7 @@ def test_index_renders_forecast():
     assert "八丈島便 運航統計参考値" in body
     assert "羽田→八丈島便の運航傾向を、同じ便の過去実績と天気から見やすくするサイトです。" in body
     assert "天候信頼度は、Open-Meteo APIからオープンデータ" not in body
-    assert "主予報はJMAモデル、GFS・ECMWFは比較用の参考値" in body
+    assert "比較欄にはGFS・ECMWF・JMAを併記" in body
     assert "主予報は気象庁(JMA)モデルをOpen-Meteo経由で使用しています。" in body
     assert "予報データ取得 " in body
     assert "(6時間ごとに更新)" in body
