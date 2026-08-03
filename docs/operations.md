@@ -89,4 +89,4 @@ python build_static.py
 https://toyo1621.github.io/8jo-flight-forecast-bot/?verify=<timestamp>
 ```
 
-サイト名「八丈島便 運航統計参考値」、実データの取得時刻、未校正の注意書き、台風影響度の欠測通知を確認します。
+サイト名「八丈島便 運航の目安」、実データの取得時刻、未校正の注意書き、台風影響度の欠測通知を確認します。
