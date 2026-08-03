@@ -19,9 +19,9 @@ FAVICON_VERSION = "20260713-2"
 def add_brand_assets(html):
     if "static/favicon.svg" not in html:
         html = html.replace(
-            "  <title>八丈島便 運航統計参考値</title>",
+            "  <title>八丈島便 運航の目安</title>",
             (
-                "  <title>八丈島便 運航統計参考値</title>\n"
+                "  <title>八丈島便 運航の目安</title>\n"
                 f"  <link rel=\"icon\" type=\"image/svg+xml\" href=\"static/favicon.svg?v={FAVICON_VERSION}\">\n"
                 f"  <link rel=\"apple-touch-icon\" href=\"static/logo.svg?v={FAVICON_VERSION}\">\n"
                 f"  <link rel=\"stylesheet\" href=\"static/favicon-brand.css?v={FAVICON_VERSION}\">"
