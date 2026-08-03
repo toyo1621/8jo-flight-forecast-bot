@@ -47,7 +47,6 @@ def build_site(output_dir=DIST_DIR):
     days = build_daily_forecasts(
         bundle["weather"],
         bundle["ensembles"],
-        jma_by_time=bundle["jma"],
         typhoon_impacts_by_date=bundle["typhoon_impacts"],
     )
     updated_at = format_forecast_timestamp(bundle.get("data_updated_at")) or "取得時刻不明"

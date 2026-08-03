@@ -16,14 +16,12 @@ from web_app import (
     calculate_confidence,
     calculate_model_reference_probabilities,
     calculate_model_reference_risks,
-    deterministic_risk_summary,
     fallback_confidence,
     _select_evenly,
-    _prepare_reference_weather,
+    _supplement_primary_forecast,
     _with_typhoon_impact,
     _with_typhoon_risk_summary,
-    _with_model_difference_warning,
-    fetch_jma_forecast,
+    fetch_forecast,
     fetch_typhoon_impacts,
     load_forecast_bundle,
     wind_direction_label,
@@ -74,27 +72,70 @@ def test_forecast_period_reaches_ten_days_ahead():
     assert FORECAST_DAYS == 11
 
 
-def test_jma_forecast_requests_jma_seamless_model():
-    response = Mock()
-    response.json.return_value = {
+def test_main_forecast_uses_jma_and_supplements_unavailable_fields():
+    jma_response = Mock()
+    jma_response.json.return_value = {
         "hourly": {
             "time": ["2026-06-20T08:00"],
             "wind_speed_10m": [5.0],
             "wind_direction_10m": [180.0],
-            "wind_gusts_10m": [8.0],
+            "wind_gusts_10m": [None],
             "cloud_cover_low": [20.0],
-            "visibility": [15000.0],
+            "visibility": [None],
             "precipitation": [0.0],
         }
     }
-    with patch("web_app.requests.get", return_value=response) as get:
-        result = fetch_jma_forecast()
+    supplemental_response = Mock()
+    supplemental_response.json.return_value = {
+        "hourly": {
+            "time": ["2026-06-20T08:00"],
+            "wind_speed_10m": [7.0],
+            "wind_direction_10m": [90.0],
+            "wind_gusts_10m": [8.0],
+            "cloud_cover_low": [80.0],
+            "visibility": [15000.0],
+            "precipitation": [3.0],
+        }
+    }
+    with patch(
+        "web_app.requests.get",
+        side_effect=[jma_response, supplemental_response],
+    ) as get:
+        result = fetch_forecast()
 
-    response.raise_for_status.assert_called_once()
-    assert get.call_args.kwargs["params"]["models"] == "jma_seamless"
+    jma_response.raise_for_status.assert_called_once()
+    supplemental_response.raise_for_status.assert_called_once()
+    assert get.call_args_list[0].kwargs["params"]["models"] == "jma_seamless"
+    assert "models" not in get.call_args_list[1].kwargs["params"]
+    assert result["2026-06-20T08:00"]["wind_speed"] == 5.0
+    assert result["2026-06-20T08:00"]["wind_direction"] == 180.0
+    assert result["2026-06-20T08:00"]["wind_gusts"] == 8.0
     assert result["2026-06-20T08:00"]["visibility"] == 15.0
     assert result["2026-06-20T08:00"]["precipitation"] == 0.0
     assert result["2026-06-20T08:00"]["pressure_msl"] is None
+    assert result["2026-06-20T08:00"]["_primary_supplement_status"] == "complete"
+
+
+def test_main_forecast_keeps_jma_when_supplement_is_unavailable():
+    primary = {
+        "2026-06-20T08:00": {
+            **SAMPLE_WEATHER["2026-06-20T08:00"],
+            "wind_gusts": None,
+            "visibility": None,
+        }
+    }
+
+    with patch(
+        "web_app._fetch_deterministic_forecast",
+        side_effect=[primary, ValueError("bad supplement")],
+    ):
+        result = fetch_forecast()
+
+    weather = result["2026-06-20T08:00"]
+    assert weather["wind_speed"] == 4.0
+    assert weather["wind_gusts"] is None
+    assert weather["visibility"] is None
+    assert weather["_primary_supplement_status"] == "unavailable"
 
 
 def test_typhoon_impacts_use_jma_flight_risk_levels():
@@ -147,23 +188,39 @@ def test_typhoon_impacts_do_not_fall_back_to_summary_risk():
     assert impacts == {"2026-07-14": "medium"}
 
 
-def test_jma_reference_uses_main_forecast_for_missing_required_values():
-    candidate = {
-        "wind_direction": None,
-        "wind_speed": 5.0,
-        "wind_gusts": None,
-        "cloud_cover_low": 20.0,
-        "visibility": None,
-        "precipitation": None,
+def test_primary_supplement_reports_fields_that_remain_missing():
+    primary = {
+        "2026-06-20T08:00": {
+            "wind_direction": 180.0,
+            "wind_speed": 5.0,
+            "wind_gusts": None,
+            "cloud_cover_low": 20.0,
+            "visibility": None,
+            "precipitation": 0.0,
+        }
+    }
+    supplement = {
+        "2026-06-20T08:00": {
+            "wind_direction": 90.0,
+            "wind_speed": 9.0,
+            "wind_gusts": 8.0,
+            "cloud_cover_low": 80.0,
+            "visibility": None,
+            "precipitation": 4.0,
+        }
     }
 
-    result = _prepare_reference_weather(candidate, SAMPLE_WEATHER["2026-06-20T08:00"])
+    result = _supplement_primary_forecast(primary, supplement)["2026-06-20T08:00"]
 
-    assert result["wind_direction"] == 180.0
-    assert result["wind_speed"] == 5.0
-    assert result["wind_gusts"] == 7.0
-    assert result["visibility"] == 15.0
-    assert result["precipitation"] is None
+    assert result == {
+        "wind_direction": 180.0,
+        "wind_speed": 5.0,
+        "wind_gusts": 8.0,
+        "cloud_cover_low": 20.0,
+        "visibility": None,
+        "precipitation": 0.0,
+        "_primary_supplement_status": "partial",
+    }
 
 
 def test_daily_forecast_skips_main_weather_without_required_values():
@@ -181,17 +238,6 @@ def test_daily_forecast_skips_main_weather_without_required_values():
     )
 
     assert days == []
-
-
-def test_model_difference_warning_uses_twenty_point_boundary():
-    result = {"probability": 80.0, "warning_msg": "特になし", "alert_required": False}
-
-    warned = _with_model_difference_warning(result, 60.0)
-    quiet = _with_model_difference_warning(result, 60.1)
-
-    assert warned["warning_msg"] == "気象モデル差に注意"
-    assert warned["alert_required"] is True
-    assert quiet["warning_msg"] == "特になし"
 
 
 def test_typhoon_risk_uses_external_impact_multipliers():
@@ -528,13 +574,6 @@ def test_model_reference_risks_summarize_each_model_members():
     }
 
 
-def test_deterministic_risk_summary_uses_simple_labels():
-    assert deterministic_risk_summary({"warning_msg": "特になし"}) == "特になし"
-    assert deterministic_risk_summary(
-        {"warning_msg": "南風注意、突風注意 (予報突風: 16.0 m/s)"}
-    ) == "南風注意、突風注意"
-
-
 def test_confidence_note_uses_short_wording():
     template = (BASE_DIR / "templates" / "index.html").read_text(encoding="utf-8")
 
@@ -560,7 +599,7 @@ def test_template_includes_quick_guide_for_non_experts():
 
     assert 'class="quick-guide"' in template
     assert "◎95%以上 / 〇75%以上 / △35%以上 / ×35%未満" in template
-    assert "GFS・ECMWF・JMAは別モデルで計算した参考値" in template
+    assert "主予報はJMAモデル、GFS・ECMWFは比較用の参考値" in template
     assert ".quick-guide" in stylesheet
 
 
@@ -585,7 +624,7 @@ def test_flight_card_shows_model_reference_probabilities_with_threshold_styles()
     assert "model-probability--{{ model.tone }}" in template
     assert "モデル別リスク" in template
     assert "model-risk--{{ model.risk_tone }}" in template
-    assert "(Open-Meteo主予報 / 統計参考値)" in template
+    assert "(JMA主予報 / 統計参考値)" in template
     assert "詳しく見る(運航実績・気象情報)" in template
     assert ".model-probability--ok" in stylesheet
     assert ".model-probability--low" in stylesheet
@@ -606,8 +645,7 @@ def test_probability_symbol_thresholds_render_in_template():
         "time": "08:30",
         "probability": 96.0,
         "gfs_probability": 76.0,
-        "ecmwf_probability": 35.0,
-        "jma_probability": 34.9,
+        "ecmwf_probability": 34.9,
         "warning_msg": "なし",
         "wind_direction": 180.0,
         "wind_direction_label": "南",
@@ -629,7 +667,6 @@ def test_probability_symbol_thresholds_render_in_template():
 
     assert "◎</span><strong>96.0" in body
     assert "〇</span>76.0%" in body
-    assert "△</span>35.0%" in body
     assert "×</span>34.9%" in body
 
 
@@ -646,7 +683,6 @@ def test_decorate_flight_for_display_builds_model_rows():
             "gfs_probability": 75.0,
             "ecmwf_probability": 59.9,
             "ecmwf_risk": "強風注意 (2/31通り)",
-            "jma_probability": None,
         }
     )
 
@@ -680,7 +716,6 @@ def test_load_forecast_bundle_uses_cached_main_forecast_on_api_error():
     cached = {
         "cached_at": datetime.now(JST).isoformat(),
         "weather": SAMPLE_WEATHER,
-        "jma": {"2026-06-20T08:00": SAMPLE_WEATHER["2026-06-20T08:00"]},
         "ensembles": {"2026-06-20T08:00": []},
     }
 
@@ -698,18 +733,35 @@ def test_load_forecast_bundle_uses_cached_main_forecast_on_api_error():
     save.assert_not_called()
 
 
+def test_load_forecast_bundle_reports_missing_primary_supplement():
+    weather = {
+        "2026-06-20T08:00": {
+            **SAMPLE_WEATHER["2026-06-20T08:00"],
+            "_primary_supplement_status": "partial",
+        }
+    }
+    with (
+        patch("web_app.fetch_forecast", return_value=weather),
+        patch("web_app.fetch_ensemble_forecast", return_value={}),
+        patch("web_app.fetch_typhoon_impacts", return_value={"2026-06-20": "low"}),
+        patch("web_app.load_cached_forecast_bundle", return_value=None),
+        patch("web_app.save_forecast_bundle", return_value={}),
+    ):
+        bundle = load_forecast_bundle()
+
+    assert "最大瞬間風速・視程の一部を取得できず" in bundle["notices"][0]
+
+
 def test_load_forecast_bundle_reuses_cached_optional_sources():
     cached = {
         "cached_at": datetime.now(JST).isoformat(),
         "weather": SAMPLE_WEATHER,
-        "jma": {"cached-jma": {"wind_direction": 180.0, "wind_speed": 5.0}},
         "ensembles": {"cached-ensemble": []},
         "typhoon_impacts": {"2026-06-20": "medium"},
     }
 
     with (
         patch("web_app.fetch_forecast", return_value=SAMPLE_WEATHER),
-        patch("web_app.fetch_jma_forecast", side_effect=ValueError("bad jma")),
         patch("web_app.fetch_ensemble_forecast", side_effect=ValueError("bad ensemble")),
         patch("web_app.fetch_typhoon_impacts", side_effect=ValueError("bad typhoon")),
         patch("web_app.load_cached_forecast_bundle", return_value=cached),
@@ -718,19 +770,15 @@ def test_load_forecast_bundle_reuses_cached_optional_sources():
         bundle = load_forecast_bundle()
 
     assert bundle["source"] == "live"
-    assert bundle["jma"] == cached["jma"]
     assert bundle["ensembles"] == cached["ensembles"]
     assert bundle["typhoon_impacts"] == cached["typhoon_impacts"]
-    assert "JMA予報は前回取得データ" in bundle["notices"][0]
-    assert "アンサンブル予報は前回取得データ" in bundle["notices"][1]
-    assert "台風影響度は前回取得データ" in bundle["notices"][2]
+    assert "アンサンブル予報は前回取得データ" in bundle["notices"][0]
+    assert "台風影響度は前回取得データ" in bundle["notices"][1]
     save.assert_called_once_with(
         SAMPLE_WEATHER,
-        cached["jma"],
-        cached["ensembles"],
+        ensembles=cached["ensembles"],
         typhoon_impacts=cached["typhoon_impacts"],
         source_updated_at={
-            "jma": cached["cached_at"],
             "ensembles": cached["cached_at"],
             "typhoon_impacts": cached["cached_at"],
         },
@@ -741,14 +789,12 @@ def test_load_forecast_bundle_does_not_reuse_stale_cached_optional_sources():
     cached = {
         "cached_at": "2020-01-01T00:00:00+09:00",
         "weather": SAMPLE_WEATHER,
-        "jma": {"cached-jma": {"wind_direction": 180.0, "wind_speed": 5.0}},
         "ensembles": {"cached-ensemble": [{"wind_direction": 180.0, "wind_speed": 12.0}]},
         "typhoon_impacts": {"2026-06-20": "severe"},
     }
 
     with (
         patch("web_app.fetch_forecast", return_value=SAMPLE_WEATHER),
-        patch("web_app.fetch_jma_forecast", side_effect=ValueError("bad jma")),
         patch("web_app.fetch_ensemble_forecast", side_effect=ValueError("bad ensemble")),
         patch("web_app.fetch_typhoon_impacts", side_effect=ValueError("bad typhoon")),
         patch("web_app.load_cached_forecast_bundle", return_value=cached),
@@ -757,16 +803,13 @@ def test_load_forecast_bundle_does_not_reuse_stale_cached_optional_sources():
         bundle = load_forecast_bundle()
 
     assert bundle["source"] == "live"
-    assert bundle["jma"] == {}
     assert bundle["ensembles"] == {}
     assert bundle["typhoon_impacts"] == {}
-    assert "JMA予報を取得できませんでした。" in bundle["notices"][0]
-    assert "アンサンブル予報を取得できませんでした。" in bundle["notices"][1]
-    assert "台風影響度を取得できなかったため" in bundle["notices"][2]
+    assert "アンサンブル予報を取得できませんでした。" in bundle["notices"][0]
+    assert "台風影響度を取得できなかったため" in bundle["notices"][1]
     save.assert_called_once_with(
         SAMPLE_WEATHER,
-        {},
-        {},
+        ensembles={},
         typhoon_impacts={},
         source_updated_at={},
     )
@@ -778,28 +821,25 @@ def test_optional_cache_source_cannot_be_refreshed_indefinitely():
         "cached_at": current.isoformat(),
         "source_updated_at": {
             "weather": current.isoformat(),
-            "jma": (current - timedelta(hours=8)).isoformat(),
-            "ensembles": current.isoformat(),
+            "ensembles": (current - timedelta(hours=8)).isoformat(),
             "typhoon_impacts": current.isoformat(),
         },
         "weather": SAMPLE_WEATHER,
-        "jma": {"stale-jma": SAMPLE_WEATHER["2026-06-20T08:00"]},
-        "ensembles": {},
+        "ensembles": {"stale-ensemble": []},
         "typhoon_impacts": {"2026-06-20": "low"},
     }
 
     with (
         patch("web_app.fetch_forecast", return_value=SAMPLE_WEATHER),
-        patch("web_app.fetch_jma_forecast", side_effect=ValueError("bad jma")),
-        patch("web_app.fetch_ensemble_forecast", return_value={}),
+        patch("web_app.fetch_ensemble_forecast", side_effect=ValueError("bad ensemble")),
         patch("web_app.fetch_typhoon_impacts", return_value={"2026-06-20": "low"}),
         patch("web_app.load_cached_forecast_bundle", return_value=cached),
         patch("web_app.save_forecast_bundle", return_value={}),
     ):
         bundle = load_forecast_bundle()
 
-    assert bundle["jma"] == {}
-    assert "JMA予報を取得できませんでした。" in bundle["notices"]
+    assert bundle["ensembles"] == {}
+    assert "アンサンブル予報を取得できませんでした。" in bundle["notices"]
 
 
 def test_save_forecast_bundle_preserves_cached_source_timestamp(tmp_path):
@@ -807,12 +847,12 @@ def test_save_forecast_bundle_preserves_cached_source_timestamp(tmp_path):
 
     payload = save_forecast_bundle(
         SAMPLE_WEATHER,
-        jma={"cached-jma": SAMPLE_WEATHER["2026-06-20T08:00"]},
+        ensembles={"cached-ensemble": []},
         cache_file=tmp_path / "forecast.json",
-        source_updated_at={"jma": old_timestamp},
+        source_updated_at={"ensembles": old_timestamp},
     )
 
-    assert payload["source_updated_at"]["jma"] == old_timestamp
+    assert payload["source_updated_at"]["ensembles"] == old_timestamp
     assert payload["source_updated_at"]["weather"] == payload["cached_at"]
 
 
@@ -847,7 +887,6 @@ def test_partial_typhoon_coverage_is_reported():
     }
     with (
         patch("web_app.fetch_forecast", return_value=weather),
-        patch("web_app.fetch_jma_forecast", return_value={}),
         patch("web_app.fetch_ensemble_forecast", return_value={}),
         patch("web_app.fetch_typhoon_impacts", return_value={"2026-07-15": "low"}),
         patch("web_app.load_cached_forecast_bundle", return_value=None),
@@ -886,7 +925,6 @@ def test_index_renders_forecast():
     }
     with (
         patch("web_app.fetch_forecast", return_value=SAMPLE_WEATHER),
-        patch("web_app.fetch_jma_forecast", return_value={}),
         patch("web_app.fetch_ensemble_forecast", return_value={}),
         patch("web_app.fetch_typhoon_impacts", return_value={"2026-06-20": "low"}),
         patch("web_app.predict_flight_probability", return_value=result),
@@ -901,14 +939,14 @@ def test_index_renders_forecast():
     assert "八丈島便 運航統計参考値" in body
     assert "羽田→八丈島便の運航傾向を、同じ便の過去実績と天気から見やすくするサイトです。" in body
     assert "天候信頼度は、Open-Meteo APIからオープンデータ" not in body
-    assert "GFS・ECMWF・JMAは別モデルで計算した参考値" in body
-    assert "主予報はOpen-Meteo標準予報を使用しています。" in body
+    assert "主予報はJMAモデル、GFS・ECMWFは比較用の参考値" in body
+    assert "主予報は気象庁(JMA)モデルをOpen-Meteo経由で使用しています。" in body
     assert "予報データ取得 " in body
     assert "(6時間ごとに更新)" in body
     assert "青: 統計参考値60%以上" in body
     assert "オレンジ: 統計参考値60%未満" in body
-    assert "主予報: Open-Meteo標準予報" in body
-    assert "主予報(Open-Meteo)での統計参考値" in body
+    assert "主予報: 気象庁(JMA) GSM・MSMモデル (Open-Meteo経由)" in body
+    assert "主予報(JMA)での統計参考値" in body
     assert "天候信頼度" in body
     assert "モデル別の統計参考値" in body
     assert "未校正の統計参考値で、将来の運航確率ではありません" in body
@@ -916,7 +954,7 @@ def test_index_renders_forecast():
     assert "なぜ作ったか" in body
     assert "ざっくりどういう仕組みか" in body
     assert "GFS 31通りとECMWF 31通り、合計62通り" in body
-    assert "短期はJMA参考値と主予報との差を特に確認" in body
+    assert "日本周辺の短期予報を重視してJMAを主予報" in body
     assert "八丈島・東京方面 台風影響目安" in body
     assert "運航率に0.9・0.8・0.7を掛けます" in body
     assert "統計参考値60%未満の便はオレンジ" in body
