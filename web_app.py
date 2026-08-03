@@ -1,3 +1,4 @@
+import logging
 from collections import Counter
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timedelta
@@ -18,7 +19,6 @@ from app_config import (
     JST,
     LOW_PROBABILITY_THRESHOLD,
     MAIN_FORECAST_URL,
-    MODEL_DIFFERENCE_WARNING_POINTS,
     TYPHOON_IMPACT_API_URL,
     TYPHOON_IMPACT_LABELS,
     TYPHOON_IMPACT_MULTIPLIERS,
@@ -37,6 +37,7 @@ from presentation import decorate_flight_for_display
 
 
 BASE_DIR = Path(__file__).resolve().parent
+LOGGER = logging.getLogger(__name__)
 PREDICTION_WEATHER_FIELDS = (
     "wind_direction",
     "wind_speed",
@@ -45,6 +46,8 @@ PREDICTION_WEATHER_FIELDS = (
     "visibility",
     "precipitation",
 )
+PRIMARY_SUPPLEMENT_FIELDS = ("wind_gusts", "visibility")
+PRIMARY_SUPPLEMENT_STATUS_KEY = "_primary_supplement_status"
 
 
 def _fetch_deterministic_forecast(model=None, latitude=HACHIJO_AIRPORT_LATITUDE, longitude=HACHIJO_AIRPORT_LONGITUDE):
@@ -69,9 +72,7 @@ def _fetch_deterministic_forecast(model=None, latitude=HACHIJO_AIRPORT_LATITUDE,
     required = {
         "wind_speed_10m",
         "wind_direction_10m",
-        "wind_gusts_10m",
         "cloud_cover_low",
-        "visibility",
         "precipitation",
     }
     if not times or any(len(hourly.get(key, [])) != len(times) for key in required):
@@ -82,9 +83,9 @@ def _fetch_deterministic_forecast(model=None, latitude=HACHIJO_AIRPORT_LATITUDE,
         weather_by_time[timestamp] = {
             "wind_speed": hourly["wind_speed_10m"][index],
             "wind_direction": hourly["wind_direction_10m"][index],
-            "wind_gusts": hourly["wind_gusts_10m"][index],
+            "wind_gusts": _optional_hourly_value(hourly, "wind_gusts_10m", index),
             "cloud_cover_low": hourly["cloud_cover_low"][index],
-            "visibility": _meters_to_km(hourly["visibility"][index]),
+            "visibility": _meters_to_km(_optional_hourly_value(hourly, "visibility", index)),
             "precipitation": hourly["precipitation"][index],
             "pressure_msl": _optional_hourly_value(hourly, "pressure_msl", index),
             "surface_pressure": _optional_hourly_value(hourly, "surface_pressure", index),
@@ -93,11 +94,35 @@ def _fetch_deterministic_forecast(model=None, latitude=HACHIJO_AIRPORT_LATITUDE,
 
 
 def fetch_forecast():
-    return _fetch_deterministic_forecast()
+    primary = _fetch_deterministic_forecast(JMA_MODEL_NAME)
+    try:
+        supplement = _fetch_deterministic_forecast()
+    except (requests.RequestException, ValueError) as exc:
+        LOGGER.warning("Open-Meteo supplemental forecast could not be loaded: %s", exc)
+        supplement = {}
+    return _supplement_primary_forecast(primary, supplement)
 
 
-def fetch_jma_forecast():
-    return _fetch_deterministic_forecast(JMA_MODEL_NAME)
+def _supplement_primary_forecast(primary, supplement):
+    merged = {}
+    for timestamp, primary_weather in primary.items():
+        weather = dict(primary_weather)
+        supplemental_weather = supplement.get(timestamp, {})
+        missing = []
+        for field in PRIMARY_SUPPLEMENT_FIELDS:
+            if weather.get(field) is None:
+                weather[field] = supplemental_weather.get(field)
+            if weather.get(field) is None:
+                missing.append(field)
+        if not missing:
+            status = "complete"
+        elif len(missing) == len(PRIMARY_SUPPLEMENT_FIELDS):
+            status = "unavailable"
+        else:
+            status = "partial"
+        weather[PRIMARY_SUPPLEMENT_STATUS_KEY] = status
+        merged[timestamp] = weather
+    return merged
 
 
 def fetch_typhoon_impacts():
@@ -244,27 +269,6 @@ def _prediction_weather(weather):
     }
 
 
-def _prepare_reference_weather(candidate, fallback):
-    if candidate is None:
-        return None
-    prepared = dict(candidate)
-    for field in (
-        "wind_direction",
-        "wind_speed",
-        "wind_gusts",
-        "cloud_cover_low",
-        "visibility",
-        "precipitation",
-        "pressure_msl",
-        "surface_pressure",
-    ):
-        if prepared.get(field) is None:
-            prepared[field] = fallback.get(field)
-    if prepared.get("wind_direction") is None or prepared.get("wind_speed") is None:
-        return None
-    return prepared
-
-
 def calculate_confidence(ensemble_members, baseline_weather=None, flight_number=None):
     baseline_weather = baseline_weather or {}
     probabilities = sorted(
@@ -372,14 +376,6 @@ def calculate_model_reference_risks(ensemble_members, baseline_weather=None, fli
     }
 
 
-def deterministic_risk_summary(result):
-    labels = _risk_labels(result.get("warning_msg"))
-    if not labels:
-        return "特になし"
-    counts = Counter(labels)
-    return "、".join(label for label in RISK_LABELS if counts.get(label))
-
-
 def fallback_confidence(target_date, reference_date):
     lead_days = max((target_date - reference_date).days, 0)
     if lead_days == 0:
@@ -428,20 +424,6 @@ def wind_direction_label(degrees):
 def _flight_display_expired(date_string, arrival_time, current_time):
     arrival = datetime.strptime(f"{date_string}T{arrival_time}", "%Y-%m-%dT%H:%M").replace(tzinfo=JST)
     return current_time > arrival + timedelta(minutes=30)
-
-
-def _with_model_difference_warning(result, jma_probability):
-    result = dict(result)
-    if jma_probability is None:
-        return result
-    difference = round(abs(result["probability"] - jma_probability), 1)
-    result["model_difference"] = difference
-    if difference >= MODEL_DIFFERENCE_WARNING_POINTS:
-        warning = "気象モデル差に注意"
-        current = result.get("warning_msg")
-        result["warning_msg"] = warning if current in {None, "なし", "特になし"} else f"{current}、{warning}"
-        result["alert_required"] = True
-    return result
 
 
 def _append_warning(result, warning):
@@ -529,11 +511,8 @@ def load_forecast_bundle(logger=None):
         if fresh_cached:
             _log_or_print(logger, "Main forecast unavailable; using cached forecast", exc)
             notices.append("予報APIに接続できないため、前回取得した予報データを表示しています。")
-            cached_jma = cached_source("jma")
             cached_ensembles = cached_source("ensembles")
             cached_typhoon_impacts = cached_source("typhoon_impacts")
-            if not cached_jma:
-                notices.append("有効期限内のJMA予報キャッシュがありません。")
             if not cached_ensembles:
                 notices.append("有効期限内のアンサンブル予報キャッシュがありません。")
             if not cached_typhoon_impacts:
@@ -545,7 +524,6 @@ def load_forecast_bundle(logger=None):
             )
             return {
                 "weather": fresh_cached["weather"],
-                "jma": cached_jma,
                 "ensembles": cached_ensembles,
                 "typhoon_impacts": cached_typhoon_impacts,
                 "notices": notices,
@@ -554,18 +532,16 @@ def load_forecast_bundle(logger=None):
             }
         raise
 
-    source_updated_at = {}
-    try:
-        jma = fetch_jma_forecast()
-    except (requests.RequestException, ValueError) as exc:
-        _log_or_print(logger, "JMA forecast could not be loaded", exc)
-        jma = cached_source("jma")
-        if jma:
-            source_updated_at["jma"] = forecast_source_timestamp(cached, "jma")
-            notices.append("JMA予報は前回取得データを使用しています。")
-        else:
-            notices.append("JMA予報を取得できませんでした。")
+    if any(
+        item.get(PRIMARY_SUPPLEMENT_STATUS_KEY) in {"partial", "unavailable"}
+        for item in weather.values()
+    ):
+        notices.append(
+            "JMAモデルで提供されない最大瞬間風速・視程の一部を取得できず、"
+            "該当項目は欠測として計算しています。"
+        )
 
+    source_updated_at = {}
     try:
         ensembles = fetch_ensemble_forecast()
     except (requests.RequestException, ValueError) as exc:
@@ -591,8 +567,7 @@ def load_forecast_bundle(logger=None):
     _append_typhoon_coverage_notice(notices, weather, typhoon_impacts)
     saved = save_forecast_bundle(
         weather,
-        jma,
-        ensembles,
+        ensembles=ensembles,
         typhoon_impacts=typhoon_impacts,
         source_updated_at=source_updated_at,
     )
@@ -601,7 +576,6 @@ def load_forecast_bundle(logger=None):
     ) or datetime.now(JST).isoformat()
     return {
         "weather": weather,
-        "jma": jma,
         "ensembles": ensembles,
         "typhoon_impacts": typhoon_impacts,
         "notices": notices,
@@ -615,11 +589,9 @@ def build_daily_forecasts(
     ensembles_by_time=None,
     reference_date=None,
     current_time=None,
-    jma_by_time=None,
     typhoon_impacts_by_date=None,
 ):
     ensembles_by_time = ensembles_by_time or {}
-    jma_by_time = jma_by_time or {}
     typhoon_impacts_by_date = typhoon_impacts_by_date or {}
     current_time = current_time or datetime.now(JST)
     reference_date = reference_date or current_time.date()
@@ -644,24 +616,12 @@ def build_daily_forecasts(
                 **_prediction_weather(weather),
                 flight_number=flight["number"],
             )
-            jma_weather = _prepare_reference_weather(jma_by_time.get(timestamp), weather)
-            jma_result = (
-                predict_flight_probability(
-                    **_prediction_weather(jma_weather),
-                    flight_number=flight["number"],
-                )
-                if jma_weather is not None
-                else None
-            )
             confidence = calculate_confidence(
                 ensembles_by_time.get(timestamp, []),
                 weather,
                 flight_number=flight["number"],
             )
             result = _with_typhoon_impact(result, typhoon_risk_level)
-            if jma_result is not None:
-                jma_result = _with_typhoon_impact(jma_result, typhoon_risk_level)
-            jma_probability = jma_result["probability"] if jma_result is not None else None
             model_probabilities = calculate_model_reference_probabilities(
                 ensembles_by_time.get(timestamp, []),
                 weather,
@@ -680,7 +640,6 @@ def build_daily_forecasts(
                 model: _with_typhoon_risk_summary(risk, typhoon_risk_level)
                 for model, risk in model_risks.items()
             }
-            result = _with_model_difference_warning(result, jma_probability)
             flights.append(
                 decorate_flight_for_display(
                     {
@@ -690,11 +649,6 @@ def build_daily_forecasts(
                         "number": flight_display_name(flight["number"]),
                         "raw_number": flight["number"],
                         "similar_history": find_similar_flights(flight["number"], weather),
-                        "jma_weather": jma_weather,
-                        "jma_probability": jma_probability,
-                        "jma_risk": _with_typhoon_risk_summary(
-                            deterministic_risk_summary(jma_result), typhoon_risk_level
-                        ) if jma_result is not None else None,
                         "gfs_probability": model_probabilities.get("gfs_seamless"),
                         "gfs_risk": model_risks.get("gfs_seamless"),
                         "ecmwf_probability": model_probabilities.get("ecmwf_ifs025"),
@@ -742,7 +696,6 @@ def create_app():
             days = build_daily_forecasts(
                 bundle["weather"],
                 bundle["ensembles"],
-                jma_by_time=bundle["jma"],
                 typhoon_impacts_by_date=bundle["typhoon_impacts"],
             )
             notices = bundle["notices"]

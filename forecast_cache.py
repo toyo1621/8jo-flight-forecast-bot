@@ -8,7 +8,7 @@ from app_config import JST
 
 BASE_DIR = Path(__file__).resolve().parent
 DEFAULT_CACHE_FILE = BASE_DIR / ".cache" / "forecast_bundle.json"
-CACHE_VERSION = 3
+CACHE_VERSION = 4
 DEFAULT_CACHE_MAX_AGE = timedelta(hours=7)
 
 
@@ -28,7 +28,6 @@ def _cache_max_age():
 
 def save_forecast_bundle(
     weather,
-    jma=None,
     ensembles=None,
     cache_file=None,
     typhoon_impacts=None,
@@ -42,12 +41,10 @@ def save_forecast_bundle(
         "version": CACHE_VERSION,
         "cached_at": cached_at,
         "weather": weather,
-        "jma": jma or {},
         "ensembles": ensembles or {},
         "typhoon_impacts": typhoon_impacts or {},
         "source_updated_at": {
             "weather": provided_timestamps.get("weather", cached_at),
-            "jma": provided_timestamps.get("jma", cached_at),
             "ensembles": provided_timestamps.get("ensembles", cached_at),
             "typhoon_impacts": provided_timestamps.get("typhoon_impacts", cached_at),
         },
