@@ -991,6 +991,30 @@ def test_index_renders_forecast():
     assert "6ポイント以内" not in body
 
 
+def test_access_stats_render_in_footer_when_static_data_is_available():
+    with app.app_context():
+        body = render_template(
+            "index.html",
+            days=[],
+            error=None,
+            updated_at="2026/08/24 00:00",
+            notices=[],
+            low_probability_threshold=60,
+            access_stats={
+                "days": [
+                    {"date": "2026-08-24", "label": "8/24", "pageviews": 1234},
+                    {"date": "2026-08-23", "label": "8/23", "pageviews": None},
+                ],
+                "generated_at": "2026-08-24T09:00+09:00",
+            },
+        )
+
+    assert "過去7日間のアクセス数" in body
+    assert "1,234" in body
+    assert "未計測" in body
+    assert "2026-08-24T09:00+09:00更新" in body
+
+
 def test_history_template_includes_flight_name_and_visibility_fallback():
     template = (BASE_DIR / "templates" / "index.html").read_text(encoding="utf-8")
 

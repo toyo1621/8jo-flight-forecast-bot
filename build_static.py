@@ -2,6 +2,7 @@ import shutil
 
 from flask import render_template
 
+from access_stats import load_access_stats
 from app_config import LOW_PROBABILITY_THRESHOLD
 from forecast_cache import format_forecast_timestamp
 from web_app import (
@@ -10,7 +11,6 @@ from web_app import (
     build_daily_forecasts,
     load_forecast_bundle,
 )
-
 
 DIST_DIR = BASE_DIR / "dist"
 FAVICON_VERSION = "20260713-2"
@@ -49,6 +49,7 @@ def build_site(output_dir=DIST_DIR):
         bundle["ensembles"],
         typhoon_impacts_by_date=bundle["typhoon_impacts"],
     )
+    access_stats = load_access_stats()
     updated_at = format_forecast_timestamp(bundle.get("data_updated_at")) or "取得時刻不明"
     with app.app_context():
         html = render_template(
@@ -58,6 +59,7 @@ def build_site(output_dir=DIST_DIR):
             updated_at=updated_at,
             notices=bundle["notices"],
             low_probability_threshold=LOW_PROBABILITY_THRESHOLD,
+            access_stats=access_stats,
         )
 
     output_dir.mkdir(parents=True, exist_ok=True)
