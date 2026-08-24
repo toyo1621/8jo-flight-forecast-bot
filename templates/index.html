@@ -7,9 +7,12 @@
   <title>八丈島便 運航の目安</title>
   <link rel="stylesheet" href="static/styles.css?v=20260623-12">
   <script src="static/app.js?v=20260619-1" defer></script>
+  <!-- Cloudflare Web Analytics: privacy-first pageview measurement without cookies. -->
+  <script type="module" src="https://static.cloudflareinsights.com/beacon.min.js" data-cf-beacon='{"token": "afc2a7c7ee1a4ab2a9738a04695321b9"}'></script>
 </head>
 <body>
   {% set low_threshold = low_probability_threshold|default(60)|round|int %}
+  {% set access_stats = access_stats|default({"days": [], "generated_at": None}) %}
   <main class="container">
     <header class="header">
       <p class="eyebrow">HND / HAC</p>
@@ -171,6 +174,26 @@
       <p>表示する%は統計的な校正・精度検証が未実施の参考値であり、実際の運航確率ではありません。</p>
       <p>天候信頼度は、アンサンブル予報の中央80%における統計参考値の幅から算出します。A: 10ポイント以内、B: 20以内、C: 30以内、D: 40以内、E: 40超。</p>
       <p>気象データ: <a href="https://www.jma.go.jp/" rel="noreferrer">気象庁(JMA)</a>モデル (<a href="https://open-meteo.com/" rel="noreferrer">Open-Meteo</a>経由) / 運航実績: <a href="https://www.odpt.org/" rel="noreferrer">公共交通オープンデータセンター</a></p>
+      {% if access_stats.days %}
+        <section class="access-stats" aria-labelledby="access-stats-title">
+          <h2 id="access-stats-title">過去7日間のアクセス数</h2>
+          <ul class="access-stats-grid">
+            {% for item in access_stats.days %}
+              <li class="access-stat">
+                <time datetime="{{ item.date }}">{{ item.label }}</time>
+                {% if item.pageviews is not none %}
+                  <strong>{{ "{:,}".format(item.pageviews) }}</strong>
+                  <span>ページビュー</span>
+                {% else %}
+                  <strong aria-label="未計測">—</strong>
+                  <span>未計測</span>
+                {% endif %}
+              </li>
+            {% endfor %}
+          </ul>
+          <p class="access-stats-note">Cloudflare Web Analyticsによるページビュー。{{ access_stats.generated_at }}更新。計測開始前の日は未計測です。</p>
+        </section>
+      {% endif %}
     </footer>
   </main>
 </body>

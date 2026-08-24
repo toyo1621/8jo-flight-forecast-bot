@@ -277,6 +277,19 @@ footer {
   line-height: 1.8;
 }
 
+.access-stats {
+  margin-top: 18px;
+  padding-top: 14px;
+  border-top: 1px solid rgba(255, 255, 255, .1);
+}
+.access-stats h2 { margin: 0; color: rgba(239, 250, 255, .82); font-size: .72rem; font-weight: 700; }
+.access-stats-grid { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 6px; margin: 8px 0 0; padding: 0; list-style: none; }
+.access-stat { min-width: 0; padding: 6px 4px; border: 1px solid rgba(255, 255, 255, .09); border-radius: 5px; background: rgba(255, 255, 255, .025); text-align: center; }
+.access-stat time { display: block; color: rgba(239, 250, 255, .65); font-size: .61rem; }
+.access-stat strong { display: block; margin-top: 2px; color: rgba(239, 250, 255, .9); font-size: .82rem; line-height: 1.15; }
+.access-stat span { display: block; margin-top: 2px; color: rgba(255, 255, 255, .52); font-size: .55rem; line-height: 1.2; }
+.access-stats-note { margin: 8px 0 0; color: rgba(255, 255, 255, .52); font-size: .6rem; line-height: 1.5; }
+
 .flight-dialog {
   width: min(760px, calc(100% - 28px));
   max-height: min(86vh, 820px);
@@ -351,6 +364,7 @@ footer {
   .about-block { padding: 22px; }
   .dialog-header, .dialog-section { padding-right: 17px; padding-left: 17px; }
   .flight-dialog { width: calc(100% - 16px); max-height: 90vh; }
+  .access-stats-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); }
 }
 
 @media (prefers-reduced-motion: reduce) {

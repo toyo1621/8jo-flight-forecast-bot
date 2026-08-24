@@ -65,6 +65,15 @@ jobs:
             echo "Data quality report was not generated." >> "$GITHUB_STEP_SUMMARY"
           fi
 
+      - name: Fetch daily access counts
+        env:
+          CLOUDFLARE_ACCOUNT_ID: e04e898ef9b59ba3f3397229de4cff71
+          CLOUDFLARE_ANALYTICS_API_TOKEN: ${{ secrets.CLOUDFLARE_ANALYTICS_API_TOKEN }}
+          CLOUDFLARE_ANALYTICS_HOST: toyo1621.github.io
+          CLOUDFLARE_ANALYTICS_PATH: /8jo-flight-forecast-bot%
+          CLOUDFLARE_ANALYTICS_START_DATE: "2026-08-24"
+        run: python access_stats.py
+
       - name: Upload data quality report
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7

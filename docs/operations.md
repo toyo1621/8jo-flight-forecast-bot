@@ -6,8 +6,17 @@
 - `Daily Flight & Weather Data Collection`: 毎日21:00 JSTの3便収集が成功していること
 - `CodeQL`と`CI`: mainとPull Requestの検査が成功していること
 - [公開サイト](https://toyo1621.github.io/8jo-flight-forecast-bot/): 予報データ取得時刻、11日分の表示、詳細ダイアログを確認すること
+- フッターの`過去7日間のアクセス数`: Cloudflare Web Analyticsのページビュー集計が更新されていること
 
 Data Quality Reportの`error`はPagesと日次収集を失敗させます。エラーを無視して公開を更新しません。
+
+## アクセス数の集計
+
+- Cloudflare Web Analyticsのページビューを、JSTの暦日単位で直近7日分取得して静的HTMLへ埋め込みます。ユニークユーザー数ではありません。
+- 集計処理は`Deploy forecast site to Pages`のビルド中に実行し、6時間ごとの定期デプロイで表示を更新します。
+- 計測開始前の日は`未計測`と表示します。Cloudflare側の集計反映に時間差があるため、当日値は途中経過です。
+- API取得に失敗した場合はPagesビルドを失敗させ、古い公開済みHTMLを維持します。アクセス数を推測値や0件に置き換えません。
+- CloudflareのAPIトークンはGitHub Secretの`CLOUDFLARE_ANALYTICS_API_TOKEN`だけで管理します。公開HTMLに埋め込むWeb Analyticsビーコンのトークンとは別物です。
 
 ## 障害時の優先順位
 
