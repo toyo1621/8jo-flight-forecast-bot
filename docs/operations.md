@@ -90,6 +90,12 @@ python build_static.py
 
 品質検査と静的生成にはBigQuery Application Default Credentialsが必要です。
 
+## 予測スナップショット
+
+Pagesの静的生成時に、公開対象のJMA・GFS・ECMWFの各値を`prediction_snapshots`へ不変保存します。各行には予測対象時刻、データ取得時刻、リード時間、provider/model、取得元endpoint、キャッシュfallback、コードSHA、設定版、算出状態を記録します。同じ`snapshot_id`は再実行しても更新せず、重複登録を抑止します。
+
+`provenance_status=unknown`の旧キャッシュや取得時刻不明の行は、後続の外部評価で厳密な時系列検証から除外します。これは欠測を現在の予報として扱わないための区別です。
+
 ## データ修正の原則
 
 - 取得失敗や不明ステータスを欠航と推測しない

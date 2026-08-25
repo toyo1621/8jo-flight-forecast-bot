@@ -60,6 +60,8 @@ GitHub Actionsが次の処理を行います。
 
 日次収集では、ODPT・気象APIのraw応答を秘匿情報除去後にBigQueryへ保存し、収集runの成功・失敗と欠損日を記録します。失敗時は本表へ不完全な行を保存せず、raw保存済みrunを`python data_collector.py --replay-run-id <run_id>`で再生できます。
 
+Pagesの静的生成時には、公開したJMA・GFS・ECMWFの各統計参考値と予測時点のデータ来歴をBigQueryの`prediction_snapshots`へ保存します。取得時刻が分からない旧データは`unknown`として、後続の時系列評価で現在の予報と混ぜません。
+
 `.github/workflows/pages.yml`は6時間ごとに実行されます。GitHub Actionsのスケジュール実行は混雑状況により遅れる場合があります。
 
 ## データソース

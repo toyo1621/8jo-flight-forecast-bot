@@ -12,6 +12,7 @@ from app_config import (
     CONFIDENCE_GRADES,
     ENSEMBLE_FORECAST_URL,
     FLIGHTS,
+    FORECAST_CONFIG_VERSION,
     FORECAST_DAYS,
     HACHIJO_AIRPORT_LATITUDE,
     HACHIJO_AIRPORT_LONGITUDE,
@@ -24,6 +25,7 @@ from app_config import (
     TYPHOON_IMPACT_MULTIPLIERS,
     TYPHOON_IMPACT_SOURCE,
 )
+from flight_metadata import flight_display_name
 from forecast_cache import (
     forecast_source_timestamp,
     format_forecast_timestamp,
@@ -31,10 +33,8 @@ from forecast_cache import (
     load_cached_forecast_bundle,
     save_forecast_bundle,
 )
-from flight_metadata import flight_display_name
 from forecast_engine import find_similar_flights, predict_flight_probability
 from presentation import decorate_flight_for_display
-
 
 BASE_DIR = Path(__file__).resolve().parent
 LOGGER = logging.getLogger(__name__)
@@ -545,6 +545,13 @@ def load_forecast_bundle(logger=None):
                 "notices": notices,
                 "source": "cache",
                 "data_updated_at": forecast_source_timestamp(fresh_cached, "weather"),
+                "source_updated_at": fresh_cached.get("source_updated_at", {}),
+                "source_fallbacks": {
+                    "weather": True,
+                    "ensembles": bool(cached_ensembles),
+                    "typhoon_impacts": bool(cached_typhoon_impacts),
+                },
+                "config_version": FORECAST_CONFIG_VERSION,
             }
         raise
 
@@ -558,6 +565,11 @@ def load_forecast_bundle(logger=None):
         )
 
     source_updated_at = {}
+    source_fallbacks = {
+        "weather": False,
+        "ensembles": False,
+        "typhoon_impacts": False,
+    }
     try:
         ensembles = fetch_ensemble_forecast()
     except (requests.RequestException, ValueError) as exc:
@@ -565,6 +577,7 @@ def load_forecast_bundle(logger=None):
         ensembles = cached_source("ensembles")
         if ensembles:
             source_updated_at["ensembles"] = forecast_source_timestamp(cached, "ensembles")
+            source_fallbacks["ensembles"] = True
             notices.append("アンサンブル予報は前回取得データを使用しています。")
         else:
             notices.append("アンサンブル予報を取得できませんでした。")
@@ -576,6 +589,7 @@ def load_forecast_bundle(logger=None):
         typhoon_impacts = cached_source("typhoon_impacts")
         if typhoon_impacts:
             source_updated_at["typhoon_impacts"] = forecast_source_timestamp(cached, "typhoon_impacts")
+            source_fallbacks["typhoon_impacts"] = True
             notices.append("台風影響度は前回取得データを使用しています。")
         else:
             notices.append("台風影響度を取得できなかったため、台風補正は適用していません。")
@@ -597,6 +611,13 @@ def load_forecast_bundle(logger=None):
         "notices": notices,
         "source": "live",
         "data_updated_at": data_updated_at,
+        "source_updated_at": (
+            saved.get("source_updated_at", source_updated_at)
+            if isinstance(saved, dict)
+            else source_updated_at
+        ),
+        "source_fallbacks": source_fallbacks,
+        "config_version": FORECAST_CONFIG_VERSION,
     }
 
 
@@ -614,7 +635,7 @@ def build_daily_forecasts(
     dates = sorted({timestamp[:10] for timestamp in weather_by_time})
     days = []
     for date_string in dates:
-        date = datetime.strptime(date_string, "%Y-%m-%d")
+        date = datetime.strptime(date_string, "%Y-%m-%d").replace(tzinfo=JST)
         typhoon_risk_level = typhoon_impacts_by_date.get(date_string)
         flights = []
         for flight in FLIGHTS:

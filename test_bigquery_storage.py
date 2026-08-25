@@ -54,6 +54,24 @@ def test_save_raw_collection_payload_writes_redacted_json():
     client.insert_rows_json.assert_called_once()
 
 
+def test_save_prediction_snapshots_is_idempotent_by_snapshot_id():
+    client = Mock(project="hachijo-flight-forecast")
+    client.load_table_from_json.return_value.result.return_value = None
+    client.query.return_value.result.return_value = None
+    rows = [{"snapshot_id": "snapshot-1", "run_id": "run-1"}]
+
+    with (
+        patch("bigquery_storage.bigquery.Client", return_value=client),
+        patch("bigquery_storage.ensure_prediction_snapshot_destination"),
+    ):
+        assert bigquery_storage.save_prediction_snapshots(rows) == 1
+
+    merge_sql = client.query.call_args.args[0]
+    assert "ON T.snapshot_id = S.snapshot_id" in merge_sql
+    assert "WHEN NOT MATCHED THEN INSERT" in merge_sql
+    client.delete_table.assert_called_once()
+
+
 def test_normalize_item_uses_database_status_and_visibility_source():
     result = bigquery_storage._normalize_item(
         {

@@ -11,11 +11,14 @@ from bigquery_schema import (
     DEFAULT_LOCATION,
     DEFAULT_PROJECT,
     DEFAULT_TABLE,
+    PREDICTION_SNAPSHOT_SCHEMA,
+    PREDICTION_SNAPSHOT_TABLE,
     RAW_TABLE,
     RUNS_TABLE,
     SCHEMA,
     ensure_collection_destinations,
     ensure_destination,
+    ensure_prediction_snapshot_destination,
 )
 from flight_metadata import (
     VALID_HISTORY_STATUSES,
@@ -137,6 +140,38 @@ def load_raw_collection_payloads(run_id):
         query_parameters=[bigquery.ScalarQueryParameter("run_id", "STRING", run_id)]
     )
     return [dict(row.items()) for row in client.query(query, job_config=job_config).result()]
+
+
+def save_prediction_snapshots(rows):
+    if not rows:
+        return 0
+
+    config = settings()
+    client = bigquery.Client(project=config["project"], location=config["location"])
+    ensure_prediction_snapshot_destination(client, config["dataset"], config["location"])
+    destination = _collection_table_path(PREDICTION_SNAPSHOT_TABLE, config)
+    staging = f"{config['project']}.{config['dataset']}._prediction_snapshots_{uuid.uuid4().hex}"
+    job_config = bigquery.LoadJobConfig(
+        schema=PREDICTION_SNAPSHOT_SCHEMA,
+        write_disposition=bigquery.WriteDisposition.WRITE_TRUNCATE,
+    )
+    columns = [field.name for field in PREDICTION_SNAPSHOT_SCHEMA]
+    column_list = ", ".join(columns)
+    values = ", ".join(f"S.{column}" for column in columns)
+    try:
+        client.load_table_from_json(rows, staging, job_config=job_config).result()
+        client.query(
+            f"""
+            MERGE `{destination}` T
+            USING `{staging}` S
+            ON T.snapshot_id = S.snapshot_id
+            WHEN NOT MATCHED THEN INSERT ({column_list})
+            VALUES ({values})
+            """
+        ).result()
+    finally:
+        client.delete_table(staging, not_found_ok=True)
+    return len(rows)
 
 
 @lru_cache(maxsize=1)
