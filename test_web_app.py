@@ -262,6 +262,19 @@ def test_typhoon_risk_uses_external_impact_multipliers():
     assert _with_typhoon_risk_summary("台風接近リスク", "severe") == "台風接近リスク大"
 
 
+def test_typhoon_risk_does_not_turn_unavailable_into_a_number():
+    result = {
+        "probability": None,
+        "calculation_status": "insufficient_history",
+        "warning_msg": "過去実績が4件のため、統計参考値を算出できません。",
+        "alert_required": False,
+    }
+
+    adjusted = _with_typhoon_impact(result, "severe")
+
+    assert adjusted == result
+
+
 def test_typhoon_risk_applies_to_all_flights_on_same_day():
     base_weather = {
         "wind_direction": 240.0,
@@ -434,32 +447,45 @@ def test_find_similar_flights_prioritizes_matching_strong_wind_and_direction():
 
 
 def test_low_cloud_warning_uses_precise_wording():
-    with patch("forecast_engine.load_history", return_value=[("通常", 180.0, 5.0)]):
+    with patch("forecast_engine.load_history", return_value=[("通常", 180.0, 5.0)] * 5):
         result = predict_flight_probability(180.0, 5.0, 8.0, 100.0, 15.0)
 
     assert result["warning_msg"] == "低層雲の影響注意 (低層雲量 100.0%)"
 
 
-def test_probability_cap_is_97_percent():
+def test_probability_without_history_is_unavailable():
     with patch("forecast_engine.load_history", return_value=[]):
         result = predict_flight_probability(180.0, 3.0, 5.0, 10.0, 20.0)
 
     assert MAX_PROBABILITY == 97.0
-    assert result["probability"] == 97.0
+    assert result["probability"] is None
+    assert result["calculation_status"] == "insufficient_history"
+    assert result["reason_code"] == "no_history"
+    assert result["data_count"] == 0
+    assert "算出できません" in result["warning_msg"]
+
+
+def test_probability_with_fewer_than_minimum_history_rows_is_unavailable():
+    with patch("forecast_engine.load_history", return_value=[("通常", 180.0, 5.0)] * 4):
+        result = predict_flight_probability(180.0, 3.0, 5.0, 10.0, 20.0)
+
+    assert result["probability"] is None
+    assert result["calculation_status"] == "insufficient_history"
+    assert result["reason_code"] == "below_minimum_history"
+    assert result["data_count"] == 4
 
 
 def test_probability_history_is_filtered_by_flight_number():
     history = [
-        ("ANA1891", "運航", 180.0, 5.0),
-        ("ANA1891", "欠航", 180.0, 5.0),
-        ("ANA1893", "欠航", 180.0, 5.0),
-        ("ANA1893", "欠航", 180.0, 5.0),
+        *( [("ANA1891", "運航", 180.0, 5.0)] * 3 ),
+        *( [("ANA1891", "欠航", 180.0, 5.0)] * 2 ),
+        *( [("ANA1893", "欠航", 180.0, 5.0)] * 5 ),
     ]
     with patch("forecast_engine.load_history", return_value=history):
         first = predict_flight_probability(180.0, 5.0, 8.0, 20.0, 15.0, flight_number="ANA1891")
         second = predict_flight_probability(180.0, 5.0, 8.0, 20.0, 15.0, flight_number="ANA1893")
 
-    assert first["probability"] == 50.0
+    assert first["probability"] == 60.0
     assert second["probability"] == 0.0
     assert first["history_flight_number"] == "ANA1891"
 
@@ -497,7 +523,7 @@ def test_precipitation_from_two_mm_adds_rain_risk():
 
 
 def test_southerly_wind_warning_includes_boundary_values():
-    with patch("forecast_engine.load_history", return_value=[("通常", 180.0, 9.0)]):
+    with patch("forecast_engine.load_history", return_value=[("通常", 180.0, 9.0)] * 5):
         lower = predict_flight_probability(120.0, 9.0, 10.0, 20.0, 15.0)
         upper = predict_flight_probability(240.0, 9.0, 10.0, 20.0, 15.0)
 
@@ -507,7 +533,7 @@ def test_southerly_wind_warning_includes_boundary_values():
 
 
 def test_southerly_wind_warning_requires_direction_and_speed():
-    with patch("forecast_engine.load_history", return_value=[("通常", 180.0, 9.0)]):
+    with patch("forecast_engine.load_history", return_value=[("通常", 180.0, 9.0)] * 5):
         weak = predict_flight_probability(180.0, 8.9, 10.0, 20.0, 15.0)
         outside = predict_flight_probability(241.0, 9.0, 10.0, 20.0, 15.0)
 
@@ -535,6 +561,18 @@ def test_calculate_confidence_uses_ensemble_spread():
 
     assert confidence["grade"] == "D"
     assert confidence["member_count"] == 40
+
+
+def test_calculate_confidence_ignores_unavailable_member_predictions():
+    members = [{"wind_direction": 180.0, "wind_speed": 5.0} for _ in range(20)]
+
+    with patch(
+        "web_app.predict_flight_probability",
+        return_value={"probability": None, "calculation_status": "insufficient_history"},
+    ):
+        confidence = calculate_confidence(members)
+
+    assert confidence is None
 
 
 def test_model_reference_probabilities_use_each_models_median():
@@ -683,6 +721,42 @@ def test_probability_symbol_thresholds_render_in_template():
     assert "JMA" in body
 
 
+def test_insufficient_probability_renders_as_unavailable_without_percent():
+    flight = decorate_flight_for_display(
+        {
+            "date": "2026-06-20",
+            "number": "ANA1891(1便)",
+            "raw_number": "ANA1891",
+            "time": "08:30",
+            "probability": None,
+            "calculation_status": "insufficient_history",
+            "warning_msg": "過去実績が4件のため、統計参考値を算出できません。",
+            "wind_direction": 180.0,
+            "wind_direction_label": "南",
+            "wind_speed": 4.0,
+            "wind_gusts": 7.0,
+            "cloud_cover_low": 20.0,
+            "visibility": 15.0,
+            "precipitation": None,
+            "pressure_msl": None,
+            "similar_history": [],
+        }
+    )
+    day = {
+        "date": "2026-06-20",
+        "date_label": "6/20",
+        "weekday": "土",
+        "flights": [flight],
+        "confidence": {"grade": "A", "label": "10ポイント以内", "source": "lead_time", "lead_days": 1},
+    }
+    with app.test_request_context("/"):
+        body = render_template("index.html", days=[day], error=None, updated_at="2026/06/20 00:00")
+
+    assert 'class="probability-unavailable"' in body
+    assert "算出不可" in body
+    assert "None%" not in body
+
+
 def test_flag_icon_assets_exist():
     assert (BASE_DIR / "static" / "flags" / "us.svg").exists()
     assert (BASE_DIR / "static" / "flags" / "eu.svg").exists()
@@ -735,6 +809,20 @@ def test_decorate_flight_for_display_builds_model_rows():
             "flag_alt": "JP",
         },
     ]
+
+
+def test_decorate_flight_for_display_does_not_treat_missing_probability_as_low():
+    flight = decorate_flight_for_display(
+        {
+            "probability": None,
+            "calculation_status": "insufficient_history",
+            "warning_msg": "過去実績が4件のため、統計参考値を算出できません。",
+        }
+    )
+
+    assert flight["probability_symbol"] is None
+    assert flight["is_low_probability"] is False
+    assert flight["model_probabilities"] == []
 
 
 def test_load_forecast_bundle_uses_cached_main_forecast_on_api_error():

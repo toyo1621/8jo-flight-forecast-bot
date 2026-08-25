@@ -60,7 +60,14 @@
                   <p class="flight-number">{{ flight.number }}</p>
                   <p class="flight-time">{{ flight.time }} 着</p>
                 </div>
-                <p class="probability"><span class="probability-symbol">{{ flight.probability_symbol }}</span><strong>{{ flight.probability }}</strong><span class="probability-unit">%</span><small>(JMA主予報 / 統計参考値)</small></p>
+                <p class="probability">
+                  {% if flight.calculation_status == "available" %}
+                    <span class="probability-symbol">{{ flight.probability_symbol }}</span><strong>{{ flight.probability }}</strong><span class="probability-unit">%</span>
+                  {% else %}
+                    <span class="probability-unavailable" role="status">算出不可</span>
+                  {% endif %}
+                  <small>(JMA主予報 / 統計参考値)</small>
+                </p>
                 <div class="model-probabilities" aria-label="モデル別の統計参考値">
                   {% for model in flight.model_probabilities %}
                     <p class="model-probability model-probability--{{ model.tone }}">
@@ -92,7 +99,7 @@
                     <div><dt>視程</dt><dd>{{ flight.visibility }} km</dd></div>
                     <div><dt>降水量</dt><dd>{% if flight.precipitation is not none %}{{ flight.precipitation }} mm/h{% else %}欠測{% endif %}</dd></div>
                     <div><dt>気圧</dt><dd>{% if flight.pressure_msl is not none %}{{ flight.pressure_msl }} hPa{% else %}欠測{% endif %}</dd></div>
-                    <div><dt>主予報(JMA)での統計参考値</dt><dd><span class="probability-inline-symbol">{{ flight.probability_symbol }}</span>{{ flight.probability }}%</dd></div>
+                    <div><dt>主予報(JMA)での統計参考値</dt><dd>{% if flight.calculation_status == "available" %}<span class="probability-inline-symbol">{{ flight.probability_symbol }}</span>{{ flight.probability }}%{% else %}算出不可{% endif %}</dd></div>
                     <div><dt>過去実績の集計対象</dt><dd>{{ flight.number }} / {{ flight.data_count }}件</dd></div>
                     {% for model in flight.model_probabilities %}
                       <div><dt>{{ model.label }}予報での統計参考値</dt><dd><span class="probability-inline-symbol">{{ model.symbol }}</span>{{ model.probability }}%</dd></div>

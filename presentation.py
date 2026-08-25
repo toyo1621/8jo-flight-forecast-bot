@@ -9,13 +9,24 @@ MODEL_PROBABILITY_DISPLAY = (
 
 
 def probability_tone(value):
+    if value is None:
+        return "unavailable"
     return "ok" if value >= LOW_PROBABILITY_THRESHOLD else "low"
 
 
 def decorate_flight_for_display(flight):
     decorated = dict(flight)
-    decorated["probability_symbol"] = probability_symbol(flight["probability"])
-    decorated["is_low_probability"] = flight["probability"] < LOW_PROBABILITY_THRESHOLD
+    probability = flight.get("probability")
+    calculation_status = flight.get("calculation_status")
+    if calculation_status is None:
+        calculation_status = "available" if probability is not None else "unavailable"
+    decorated["calculation_status"] = calculation_status
+    decorated["probability_symbol"] = probability_symbol(probability)
+    decorated["is_low_probability"] = (
+        calculation_status == "available"
+        and probability is not None
+        and probability < LOW_PROBABILITY_THRESHOLD
+    )
     decorated["model_probabilities"] = []
     for field, risk_field, label, flag_path, flag_alt in MODEL_PROBABILITY_DISPLAY:
         value = flight.get(field)
