@@ -9,14 +9,15 @@ from pathlib import Path
 from google.cloud import bigquery
 
 from app_config import JST
+from bigquery_schema import ensure_destination
 from bigquery_storage import settings, table_path
 from flight_metadata import (
+    CANCELLATION_REASON_CATEGORIES,
     FLIGHT_DISPLAY_NAMES,
     NON_OPERATED_STATUSES,
     VALID_STORED_STATUSES,
     normalize_status,
 )
-
 
 REQUIRED_WEATHER_FIELDS = ("wind_direction", "wind_speed", "wind_gusts", "cloud_cover_low")
 REASON_REQUIRED_STATUSES = NON_OPERATED_STATUSES
@@ -53,16 +54,17 @@ def _parse_date(value):
     if isinstance(value, date):
         return value
     if isinstance(value, str) and DATE_RE.match(value):
-        return datetime.strptime(value, "%Y-%m-%d").date()
+        return datetime.strptime(value, "%Y-%m-%d").replace(tzinfo=JST).date()
     return None
 
 
 def fetch_bigquery_records():
     config = settings()
     client = bigquery.Client(project=config["project"], location=config["location"])
+    ensure_destination(client, config["dataset"], config["table"], config["location"])
     query = f"""
         SELECT CAST(date AS STRING) AS date, flight_number, scheduled_time, status,
-               status_reason, wind_direction, wind_speed, wind_gusts, cloud_cover_low,
+               status_reason, status_reason_category, wind_direction, wind_speed, wind_gusts, cloud_cover_low,
                visibility, visibility_source
         FROM `{table_path(config)}`
     """
@@ -141,6 +143,39 @@ def analyze_records(records, today=None):
     ]
     if unconfirmed_reason_rows:
         findings.append(_finding("info", "unconfirmed_cancellation_reason", "欠航理由が未確認として明示されています。", unconfirmed_reason_rows))
+
+    missing_reason_category_rows = [
+        row
+        for row in rows
+        if normalize_status(row.get("status")) in REASON_REQUIRED_STATUSES
+        and row.get("status_reason_category") is None
+    ]
+    if missing_reason_category_rows:
+        findings.append(
+            _finding(
+                "info",
+                "missing_cancellation_reason_category",
+                "欠航理由カテゴリが未設定です。天候起因とは推測しません。",
+                missing_reason_category_rows,
+            )
+        )
+
+    invalid_reason_category_rows = [
+        row
+        for row in rows
+        if normalize_status(row.get("status")) in REASON_REQUIRED_STATUSES
+        and row.get("status_reason_category") not in CANCELLATION_REASON_CATEGORIES
+        and row.get("status_reason_category") is not None
+    ]
+    if invalid_reason_category_rows:
+        findings.append(
+            _finding(
+                "warning",
+                "unknown_cancellation_reason_category",
+                "欠航理由カテゴリが未対応です。",
+                invalid_reason_category_rows,
+            )
+        )
 
     for field in REQUIRED_WEATHER_FIELDS:
         missing = [row for row in rows if row.get(field) is None]

@@ -21,8 +21,10 @@ from bigquery_schema import (
     ensure_prediction_snapshot_destination,
 )
 from flight_metadata import (
+    CANCELLATION_REASON_CATEGORIES,
     VALID_HISTORY_STATUSES,
     VALID_STORED_STATUSES,
+    classify_status_reason,
     flight_display_name,
     normalize_database_status,
     normalize_status,
@@ -190,7 +192,7 @@ def fetch_detailed_history():
     query = f"""
         SELECT CAST(date AS STRING) AS date, flight_number, flight_display_name,
                status, status_reason, wind_direction, wind_speed, wind_gusts,
-               cloud_cover_low, visibility
+               cloud_cover_low, visibility, status_reason_category
         FROM `{table_path(config)}`
         WHERE status IS NOT NULL
           AND wind_direction IS NOT NULL
@@ -210,6 +212,9 @@ def _normalize_item(item, timestamp):
     status = normalize_database_status(item.get("status"))
     if status not in VALID_STORED_STATUSES:
         raise ValueError(f"Unsupported flight status: {item.get('status')}")
+    reason_category = item.get("status_reason_category")
+    if reason_category not in CANCELLATION_REASON_CATEGORIES:
+        reason_category = classify_status_reason(status, item.get("status_reason"))
     return {
         "date": item["date"],
         "flight_number": item["flight_number"],
@@ -225,6 +230,7 @@ def _normalize_item(item, timestamp):
             "open_meteo_forecast" if item.get("visibility") is not None else None
         ),
         "status_reason": item.get("status_reason"),
+        "status_reason_category": reason_category,
         "created_at": timestamp,
         "migrated_at": timestamp,
     }
@@ -254,16 +260,23 @@ def build_upsert_sql(destination, staging):
               THEN COALESCE(T.status_reason, S.status_reason)
             ELSE S.status_reason
           END,
+          status_reason_category = CASE
+            WHEN S.status = T.status
+              AND S.status_reason_category IN ('unknown', 'not_applicable')
+              THEN COALESCE(T.status_reason_category, S.status_reason_category)
+            ELSE S.status_reason_category
+          END,
           created_at = COALESCE(T.created_at, S.created_at),
           migrated_at = COALESCE(T.migrated_at, S.migrated_at)
         WHEN NOT MATCHED THEN INSERT
           (date, flight_number, flight_display_name, scheduled_time, status, wind_direction,
            wind_speed, wind_gusts, cloud_cover_low, visibility, visibility_source, status_reason,
-           created_at, migrated_at)
+           status_reason_category, created_at, migrated_at)
         VALUES
           (S.date, S.flight_number, S.flight_display_name, S.scheduled_time, S.status,
            S.wind_direction, S.wind_speed, S.wind_gusts, S.cloud_cover_low, S.visibility,
-           S.visibility_source, S.status_reason, S.created_at, S.migrated_at)
+           S.visibility_source, S.status_reason, S.status_reason_category,
+           S.created_at, S.migrated_at)
     """
 
 

@@ -10,6 +10,7 @@ def _row(**overrides):
         "scheduled_time": "08:30:00",
         "status": "運航",
         "status_reason": None,
+        "status_reason_category": None,
         "wind_direction": 180.0,
         "wind_speed": 5.0,
         "wind_gusts": 8.0,
@@ -100,6 +101,20 @@ def test_unconfirmed_cancellation_reason_is_tracked_as_info():
     assert "missing_cancellation_reason" not in codes
     assert codes["unconfirmed_cancellation_reason"].severity == "info"
     assert should_fail(findings, "warning") is False
+
+
+def test_explicit_cancellation_reason_category_is_preserved():
+    findings = analyze_records(
+        [
+            _row(status="欠航", status_reason="強風", status_reason_category="weather"),
+            _row(flight_number="ANA1893"),
+            _row(flight_number="ANA1895"),
+        ],
+        today=date(2026, 6, 21),
+    )
+
+    codes = {finding.code for finding in findings}
+    assert "unknown_cancellation_reason_category" not in codes
 
 
 def test_missing_prediction_history_is_an_error():
