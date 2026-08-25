@@ -5,6 +5,7 @@ DEFAULT_DATASET = "flight_forecast"
 DEFAULT_TABLE = "flight_weather_logs"
 RAW_TABLE = "flight_collection_raw"
 RUNS_TABLE = "collection_runs"
+PREDICTION_SNAPSHOT_TABLE = "prediction_snapshots"
 DEFAULT_LOCATION = "asia-northeast1"
 
 SCHEMA = (
@@ -49,6 +50,30 @@ COLLECTION_RUN_SCHEMA = (
     bigquery.SchemaField("created_at", "TIMESTAMP", mode="REQUIRED"),
 )
 
+PREDICTION_SNAPSHOT_SCHEMA = (
+    bigquery.SchemaField("snapshot_id", "STRING", mode="REQUIRED"),
+    bigquery.SchemaField("run_id", "STRING", mode="REQUIRED"),
+    bigquery.SchemaField("forecast_target_date", "DATE", mode="REQUIRED"),
+    bigquery.SchemaField("flight_number", "STRING", mode="REQUIRED"),
+    bigquery.SchemaField("model", "STRING", mode="REQUIRED"),
+    bigquery.SchemaField("calculation_status", "STRING", mode="REQUIRED"),
+    bigquery.SchemaField("probability", "FLOAT"),
+    bigquery.SchemaField("prediction_generated_at", "TIMESTAMP", mode="REQUIRED"),
+    bigquery.SchemaField("weather_retrieved_at", "TIMESTAMP"),
+    bigquery.SchemaField("weather_valid_at", "TIMESTAMP", mode="REQUIRED"),
+    bigquery.SchemaField("lead_hours", "INTEGER"),
+    bigquery.SchemaField("provider", "STRING", mode="REQUIRED"),
+    bigquery.SchemaField("source_endpoint", "STRING", mode="REQUIRED"),
+    bigquery.SchemaField("fallback_used", "BOOLEAN", mode="REQUIRED"),
+    bigquery.SchemaField("fallback_reason", "STRING"),
+    bigquery.SchemaField("code_version", "STRING", mode="REQUIRED"),
+    bigquery.SchemaField("config_version", "STRING", mode="REQUIRED"),
+    bigquery.SchemaField("provenance_status", "STRING", mode="REQUIRED"),
+    bigquery.SchemaField("weather_json", "STRING", mode="REQUIRED"),
+    bigquery.SchemaField("typhoon_risk_level", "STRING"),
+    bigquery.SchemaField("created_at", "TIMESTAMP", mode="REQUIRED"),
+)
+
 
 def ensure_destination(client, dataset_id, table_id, location):
     dataset_ref = bigquery.Dataset(f"{client.project}.{dataset_id}")
@@ -79,3 +104,17 @@ def ensure_collection_destinations(client, dataset_id, location):
     runs_ref.time_partitioning = bigquery.TimePartitioning(field="started_at")
     runs_ref.clustering_fields = ["target_date", "status"]
     client.create_table(runs_ref, exists_ok=True)
+
+
+def ensure_prediction_snapshot_destination(client, dataset_id, location):
+    dataset_ref = bigquery.Dataset(f"{client.project}.{dataset_id}")
+    dataset_ref.location = location
+    client.create_dataset(dataset_ref, exists_ok=True)
+
+    table_ref = bigquery.Table(
+        f"{client.project}.{dataset_id}.{PREDICTION_SNAPSHOT_TABLE}",
+        schema=PREDICTION_SNAPSHOT_SCHEMA,
+    )
+    table_ref.time_partitioning = bigquery.TimePartitioning(field="prediction_generated_at")
+    table_ref.clustering_fields = ["forecast_target_date", "flight_number", "model"]
+    client.create_table(table_ref, exists_ok=True)
