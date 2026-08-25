@@ -96,6 +96,8 @@ Pagesの静的生成時に、公開対象のJMA・GFS・ECMWFの各値を`predic
 
 `provenance_status=unknown`の旧キャッシュや取得時刻不明の行は、後続の外部評価で厳密な時系列検証から除外します。これは欠測を現在の予報として扱わないための区別です。
 
+週次の`Evaluate published forecasts` workflowは、実績と結合した公開値を対象に、モデル別Brier score、10ポイント幅の信頼度ビン、ECE、運航率ベースライン、常時運航ベースライン、時系列ローリング分割をJSON/Markdown artifactへ出力します。評価対象がない場合は`insufficient_data`として成功扱いにせず、レポート生成後にworkflowを失敗させます。
+
 ## データ修正の原則
 
 - 取得失敗や不明ステータスを欠航と推測しない
