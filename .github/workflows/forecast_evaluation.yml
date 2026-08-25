@@ -1,0 +1,62 @@
+name: Evaluate published forecasts
+
+on:
+  schedule:
+    - cron: "41 2 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  evaluate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+
+      - name: Set up Python
+        uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: requirements.txt
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@7c6bc770dae815cd3e89ee6cdf493a5fab2cc093 # v3
+        with:
+          workload_identity_provider: ${{ vars.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ vars.GCP_SERVICE_ACCOUNT }}
+
+      - name: Evaluate published forecasts
+        run: |
+          python forecast_evaluation.py \
+            --lookback-days 365 \
+            --format markdown \
+            --output forecast_evaluation.md \
+            --json-output forecast_evaluation.json \
+            --fail-on-insufficient-data
+
+      - name: Add evaluation report to summary
+        if: always()
+        run: |
+          if [ -f forecast_evaluation.md ]; then
+            cat forecast_evaluation.md >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "Forecast evaluation report was not generated." >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - name: Upload evaluation artifacts
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: forecast-evaluation-${{ github.run_id }}
+          path: |
+            forecast_evaluation.md
+            forecast_evaluation.json
+          if-no-files-found: ignore

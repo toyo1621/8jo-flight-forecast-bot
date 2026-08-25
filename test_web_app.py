@@ -1181,6 +1181,7 @@ def test_workflows_run_tests_and_data_quality_reports():
     codeql = (BASE_DIR / ".github" / "workflows" / "codeql.yml").read_text(encoding="utf-8")
     pages = (BASE_DIR / ".github" / "workflows" / "pages.yml").read_text(encoding="utf-8")
     collection = (BASE_DIR / ".github" / "workflows" / "data_collection.yml").read_text(encoding="utf-8")
+    evaluation = (BASE_DIR / ".github" / "workflows" / "forecast_evaluation.yml").read_text(encoding="utf-8")
 
     assert "python -m pytest -q" in ci
     assert "python -m ruff check ." in ci
@@ -1194,7 +1195,9 @@ def test_workflows_run_tests_and_data_quality_reports():
     assert "actions/upload-artifact@" in collection
     assert "--fail-on error" in pages
     assert "--fail-on error" in collection
-    for workflow in (ci, codeql, pages, collection):
+    assert "forecast_evaluation.py" in evaluation
+    assert "--fail-on-insufficient-data" in evaluation
+    for workflow in (ci, codeql, pages, collection, evaluation):
         assert re.search(r"uses:\s+[^\s@]+@[0-9a-f]{40}", workflow)
         assert re.search(r"uses:\s+[^\s@]+@v\d+", workflow) is None
 

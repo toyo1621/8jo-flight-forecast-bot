@@ -62,6 +62,8 @@ GitHub Actionsが次の処理を行います。
 
 Pagesの静的生成時には、公開したJMA・GFS・ECMWFの各統計参考値と予測時点のデータ来歴をBigQueryの`prediction_snapshots`へ保存します。取得時刻が分からない旧データは`unknown`として、後続の時系列評価で現在の予報と混ぜません。
 
+週次Actionsで実績と結合した公開値を時系列分割で検証し、モデル別Brier score・信頼度曲線・ベースライン比較をartifactとして保存します。評価データ不足は精度0や推測値に置き換えず、`insufficient_data`として報告します。
+
 `.github/workflows/pages.yml`は6時間ごとに実行されます。GitHub Actionsのスケジュール実行は混雑状況により遅れる場合があります。
 
 ## データソース
