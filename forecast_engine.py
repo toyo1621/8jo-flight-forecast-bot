@@ -120,7 +120,7 @@ def predict_flight_probability(
         precipitation (float): 降水量 (mm/h)
         
     Returns:
-        dict: 予測結果 (probability, alert_required, warning_msg, data_count, step_used)
+        dict: 予測結果。履歴不足時は`probability`を`None`にする。
     """
     history = []
     for row in load_history():
@@ -135,13 +135,16 @@ def predict_flight_probability(
         if flight_number is not None and historical_flight != flight_number:
             continue
         history.append((normalized_status, historical_direction, historical_speed))
-    if not history:
+    if len(history) < MIN_MATCHING_HISTORY_ROWS:
         scope = f"{flight_number}の" if flight_number else ""
+        reason_code = "no_history" if not history else "below_minimum_history"
         return {
-            "probability": MAX_PROBABILITY,
+            "probability": None,
+            "calculation_status": "insufficient_history",
+            "reason_code": reason_code,
             "alert_required": False,
-            "warning_msg": f"{scope}過去データを取得できないため、デフォルト値を返します。",
-            "data_count": 0,
+            "warning_msg": f"{scope}過去実績が{len(history)}件のため、統計参考値を算出できません。",
+            "data_count": len(history),
             "step_used": 0,
             "history_flight_number": flight_number,
         }
@@ -239,6 +242,8 @@ def predict_flight_probability(
     
     return {
         "probability": round(final_prob, 1),
+        "calculation_status": "available",
+        "reason_code": None,
         "alert_required": alert_required,
         "warning_msg": warning_msg,
         "data_count": len(matching_rows),

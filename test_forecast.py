@@ -105,6 +105,14 @@ def main():
                     
                     # 確率の表示フォーマット
                     prob = res["probability"]
+                    if prob is None:
+                        print(
+                            f"  [就航予測] 統計参考値: 算出不可 "
+                            f"(類似過去データ: {res['data_count']}件)"
+                        )
+                        print(f"  [判定状況] 状況: {res['warning_msg']}")
+                        print()
+                        continue
                     prob_bar = "■" * int(prob / 10) + "□" * (10 - int(prob / 10))
                     
                     # 警告等の絵文字

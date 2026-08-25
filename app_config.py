@@ -74,6 +74,8 @@ PROBABILITY_SYMBOL_THRESHOLDS = (
 
 
 def probability_symbol(value):
+    if value is None:
+        return None
     for threshold, symbol in PROBABILITY_SYMBOL_THRESHOLDS:
         if value >= threshold:
             return symbol
