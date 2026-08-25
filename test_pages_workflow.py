@@ -12,3 +12,5 @@ def test_access_stats_failure_cannot_block_forecast_pages_build():
     assert "run: python access_stats.py --mark-stale" in workflow
     assert "steps.access_stats.outcome != 'success'" in workflow
     assert "Add access stats status to summary" in workflow
+    assert "issues: write" in workflow
+    assert "Notify access analytics outage" in workflow

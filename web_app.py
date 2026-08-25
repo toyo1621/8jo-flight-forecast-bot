@@ -58,6 +58,7 @@ PREDICTION_WEATHER_FIELDS = (
 )
 PRIMARY_SUPPLEMENT_FIELDS = ("wind_gusts", "visibility")
 PRIMARY_SUPPLEMENT_STATUS_KEY = "_primary_supplement_status"
+WEATHER_FIELD_SOURCES_KEY = "_weather_field_sources"
 
 
 def _fetch_deterministic_forecast(model=None, latitude=HACHIJO_AIRPORT_LATITUDE, longitude=HACHIJO_AIRPORT_LONGITUDE):
@@ -85,13 +86,23 @@ def _supplement_primary_forecast(primary, supplement):
     merged = {}
     for timestamp, primary_weather in primary.items():
         weather = dict(primary_weather)
+        field_sources = dict(weather.get(WEATHER_FIELD_SOURCES_KEY) or {})
+        for field in PREDICTION_WEATHER_FIELDS:
+            if field in weather and field not in field_sources:
+                field_sources[field] = "jma" if weather.get(field) is not None else "missing"
         supplemental_weather = supplement.get(timestamp, {})
         missing = []
         for field in PRIMARY_SUPPLEMENT_FIELDS:
             if weather.get(field) is None:
-                weather[field] = supplemental_weather.get(field)
+                supplemental_value = supplemental_weather.get(field)
+                if supplemental_value is not None:
+                    weather[field] = supplemental_value
+                    field_sources[field] = "open_meteo_supplement"
             if weather.get(field) is None:
                 missing.append(field)
+                field_sources[field] = "missing"
+            elif field not in field_sources:
+                field_sources[field] = "jma"
         if not missing:
             status = "complete"
         elif len(missing) == len(PRIMARY_SUPPLEMENT_FIELDS):
@@ -99,6 +110,7 @@ def _supplement_primary_forecast(primary, supplement):
         else:
             status = "partial"
         weather[PRIMARY_SUPPLEMENT_STATUS_KEY] = status
+        weather[WEATHER_FIELD_SOURCES_KEY] = field_sources
         merged[timestamp] = weather
     return merged
 

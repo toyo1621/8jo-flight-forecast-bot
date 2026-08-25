@@ -40,6 +40,54 @@ def find_missing_collection_days(records, today=None, days=14, expected_flights=
     return [target for target in expected if target not in completed]
 
 
+def _as_date(value):
+    if isinstance(value, datetime):
+        return value.date()
+    if isinstance(value, date):
+        return value
+    try:
+        return date.fromisoformat(str(value))
+    except (TypeError, ValueError):
+        return None
+
+
+def coverage_summary(records, today=None, days=14, expected_flights=3):
+    expected = expected_collection_dates(today, days)
+    completed = set()
+    for record in records:
+        target = _as_date(record.get("target_date"))
+        try:
+            enough_rows = int(record.get("rows_written")) >= expected_flights
+        except (TypeError, ValueError):
+            enough_rows = False
+        if target in expected and record.get("status") == "succeeded" and enough_rows:
+            completed.add(target)
+
+    consecutive_missing = 0
+    for target in reversed(expected):
+        if target in completed:
+            break
+        consecutive_missing += 1
+
+    latest = max(
+        records,
+        key=lambda record: str(record.get("started_at") or record.get("target_date") or ""),
+        default=None,
+    )
+    return {
+        "last_success_date": max(completed).isoformat() if completed else None,
+        "consecutive_missing_days": consecutive_missing,
+        "latest_run": {
+            "run_id": latest.get("run_id"),
+            "target_date": str(latest.get("target_date")) if latest else None,
+            "status": latest.get("status") if latest else None,
+            "attempt": latest.get("attempt") if latest else None,
+        }
+        if latest
+        else None,
+    }
+
+
 def fetch_collection_runs(today=None, days=14):
     expected = expected_collection_dates(today, days)
     config = settings()
@@ -48,23 +96,39 @@ def fetch_collection_runs(today=None, days=14):
     end = expected[-1].isoformat()
     query = f"""
         SELECT CAST(target_date AS STRING) AS target_date,
-               status, rows_written, attempt, run_id, error_code
+               status, rows_written, attempt, run_id, error_code, started_at
         FROM `{_collection_table_path(RUNS_TABLE, config)}`
         WHERE target_date BETWEEN '{start}' AND '{end}'
     """
     return [dict(row.items()) for row in client.query(query).result()]
 
 
-def format_report(missing_days, today=None, days=14):
+def format_report(missing_days, today=None, days=14, records=None):
     expected = expected_collection_dates(today, days)
-    if not missing_days:
-        return f"## 日次収集カバレッジ\n\n{expected[0]}〜{expected[-1]}の{days}日分は完了記録があります。"
+    summary = coverage_summary(records or [], today=today, days=days)
     lines = [
         "## 日次収集カバレッジ",
         "",
-        f"{expected[0]}〜{expected[-1]}のうち、完了記録がない日: {len(missing_days)}日",
-        "",
+        f"対象期間: {expected[0]}〜{expected[-1]} ({days}日)",
+        f"最終成功日: {summary['last_success_date'] or 'なし'}",
+        f"連続欠損日数: {summary['consecutive_missing_days']}日",
     ]
+    latest = summary["latest_run"]
+    if latest:
+        lines.append(
+            f"最新run: {latest['run_id'] or '不明'} / {latest['target_date'] or '日付不明'} / "
+            f"{latest['status'] or '状態不明'} / attempt {latest['attempt'] or '不明'}"
+        )
+    if not missing_days:
+        lines.append(f"{expected[0]}〜{expected[-1]}の完了記録があります。")
+        return "\n".join(lines)
+    lines.extend(
+        [
+            "",
+            f"完了記録がない日: {len(missing_days)}日",
+            "",
+        ]
+    )
     lines.extend(f"- {target}" for target in missing_days)
     lines.extend(
         [
@@ -83,7 +147,7 @@ def main():
     args = parser.parse_args()
     records = fetch_collection_runs(days=args.days)
     missing = find_missing_collection_days(records, days=args.days)
-    report = format_report(missing, days=args.days)
+    report = format_report(missing, days=args.days, records=records)
     if args.output:
         args.output.write_text(report + "\n", encoding="utf-8")
     print(report)

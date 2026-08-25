@@ -1,6 +1,7 @@
 from datetime import date
 
 from collection_monitor import (
+    coverage_summary,
     expected_collection_dates,
     find_missing_collection_days,
     format_report,
@@ -36,3 +37,30 @@ def test_expected_collection_dates_are_jst_calendar_days():
         date(2026, 8, 23),
         date(2026, 8, 24),
     ]
+
+
+def test_coverage_summary_reports_last_success_consecutive_gap_and_latest_run():
+    records = [
+        {
+            "target_date": "2026-08-22",
+            "status": "succeeded",
+            "rows_written": 3,
+            "run_id": "run-old",
+            "attempt": 1,
+            "started_at": "2026-08-22T12:00:00+00:00",
+        },
+        {
+            "target_date": "2026-08-24",
+            "status": "failed",
+            "rows_written": None,
+            "run_id": "run-latest",
+            "attempt": 2,
+            "started_at": "2026-08-24T12:00:00+00:00",
+        },
+    ]
+
+    summary = coverage_summary(records, today=date(2026, 8, 24), days=3)
+
+    assert summary["last_success_date"] == "2026-08-22"
+    assert summary["consecutive_missing_days"] == 2
+    assert summary["latest_run"]["run_id"] == "run-latest"

@@ -79,3 +79,15 @@ def classify_status_reason(status, reason):
         return "airport"
     return "other"
 
+
+def classify_status_reason_with_confidence(status, reason, explicit_category=None):
+    """Return a category and an explicit, non-statistical classification confidence."""
+    if explicit_category in CANCELLATION_REASON_CATEGORIES:
+        confidence = 1.0 if explicit_category not in {"unknown", "not_applicable"} else None
+        return explicit_category, confidence
+
+    category = classify_status_reason(status, reason)
+    # Keyword classification is a traceable heuristic, not a calibrated probability.
+    confidence = 0.5 if category in {"weather", "operational", "airport", "other"} else None
+    return category, confidence
+

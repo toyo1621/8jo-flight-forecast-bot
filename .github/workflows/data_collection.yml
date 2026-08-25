@@ -15,6 +15,7 @@ on:
 
 permissions:
   contents: read
+  issues: write
   id-token: write
 
 concurrency:
@@ -108,6 +109,25 @@ jobs:
             cat collection_coverage_report.md >> "$GITHUB_STEP_SUMMARY"
           else
             echo "Collection coverage report was not generated." >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - name: Notify collection coverage gap
+        if: steps.collection_coverage.outcome == 'failure'
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          issue_number="$(gh issue list --state open --search 'Daily collection coverage gap in:title' --json number --jq '.[0].number')"
+          if [ -f collection_coverage_report.md ]; then
+            if [ -n "$issue_number" ]; then
+              gh issue comment "$issue_number" --body-file collection_coverage_report.md
+            else
+              gh issue create --title "Daily collection coverage gap" --body-file collection_coverage_report.md
+            fi
+          elif [ -n "$issue_number" ]; then
+            gh issue comment "$issue_number" --body "Collection coverage report was not generated in run $GITHUB_RUN_ID."
+          else
+            gh issue create --title "Daily collection coverage gap" --body "Collection coverage report was not generated in run $GITHUB_RUN_ID."
           fi
 
       - name: Upload data quality report

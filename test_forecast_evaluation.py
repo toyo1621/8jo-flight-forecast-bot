@@ -16,22 +16,30 @@ def _row(
     probability=80.0,
     outcome_status="運航",
     model="jma_seamless",
+    flight_number="ANA1891",
+    lead_hours=24,
     generated="2026-08-19T00:00:00+09:00",
     valid="2026-08-20T08:00:00+09:00",
     provenance="known",
     category=None,
+    code_version="test-code",
+    config_version="test-config",
 ):
     return {
         "forecast_target_date": target_date,
         "probability": probability,
         "outcome_status": outcome_status,
         "model": model,
+        "flight_number": flight_number,
+        "lead_hours": lead_hours,
         "calculation_status": "available",
         "prediction_generated_at": generated,
         "weather_retrieved_at": "2026-08-18T00:00:00+09:00",
         "weather_valid_at": valid,
         "provenance_status": provenance,
         "status_reason_category": category,
+        "code_version": code_version,
+        "config_version": config_version,
     }
 
 
@@ -128,3 +136,28 @@ def test_factor_ablation_compares_recorded_factors_without_reconstructing_them()
     assert report["all"]["base"]["count"] == 2
     assert report["all"]["combined"]["count"] == 2
     assert report["weather_only"]["combined"]["count"] == 2
+
+
+def test_evaluation_reports_flight_lead_day_and_conditional_status_sensitivity():
+    rows = [
+        _row(flight_number="ANA1891", lead_hours=23, probability=80.0),
+        _row(
+            flight_number="ANA1893",
+            lead_hours=49,
+            probability=60.0,
+            outcome_status="運航(条件付)",
+        ),
+    ]
+
+    report = evaluate_rows(rows)
+
+    assert report["by_flight"]["ANA1891"]["count"] == 1
+    assert report["by_lead_day"]["0"]["count"] == 1
+    assert report["by_lead_day"]["2"]["count"] == 1
+    assert report["by_version"]["test-code@test-config"]["count"] == 2
+    assert report["conditional_status_sensitivity"]["current_as_operated"]["eligible_count"] == 2
+    assert report["conditional_status_sensitivity"]["as_non_operated"]["eligible_count"] == 2
+    assert report["reason_coverage_by_flight"] == {}
+    markdown = markdown_report(report)
+    assert "便別・リード日別指標" in markdown
+    assert "条件付運航の感度分析" in markdown
