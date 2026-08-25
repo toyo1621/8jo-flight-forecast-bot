@@ -10,6 +10,7 @@ from access_stats import (
     build_access_stats,
     fetch_daily_pageviews,
     load_access_stats,
+    mark_access_stats_stale,
 )
 
 
@@ -85,10 +86,50 @@ def test_build_access_stats_marks_pre_tracking_days_unmeasured():
 
     assert [item["pageviews"] for item in result["days"]] == [None, None, None, None, None, None, 7]
     assert requested_days == [date(2026, 8, 24)]
+    assert result["status"] == "available"
 
 
 def test_load_access_stats_returns_default_for_invalid_json(tmp_path):
     path = tmp_path / "access_stats.json"
     path.write_text(json.dumps({"days": "invalid"}), encoding="utf-8")
 
-    assert load_access_stats(path) == {"days": [], "generated_at": None, "source": None}
+    assert load_access_stats(path) == {
+        "days": [],
+        "generated_at": None,
+        "source": None,
+        "status": "unavailable",
+        "status_reason": None,
+    }
+
+
+def test_mark_access_stats_stale_preserves_last_successful_counts(tmp_path):
+    path = tmp_path / "access_stats.json"
+    path.write_text(
+        json.dumps(
+            {
+                "days": [{"date": "2026-08-24", "pageviews": 12}],
+                "generated_at": "2026-08-24T09:00+09:00",
+                "source": "Cloudflare Web Analytics",
+                "status": "available",
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    result = mark_access_stats_stale(path)
+
+    assert result["status"] == "stale"
+    assert result["status_reason"] == "cloudflare_unavailable"
+    assert result["days"][0]["pageviews"] == 12
+    assert result["generated_at"] == "2026-08-24T09:00+09:00"
+    assert load_access_stats(path)["status"] == "stale"
+
+
+def test_mark_access_stats_stale_without_previous_data_is_unavailable(tmp_path):
+    path = tmp_path / "access_stats.json"
+
+    result = mark_access_stats_stale(path)
+
+    assert result["days"] == []
+    assert result["status"] == "unavailable"
+    assert result["status_reason"] == "cloudflare_unavailable"

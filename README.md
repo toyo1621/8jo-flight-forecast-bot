@@ -32,6 +32,7 @@
 - GitHub Pagesで公開し、6時間ごとに自動更新
 - Open-Meteo障害時のエラー表示と信頼度の暫定評価
 - 当日便は八丈島への到着予定時刻から30分後を過ぎると自動的に非表示
+- Cloudflare Web Analytics障害時も予報公開を継続し、アクセス数は前回値を`stale`または`unavailable`として表示
 - CI、データ品質チェック、Dependabot、Issueテンプレートによる運用保守
 
 ## システム構成
