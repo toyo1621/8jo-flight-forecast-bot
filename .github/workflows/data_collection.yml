@@ -112,7 +112,7 @@ jobs:
           fi
 
       - name: Notify collection coverage gap
-        if: steps.collection_coverage.outcome == 'failure'
+        if: ${{ always() && steps.collection_coverage.outcome == 'failure' }}
         continue-on-error: true
         env:
           GH_TOKEN: ${{ github.token }}

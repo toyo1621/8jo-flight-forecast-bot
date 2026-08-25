@@ -175,7 +175,25 @@ def get_scheduled_flights(date_str, default_status=None):
     ]
 
 
-def parse_flight_data_odpt(flights):
+def _flight_date_from_odpt(flight):
+    flight_date = flight.get("odpt:flightDate")
+    if isinstance(flight_date, str) and flight_date:
+        return flight_date
+
+    created_at = flight.get("dc:date", "")
+    if isinstance(created_at, str) and created_at:
+        try:
+            parsed = datetime.fromisoformat(created_at.replace("Z", "+00:00"))
+            if parsed.tzinfo is None:
+                parsed = parsed.replace(tzinfo=JST)
+            return parsed.astimezone(JST).date().isoformat()
+        except ValueError:
+            return created_at.split("T", 1)[0]
+
+    return datetime.now(JST).strftime("%Y-%m-%d")
+
+
+def parse_flight_data_odpt(flights, target_date=None):
     if not isinstance(flights, list):
         raise CollectionError("ODPT APIの応答構造が不正です。")
 
@@ -191,13 +209,12 @@ def parse_flight_data_odpt(flights):
         if flight_number not in SCHEDULE_BY_NUMBER:
             continue
 
+        flight_date = _flight_date_from_odpt(flight)
+        if target_date and flight_date != target_date:
+            continue
         status_raw = flight.get("odpt:flightStatus")
         if status_raw not in STATUS_MAPPING:
             raise CollectionError(f"{flight_number}の運航ステータスが未対応です。")
-        flight_date = flight.get("odpt:flightDate")
-        if not flight_date:
-            created_at = flight.get("dc:date", "")
-            flight_date = created_at.split("T")[0] if created_at else datetime.now(JST).strftime("%Y-%m-%d")
         result.append(
             {
                 "date": flight_date,
@@ -208,7 +225,8 @@ def parse_flight_data_odpt(flights):
         )
 
     if not result:
-        raise CollectionError("ODPT APIから対象3便を1件も取得できませんでした。")
+        date_suffix = f"（対象日: {target_date}）" if target_date else ""
+        raise CollectionError(f"ODPT APIから対象便を1件も取得できませんでした{date_suffix}。")
     print(f"ODPT APIから {len(result)} 件の対象便を取得しました。")
     return result
 
@@ -223,8 +241,6 @@ def get_flight_data_odpt(
         "odpt:arrivalAirport": "odpt.Airport:HAC",
         "acl:consumerKey": api_key,
     }
-    if target_date:
-        params["odpt:flightDate"] = target_date
     try:
         response = _request_with_retries(
             "https://api.odpt.org/api/v4/odpt:FlightInformationArrival",
@@ -240,7 +256,7 @@ def get_flight_data_odpt(
     except ValueError as exc:
         raise CollectionError("ODPT APIのJSON応答を解釈できません。") from exc
 
-    return parse_flight_data_odpt(flights)
+    return parse_flight_data_odpt(flights, target_date=target_date)
 
 
 def merge_with_daily_schedule(date_str, actual_flights):
