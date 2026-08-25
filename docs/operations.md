@@ -38,7 +38,15 @@ JMA主予報の取得に失敗した場合、7時間以内のキャッシュが�
 
 ## ODPT・日次収集障害
 
-取得失敗、対象3便不足、未対応ステータス、気象欠測ではBigQueryを更新しません。失敗を欠航へ変換しないでください。
+取得失敗、対象3便不足、未対応ステータス、気象欠測では運航実績本表を更新しません。失敗を欠航へ変換しないでください。各APIの応答はAPIキー等を除去して`flight_collection_raw`へ保存し、runの開始・成功・失敗を`collection_runs`へ記録します。
+
+一時的なHTTPエラー・タイムアウトは指数バックオフで最大3回再試行します。raw保存済みrunを再処理する場合は、BigQuery認証後に次を実行します。
+
+```bash
+python data_collector.py --replay-run-id <run_id>
+```
+
+日次workflowは直近14日分の`collection_runs`を確認し、3便の成功記録がない日をStep Summaryとartifactへ出します。欠損日がある場合はworkflowを失敗させ、run_idを特定してraw再生または原因修正を行います。
 
 確認項目:
 

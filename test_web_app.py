@@ -1188,6 +1188,8 @@ def test_workflows_run_tests_and_data_quality_reports():
     assert "github/codeql-action/analyze@" in codeql
     assert "python data_quality.py --format markdown" in pages
     assert "python data_quality.py --format markdown" in collection
+    assert "python collection_monitor.py --days 14" in collection
+    assert "--replay-run-id" in (BASE_DIR / "data_collector.py").read_text(encoding="utf-8")
     assert "actions/upload-artifact@" in pages
     assert "actions/upload-artifact@" in collection
     assert "--fail-on error" in pages
