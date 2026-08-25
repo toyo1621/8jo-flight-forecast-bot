@@ -4,7 +4,11 @@ import pytest
 
 import bigquery_storage
 from data_collector import STATUS_MAPPING, get_demo_flight_data, save_collected_data
-from flight_metadata import normalize_database_status, normalize_status
+from flight_metadata import (
+    classify_status_reason,
+    normalize_database_status,
+    normalize_status,
+)
 
 
 def test_normalize_item_formats_time():
@@ -189,4 +193,13 @@ def test_legacy_status_labels_are_normalized_for_display():
     assert normalize_status("引き返し(出発空港着)") == "条件付き→引返欠航"
     assert normalize_database_status("条件付き→就航") == "運航(条件付)"
     assert normalize_database_status("通常") == "運航"
+
+
+def test_cancellation_reason_classifier_preserves_unknown_and_separates_causes():
+    assert classify_status_reason("欠航", "強風") == "weather"
+    assert classify_status_reason("欠航", "機材繰り") == "operational"
+    assert classify_status_reason("欠航", "空港閉鎖") == "airport"
+    assert classify_status_reason("欠航", "その他") == "other"
+    assert classify_status_reason("欠航", "未確認") == "unknown"
+    assert classify_status_reason("運航", "強風") == "not_applicable"
 

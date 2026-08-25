@@ -10,7 +10,12 @@ from google.cloud import bigquery
 
 from bigquery_schema import PREDICTION_SNAPSHOT_TABLE
 from bigquery_storage import _collection_table_path, settings, table_path
-from flight_metadata import OPERATED_STATUSES, VALID_STORED_STATUSES, normalize_status
+from flight_metadata import (
+    CANCELLATION_REASON_CATEGORIES,
+    OPERATED_STATUSES,
+    VALID_STORED_STATUSES,
+    normalize_status,
+)
 
 UTC = timezone.utc
 RELIABILITY_BIN_EDGES = tuple(range(0, 101, 10))
@@ -59,7 +64,9 @@ def _outcome_label(row):
     return 1 if status in OPERATED_STATUSES else 0
 
 
-def partition_evaluable_predictions(rows):
+def partition_evaluable_predictions(rows, population="all"):
+    if population not in {"all", "weather_only"}:
+        raise ValueError("評価母集団が正しくありません。")
     eligible = []
     excluded = Counter()
     for row in rows:
@@ -89,6 +96,11 @@ def partition_evaluable_predictions(rows):
         if outcome is None:
             excluded["unknown_outcome"] += 1
             continue
+        if population == "weather_only":
+            category = row.get("status_reason_category")
+            if outcome == 0 and category != "weather":
+                excluded["non_weather_or_unknown_cancellation"] += 1
+                continue
         target_date = _parse_date(row.get("forecast_target_date"))
         if target_date is None:
             excluded["invalid_target_date"] += 1
@@ -213,18 +225,38 @@ def rolling_time_evaluation(rows, min_train_dates=3):
 
 
 def evaluate_rows(rows, generated_at=None):
-    eligible, excluded = partition_evaluable_predictions(rows)
+    eligible, excluded = partition_evaluable_predictions(rows, population="all")
+    weather_eligible, weather_excluded = partition_evaluable_predictions(
+        rows, population="weather_only"
+    )
     models = {}
     for model in sorted({row.get("model", "unknown") for row in eligible}):
-        models[model] = metric_summary([row for row in eligible if row.get("model") == model])
+        models[model] = {
+            "all": metric_summary([row for row in eligible if row.get("model") == model]),
+            "weather_only": metric_summary(
+                [row for row in weather_eligible if row.get("model") == model]
+            ),
+        }
+    category_coverage = Counter(
+        row.get("status_reason_category")
+        if row.get("status_reason_category") in CANCELLATION_REASON_CATEGORIES
+        else "unknown"
+        for row in rows
+        if normalize_status(row.get("outcome_status") or row.get("status"))
+        not in OPERATED_STATUSES
+    )
     return {
         "status": "ok" if eligible else "insufficient_data",
         "generated_at": generated_at or datetime.now(UTC).isoformat(),
         "input_count": len(rows),
         "eligible_count": len(eligible),
         "excluded_counts": excluded,
+        "weather_only_excluded_counts": weather_excluded,
+        "category_coverage": dict(category_coverage),
+        "weather_only_count": len(weather_eligible),
         "models": models,
         "rolling_time": rolling_time_evaluation(eligible),
+        "rolling_time_weather_only": rolling_time_evaluation(weather_eligible),
     }
 
 
@@ -246,6 +278,7 @@ def fetch_prediction_outcomes(lookback_days=365):
           s.weather_valid_at,
           s.provenance_status,
           h.status AS outcome_status,
+          h.status_reason_category,
           h.status_reason
         FROM `{_collection_table_path(PREDICTION_SNAPSHOT_TABLE, config)}` s
         JOIN `{table_path(config)}` h
@@ -278,7 +311,9 @@ def markdown_report(report):
     if not report["models"]:
         lines.append("評価可能な予測値がありません。来歴不明、算出不可、時系列条件違反を現在の精度とみなしていません。")
     else:
-        for model, metrics in report["models"].items():
+        for model, populations in report["models"].items():
+            metrics = populations["all"]
+            weather_metrics = populations["weather_only"]
             lines.extend(
                 [
                     f"### {model}",
@@ -288,6 +323,7 @@ def markdown_report(report):
                     f"- 学習期間内の運航率ベースライン: {metrics['baseline_prior_percent']}% / Brier {metrics['baseline_prior_brier_score']}",
                     f"- 常時運航ベースラインのBrier: {metrics['baseline_always_operated_brier_score']}",
                     f"- ECE: {metrics['expected_calibration_error_percent']}ポイント",
+                    f"- 天候起因限定: {weather_metrics['count']}件 / Brier {weather_metrics['brier_score']} / ECE {weather_metrics['expected_calibration_error_percent']}ポイント",
                     "",
                 ]
             )

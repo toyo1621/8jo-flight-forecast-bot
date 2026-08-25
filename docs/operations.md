@@ -48,6 +48,8 @@ python data_collector.py --replay-run-id <run_id>
 
 日次workflowは直近14日分の`collection_runs`を確認し、3便の成功記録がない日をStep Summaryとartifactへ出します。欠損日がある場合はworkflowを失敗させ、run_idを特定してraw再生または原因修正を行います。
 
+欠航理由カテゴリは`weather`（天候・台風・強風等）、`operational`（機材・整備・乗員等）、`airport`（空港・滑走路・管制等）、`other`、`unknown`、`not_applicable`に分けます。理由がない、または未確認の行は`unknown`で保存し、天候起因の学習・評価へ自動算入しません。
+
 確認項目:
 
 - GitHub Secret `ODPT_API_KEY`

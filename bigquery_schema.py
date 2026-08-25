@@ -21,6 +21,7 @@ SCHEMA = (
     bigquery.SchemaField("visibility", "FLOAT"),
     bigquery.SchemaField("visibility_source", "STRING"),
     bigquery.SchemaField("status_reason", "STRING"),
+    bigquery.SchemaField("status_reason_category", "STRING"),
     bigquery.SchemaField("created_at", "TIMESTAMP"),
     bigquery.SchemaField("migrated_at", "TIMESTAMP", mode="REQUIRED"),
 )
@@ -84,6 +85,10 @@ def ensure_destination(client, dataset_id, table_id, location):
     table_ref.time_partitioning = bigquery.TimePartitioning(field="date")
     table_ref.clustering_fields = ["flight_number", "status"]
     client.create_table(table_ref, exists_ok=True)
+    client.query(
+        f"ALTER TABLE `{client.project}.{dataset_id}.{table_id}` "
+        "ADD COLUMN IF NOT EXISTS status_reason_category STRING"
+    ).result()
 
 
 def ensure_collection_destinations(client, dataset_id, location):

@@ -18,6 +18,7 @@ def _row(
     generated="2026-08-19T00:00:00+09:00",
     valid="2026-08-20T08:00:00+09:00",
     provenance="known",
+    category=None,
 ):
     return {
         "forecast_target_date": target_date,
@@ -29,6 +30,7 @@ def _row(
         "weather_retrieved_at": "2026-08-18T00:00:00+09:00",
         "weather_valid_at": valid,
         "provenance_status": provenance,
+        "status_reason_category": category,
     }
 
 
@@ -55,6 +57,20 @@ def test_brier_and_calibration_metrics_are_computed_in_probability_units():
     assert expected_calibration_error(rows) == 0.0
 
 
+def test_weather_only_population_excludes_non_weather_and_unknown_cancellations():
+    eligible, excluded = partition_evaluable_predictions(
+        [
+            _row(outcome_status="欠航", category="weather"),
+            _row(outcome_status="欠航", category="operational"),
+            _row(outcome_status="欠航", category="unknown"),
+        ],
+        population="weather_only",
+    )
+
+    assert len(eligible) == 1
+    assert excluded == {"non_weather_or_unknown_cancellation": 2}
+
+
 def test_rolling_time_evaluation_uses_only_prior_dates_for_training():
     rows = [
         {"target_date": date(2026, 8, 20), "probability": 80.0, "outcome": 1, "model": "jma"},
@@ -76,4 +92,5 @@ def test_evaluate_rows_reports_insufficient_data_without_inventing_metrics():
     assert report["status"] == "insufficient_data"
     assert report["eligible_count"] == 0
     assert report["models"] == {}
+    assert report["weather_only_count"] == 0
     assert "評価可能な予測値がありません" in markdown_report(report)
