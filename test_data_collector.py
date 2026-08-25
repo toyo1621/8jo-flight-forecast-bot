@@ -104,21 +104,29 @@ def test_odpt_transient_failure_is_retried_and_raw_payload_can_be_captured():
     assert captured[0][0] == "odpt_flight_information_arrival"
 
 
-def test_odpt_request_can_filter_by_target_date():
+def test_odpt_request_uses_supported_filters_and_applies_target_date_locally():
     response = Mock(status_code=200)
     response.json.return_value = [
         {
             "odpt:originAirport": "odpt.Airport:HND",
             "odpt:flightNumber": ["NH1891"],
             "odpt:flightStatus": "odpt.FlightStatus:Normal",
-            "odpt:flightDate": "2026-07-15",
+            "dc:date": "2026-07-15T12:00:00+09:00",
+        },
+        {
+            "odpt:originAirport": "odpt.Airport:HND",
+            "odpt:flightNumber": ["NH1893"],
+            "odpt:flightStatus": "odpt.FlightStatus:Normal",
+            "dc:date": "2026-07-16T12:00:00+09:00",
         }
     ]
 
     with patch("data_collector.requests.get", return_value=response) as get:
-        get_flight_data_odpt("test-key", target_date="2026-07-15")
+        result = get_flight_data_odpt("test-key", target_date="2026-07-15")
 
-    assert get.call_args.kwargs["params"]["odpt:flightDate"] == "2026-07-15"
+    assert [flight["flight_number"] for flight in result] == ["ANA1891"]
+    assert "odpt:flightDate" not in get.call_args.kwargs["params"]
+    assert get.call_args.kwargs["params"]["odpt:arrivalAirport"] == "odpt.Airport:HAC"
 
 
 def test_replay_collection_run_rebuilds_rows_from_raw_payloads():
