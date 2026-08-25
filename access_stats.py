@@ -1,5 +1,6 @@
 import json
 import os
+import sys
 from datetime import date, datetime, time, timedelta, timezone
 from pathlib import Path
 
@@ -13,6 +14,7 @@ DEFAULT_PATH_PATTERN = "/8jo-flight-forecast-bot%"
 ACCESS_STATS_DAYS = 7
 DEFAULT_ACCESS_STATS_FILE = Path(__file__).resolve().parent / ".cache" / "access_stats.json"
 UTC = timezone.utc
+ACCESS_STATS_STATUSES = {"available", "stale", "unavailable"}
 
 DAILY_PAGEVIEWS_QUERY = """
 query DailyPageViews($accountTag: string, $start: Time, $end: Time, $host: string, $path: string) {
@@ -148,11 +150,19 @@ def build_access_stats(
         "days": result_days,
         "generated_at": datetime.now(JST).isoformat(timespec="minutes"),
         "source": "Cloudflare Web Analytics",
+        "status": "available",
+        "status_reason": None,
     }
 
 
-def _default_access_stats():
-    return {"days": [], "generated_at": None, "source": None}
+def _default_access_stats(status="unavailable", status_reason=None):
+    return {
+        "days": [],
+        "generated_at": None,
+        "source": None,
+        "status": status,
+        "status_reason": status_reason,
+    }
 
 
 def load_access_stats(path=None):
@@ -165,13 +175,35 @@ def load_access_stats(path=None):
         return _default_access_stats()
     if not isinstance(payload, dict) or not isinstance(payload.get("days"), list):
         return _default_access_stats()
-    return payload
+    normalized = dict(payload)
+    status = normalized.get("status")
+    if status not in ACCESS_STATS_STATUSES:
+        status = "available" if normalized["days"] else "unavailable"
+    normalized["status"] = status
+    normalized.setdefault("status_reason", None)
+    return normalized
 
 
 def write_access_stats(payload, path=None):
     path = Path(path) if path is not None else DEFAULT_ACCESS_STATS_FILE
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+
+
+def mark_access_stats_stale(path=None):
+    """Keep the last successful counts visible while recording API failure."""
+    payload = load_access_stats(path)
+    if payload["days"]:
+        payload["status"] = "stale"
+        payload["status_reason"] = "cloudflare_unavailable"
+        payload["stale_at"] = datetime.now(JST).isoformat(timespec="minutes")
+    else:
+        payload = _default_access_stats(
+            status="unavailable", status_reason="cloudflare_unavailable"
+        )
+        payload["checked_at"] = datetime.now(JST).isoformat(timespec="minutes")
+    write_access_stats(payload, path)
+    return payload
 
 
 def fetch_from_environment():
@@ -189,4 +221,9 @@ def fetch_from_environment():
 
 
 if __name__ == "__main__":
-    write_access_stats(fetch_from_environment())
+    if sys.argv[1:] == ["--mark-stale"]:
+        mark_access_stats_stale()
+    elif sys.argv[1:]:
+        raise SystemExit("usage: python access_stats.py [--mark-stale]")
+    else:
+        write_access_stats(fetch_from_environment())

@@ -42,6 +42,14 @@ jobs:
           restore-keys: |
             forecast-api-cache-
 
+      - name: Restore access stats cache
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
+        with:
+          path: .cache/access_stats.json
+          key: access-stats-${{ github.run_id }}
+          restore-keys: |
+            access-stats-
+
       - name: Authenticate to Google Cloud
         uses: google-github-actions/auth@7c6bc770dae815cd3e89ee6cdf493a5fab2cc093 # v3
         with:
@@ -66,6 +74,8 @@ jobs:
           fi
 
       - name: Fetch daily access counts
+        id: access_stats
+        continue-on-error: true
         env:
           CLOUDFLARE_ACCOUNT_ID: e04e898ef9b59ba3f3397229de4cff71
           CLOUDFLARE_ANALYTICS_API_TOKEN: ${{ secrets.CLOUDFLARE_ANALYTICS_API_TOKEN }}
@@ -73,6 +83,21 @@ jobs:
           CLOUDFLARE_ANALYTICS_PATH: /8jo-flight-forecast-bot%
           CLOUDFLARE_ANALYTICS_START_DATE: "2026-08-24"
         run: python access_stats.py
+
+      - name: Mark access counts stale when Cloudflare is unavailable
+        if: steps.access_stats.outcome != 'success'
+        run: python access_stats.py --mark-stale
+
+      - name: Add access stats status to summary
+        if: always()
+        env:
+          ACCESS_STATS_OUTCOME: ${{ steps.access_stats.outcome }}
+        run: |
+          if [ "$ACCESS_STATS_OUTCOME" = "success" ]; then
+            echo "Cloudflare Web Analytics access counts updated." >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "Cloudflare Web Analytics was unavailable; forecast deployment continued with last-known-good or unavailable access counts." >> "$GITHUB_STEP_SUMMARY"
+          fi
 
       - name: Upload data quality report
         if: always()

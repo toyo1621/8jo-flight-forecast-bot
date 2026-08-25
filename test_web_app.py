@@ -6,11 +6,19 @@ from flask import render_template
 
 from app_config import LOW_PROBABILITY_THRESHOLD
 from forecast_cache import is_cached_forecast_fresh, save_forecast_bundle
-from forecast_engine import MAX_PROBABILITY, find_similar_flights, predict_flight_probability
+from forecast_engine import (
+    MAX_PROBABILITY,
+    find_similar_flights,
+    predict_flight_probability,
+)
 from presentation import decorate_flight_for_display
 from web_app import (
     BASE_DIR,
     FORECAST_DAYS,
+    _select_evenly,
+    _supplement_primary_forecast,
+    _with_typhoon_impact,
+    _with_typhoon_risk_summary,
     app,
     build_daily_forecasts,
     calculate_confidence,
@@ -18,10 +26,6 @@ from web_app import (
     calculate_model_reference_risks,
     deterministic_risk_summary,
     fallback_confidence,
-    _select_evenly,
-    _supplement_primary_forecast,
-    _with_typhoon_impact,
-    _with_typhoon_risk_summary,
     fetch_forecast,
     fetch_typhoon_impacts,
     load_forecast_bundle,
@@ -1101,6 +1105,49 @@ def test_access_stats_render_in_footer_when_static_data_is_available():
     assert "1,234" in body
     assert "未計測" in body
     assert "2026-08-24T09:00+09:00更新" in body
+
+
+def test_access_stats_render_last_known_good_as_stale_without_zeroing_counts():
+    with app.app_context():
+        body = render_template(
+            "index.html",
+            days=[],
+            error=None,
+            updated_at="2026/08/24 00:00",
+            notices=[],
+            low_probability_threshold=60,
+            access_stats={
+                "status": "stale",
+                "days": [{"date": "2026-08-24", "label": "8/24", "pageviews": 12}],
+                "generated_at": "2026-08-24T09:00+09:00",
+            },
+        )
+
+    assert "12" in body
+    assert "が最終取得時刻です。現在は更新できていません。" in body
+    assert "0ページビュー" not in body
+
+
+def test_access_stats_render_unavailable_without_fabricating_zero():
+    with app.app_context():
+        body = render_template(
+            "index.html",
+            days=[],
+            error=None,
+            updated_at="2026/08/24 00:00",
+            notices=[],
+            low_probability_threshold=60,
+            access_stats={
+                "status": "unavailable",
+                "days": [],
+                "generated_at": None,
+            },
+        )
+
+    assert "過去7日間のアクセス数" in body
+    assert "現在取得できません。予報の公開には影響ありません。" in body
+    assert "ページビュー" not in body
+    assert "0ページビュー" not in body
 
 
 def test_history_template_includes_flight_name_and_visibility_fallback():

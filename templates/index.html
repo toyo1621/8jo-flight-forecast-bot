@@ -12,7 +12,8 @@
 </head>
 <body>
   {% set low_threshold = low_probability_threshold|default(60)|round|int %}
-  {% set access_stats = access_stats|default({"days": [], "generated_at": None}) %}
+  {% set access_stats = access_stats|default({"days": [], "generated_at": None, "status": "unavailable"}) %}
+  {% set access_stats_status = access_stats.status|default("available" if access_stats.days else "unavailable") %}
   <main class="container">
     <header class="header">
       <p class="eyebrow">HND / HAC</p>
@@ -181,7 +182,7 @@
       <p>表示する%は統計的な校正・精度検証が未実施の参考値であり、実際の運航確率ではありません。</p>
       <p>天候信頼度は、アンサンブル予報の中央80%における統計参考値の幅から算出します。A: 10ポイント以内、B: 20以内、C: 30以内、D: 40以内、E: 40超。</p>
       <p>気象データ: <a href="https://www.jma.go.jp/" rel="noreferrer">気象庁(JMA)</a>モデル (<a href="https://open-meteo.com/" rel="noreferrer">Open-Meteo</a>経由) / 運航実績: <a href="https://www.odpt.org/" rel="noreferrer">公共交通オープンデータセンター</a></p>
-      {% if access_stats.days %}
+      {% if access_stats.days and access_stats_status in ["available", "stale"] %}
         <section class="access-stats" aria-labelledby="access-stats-title">
           <h2 id="access-stats-title">過去7日間のアクセス数</h2>
           <ul class="access-stats-grid">
@@ -198,7 +199,16 @@
               </li>
             {% endfor %}
           </ul>
-          <p class="access-stats-note">Cloudflare Web Analyticsによるページビュー。{{ access_stats.generated_at }}更新。計測開始前の日は未計測です。</p>
+          {% if access_stats_status == "stale" %}
+            <p class="access-stats-note">Cloudflare Web Analyticsによるページビュー。{{ access_stats.generated_at }}が最終取得時刻です。現在は更新できていません。</p>
+          {% else %}
+            <p class="access-stats-note">Cloudflare Web Analyticsによるページビュー。{{ access_stats.generated_at }}更新。計測開始前の日は未計測です。</p>
+          {% endif %}
+        </section>
+      {% elif access_stats_status == "unavailable" %}
+        <section class="access-stats" aria-labelledby="access-stats-title">
+          <h2 id="access-stats-title">過去7日間のアクセス数</h2>
+          <p class="access-stats-note">現在取得できません。予報の公開には影響ありません。</p>
         </section>
       {% endif %}
     </footer>
