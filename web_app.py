@@ -271,13 +271,20 @@ def _prediction_weather(weather):
 
 def calculate_confidence(ensemble_members, baseline_weather=None, flight_number=None):
     baseline_weather = baseline_weather or {}
-    probabilities = sorted(
-        predict_flight_probability(
-            **_prediction_weather({**baseline_weather, **{key: value for key, value in weather.items() if key != "_model"}}),
+    probabilities = []
+    for weather in ensemble_members:
+        result = predict_flight_probability(
+            **_prediction_weather(
+                {**baseline_weather, **{key: value for key, value in weather.items() if key != "_model"}}
+            ),
             flight_number=flight_number,
-        )["probability"]
-        for weather in ensemble_members
-    )
+        )
+        if result.get("calculation_status", "available") != "available":
+            continue
+        probability = result.get("probability")
+        if probability is not None:
+            probabilities.append(probability)
+    probabilities.sort()
     if len(probabilities) < 10:
         return None
 
@@ -308,11 +315,15 @@ def calculate_model_reference_probabilities(ensemble_members, baseline_weather=N
         if not model:
             continue
         weather = {key: value for key, value in member.items() if key != "_model"}
-        probability = predict_flight_probability(
+        result = predict_flight_probability(
             **_prediction_weather({**baseline_weather, **weather}),
             flight_number=flight_number,
-        )["probability"]
-        probabilities.setdefault(model, []).append(probability)
+        )
+        if result.get("calculation_status", "available") != "available":
+            continue
+        probability = result.get("probability")
+        if probability is not None:
+            probabilities.setdefault(model, []).append(probability)
     return {
         model: round(median(values), 1)
         for model, values in probabilities.items()
@@ -451,7 +462,7 @@ def _with_typhoon_impact(result, risk_level):
     result = dict(result)
     multiplier = TYPHOON_IMPACT_MULTIPLIERS.get(risk_level)
     warning = _typhoon_risk_warning(risk_level)
-    if multiplier is None or warning is None:
+    if multiplier is None or warning is None or result.get("probability") is None:
         return result
     result["probability"] = round(result["probability"] * multiplier, 1)
     return _append_warning(result, warning)
@@ -658,7 +669,7 @@ def build_daily_forecasts(
                         "gfs_risk": model_risks.get("gfs_seamless"),
                         "ecmwf_probability": model_probabilities.get("ecmwf_ifs025"),
                         "ecmwf_risk": model_risks.get("ecmwf_ifs025"),
-                        "jma_probability": result["probability"],
+                        "jma_probability": result.get("probability"),
                         "jma_risk": deterministic_risk_summary(result),
                         "confidence": confidence,
                         "wind_direction_label": wind_direction_label(weather["wind_direction"]),
