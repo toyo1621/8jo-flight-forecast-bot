@@ -166,7 +166,9 @@ h1 {
 .confidence span, .confidence small { color: #fff; font-size: .7rem; }
 .confidence strong { font-size: 1.6rem; line-height: 1; text-shadow: 0 0 18px currentColor; }
 .confidence--d, .confidence--e { color: var(--amber); }
+.confidence--unavailable { color: var(--muted); }
 .confidence-note { margin: 8px 0 14px; color: #fff; font-size: .7rem; text-align: right; }
+.confidence-note--models { margin-top: -8px; }
 
 .flights {
   display: grid;

@@ -27,7 +27,7 @@
       </div>
       <div class="quick-guide" aria-label="画面の見方">
         <p><strong>見方:</strong> ◎95%以上 / 〇75%以上 / △35%以上 / ×35%未満。表示する%は、同じ便の類似実績から算出した未校正の統計参考値で、将来の運航確率ではありません。比較欄にはGFS・ECMWF・JMAを併記しています。</p>
-        <p>天候信頼度は、複数の天気予測で結果がどれくらいブレるかを示します。Aに近いほどブレが小さい見込みです。</p>
+        <p>予報シナリオの一致度は、GFS・ECMWFそれぞれのmemberのばらつきを示します。運航結果の正確さや信頼区間ではありません。</p>
       </div>
     </header>
 
@@ -43,16 +43,25 @@
         <section class="day">
           <div class="day-heading">
             <h2><time datetime="{{ day.date }}">{{ day.date_label }} <span>({{ day.weekday }})</span></time></h2>
-            <div class="confidence confidence--{{ day.confidence.grade|lower }}">
-              <span>天候信頼度</span>
-              <strong>{{ day.confidence.grade }}</strong>
-              <small>{{ day.confidence.label }}</small>
-            </div>
+            {% if day.confidence.grade %}
+              <div class="confidence confidence--{{ day.confidence.grade|lower }}">
+                <span>予報シナリオの一致度</span>
+                <strong>{{ day.confidence.grade }}</strong>
+                <small>{{ day.confidence.label }}</small>
+              </div>
+            {% else %}
+              <div class="confidence confidence--unavailable">
+                <span>予報シナリオの一致度</span>
+                <strong>評価不可</strong>
+                <small>{{ day.confidence.label }}</small>
+              </div>
+            {% endif %}
           </div>
-          {% if day.confidence.source == "ensemble" %}
-            <p class="confidence-note">(天候信頼度は{{ day.confidence.member_count }}通りの天気予測から{{ day.confidence.spread }}ptと判定)</p>
+          {% if day.confidence.source in ["ensemble", "ensemble_partial"] %}
+            <p class="confidence-note">モデル別 {{ day.confidence.available_models|join("・") }} / 有効{{ day.confidence.valid_member_count }}・期待{{ day.confidence.expected_member_count }}通り / 最大{{ day.confidence.spread }}pt{% if day.confidence.caution %}。{{ day.confidence.caution }}{% endif %}</p>
+            <p class="confidence-note confidence-note--models">{% for model_name, model in day.confidence.models.items() %}{{ model.label }}: {{ model.valid_member_count }}/{{ model.expected_member_count }}通り{% if model.spread is not none %}・{{ model.spread }}pt{% endif %}{% if not loop.last %} / {% endif %}{% endfor %}</p>
           {% else %}
-            <p class="confidence-note">アンサンブル予報を取得できなかったため、{{ day.confidence.lead_days }}日先として暫定評価しています。</p>
+            <p class="confidence-note">{{ day.confidence.caution|default("アンサンブル予報が不足しているため評価不可です。", true) }}（{{ day.confidence.lead_days }}日先）</p>
           {% endif %}
           <div class="flights">
             {% for flight in day.flights %}
@@ -158,7 +167,7 @@
           <li>BigQueryに保存した同じ便の過去実績から、予報と風向・風速が近い事例を探して、運航統計参考値を計算します。</li>
           <li>視程不良、降水、低層雲量80%超、強風・突風、台風接近リスクの場合は参考値を補正します。上限は97%です。</li>
           <li>詳細画面では、低視程・低層雲・強風など、その日の問題点を重視して近い過去実績10件を表示します。</li>
-          <li>GFS 31通りとECMWF 31通り、合計62通りのアンサンブル予報から天候信頼度A〜Eを判定します。</li>
+          <li>GFS・ECMWFを混ぜずにモデル別のmember数、欠測率、10〜90パーセンタイル幅を計算し、利用可能モデルの最悪値を予報シナリオの一致度A〜Eとして表示します。必要数に届かない場合は評価不可です。</li>
           <li>日本周辺の短期予報を重視してJMAを主予報とし、GFS・ECMWFも残してモデルごとの見方の違いを比較できるようにしています。</li>
           <li>台風接近リスクは、<a href="https://8jo-typhoon-ensemble.toyo1621.workers.dev/?source=jma" rel="noreferrer">八丈島・東京方面 台風影響目安</a>の飛行機向け影響度を使います。注意度lowは補正なし、medium・high・severeをリスク小・中・大として、運航率に0.9・0.8・0.7を掛けます。</li>
           <li>便カードと詳細画面の比較欄にはGFS・ECMWF・JMAを併記します。JMA欄は主予報と同じ値です。</li>
@@ -180,7 +189,7 @@
     <footer>
       <p>運航可否は最終的に航空会社の判断に従ってください。最新の運航情報はANA公式サイトでご確認ください。</p>
       <p>表示する%は統計的な校正・精度検証が未実施の参考値であり、実際の運航確率ではありません。</p>
-      <p>天候信頼度は、アンサンブル予報の中央80%における統計参考値の幅から算出します。A: 10ポイント以内、B: 20以内、C: 30以内、D: 40以内、E: 40超。</p>
+      <p>予報シナリオの一致度は、GFS・ECMWFそれぞれのアンサンブル予報の中央80%における統計参考値の幅から算出します。A: 10ポイント以内、B: 20以内、C: 30以内、D: 40以内、E: 40超。運航結果の正確さや信頼区間ではありません。</p>
       <p>気象データ: <a href="https://www.jma.go.jp/" rel="noreferrer">気象庁(JMA)</a>モデル (<a href="https://open-meteo.com/" rel="noreferrer">Open-Meteo</a>経由) / 運航実績: <a href="https://www.odpt.org/" rel="noreferrer">公共交通オープンデータセンター</a></p>
       {% if access_stats.days and access_stats_status in ["available", "stale"] %}
         <section class="access-stats" aria-labelledby="access-stats-title">

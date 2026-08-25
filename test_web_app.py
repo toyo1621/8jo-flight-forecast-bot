@@ -81,7 +81,8 @@ def test_build_daily_forecasts():
     assert days[0]["flights"][0]["jma_probability"] == 88.0
     assert [model["label"] for model in days[0]["flights"][0]["model_probabilities"]] == ["JMA"]
     assert days[0]["flights"][0]["wind_direction_label"] == "南"
-    assert days[0]["confidence"]["grade"] == "B"
+    assert days[0]["confidence"]["grade"] is None
+    assert days[0]["confidence"]["source"] == "lead_time_caution"
 
 
 def test_forecast_period_reaches_ten_days_ahead():
@@ -616,6 +617,7 @@ def test_southerly_wind_warning_requires_direction_and_speed():
 def test_calculate_confidence_uses_ensemble_spread():
     members = [
         {
+            "_model": "gfs_seamless",
             "wind_direction": 180.0,
             "wind_speed": float(value),
             "wind_gusts": 7.0,
@@ -633,10 +635,15 @@ def test_calculate_confidence_uses_ensemble_spread():
 
     assert confidence["grade"] == "D"
     assert confidence["member_count"] == 40
+    assert confidence["source"] == "ensemble_partial"
+    assert confidence["models"]["gfs_seamless"]["valid_member_count"] == 40
 
 
 def test_calculate_confidence_ignores_unavailable_member_predictions():
-    members = [{"wind_direction": 180.0, "wind_speed": 5.0} for _ in range(20)]
+    members = [
+        {"_model": "gfs_seamless", "wind_direction": 180.0, "wind_speed": 5.0}
+        for _ in range(20)
+    ]
 
     with patch(
         "web_app.predict_flight_probability",
@@ -644,7 +651,9 @@ def test_calculate_confidence_ignores_unavailable_member_predictions():
     ):
         confidence = calculate_confidence(members)
 
-    assert confidence is None
+    assert confidence["grade"] is None
+    assert confidence["source"] == "unavailable"
+    assert confidence["models"]["gfs_seamless"]["status"] == "insufficient_members"
 
 
 def test_model_reference_probabilities_use_each_models_median():
@@ -697,7 +706,8 @@ def test_deterministic_risk_summary_keeps_jma_risk_labels():
 def test_confidence_note_uses_short_wording():
     template = (BASE_DIR / "templates" / "index.html").read_text(encoding="utf-8")
 
-    assert "(天候信頼度は{{ day.confidence.member_count }}通りの天気予測から{{ day.confidence.spread }}ptと判定)" in template
+    assert "予報シナリオの一致度" in template
+    assert "{{ day.confidence.valid_member_count }}・期待{{ day.confidence.expected_member_count }}通り" in template
 
 
 def test_mobile_css_prevents_horizontal_overflow():
@@ -1096,8 +1106,8 @@ def test_select_evenly_balances_ensemble_members():
 def test_fallback_confidence_decreases_with_lead_time():
     reference = date(2026, 6, 19)
 
-    assert fallback_confidence(reference, reference)["grade"] == "A"
-    assert fallback_confidence(date(2026, 6, 25), reference)["grade"] == "E"
+    assert fallback_confidence(reference, reference)["grade"] is None
+    assert fallback_confidence(date(2026, 6, 25), reference)["source"] == "lead_time_caution"
 
 
 def test_index_renders_forecast():
@@ -1132,13 +1142,13 @@ def test_index_renders_forecast():
     assert "オレンジ: 統計参考値60%未満" in body
     assert "主予報: 気象庁(JMA) GSM・MSMモデル (Open-Meteo経由)" in body
     assert "主予報(JMA)での統計参考値" in body
-    assert "天候信頼度" in body
+    assert "予報シナリオの一致度" in body
     assert "モデル別の統計参考値" in body
     assert "未校正の統計参考値で、将来の運航確率ではありません" in body
     assert ">雲量<" not in body
     assert "なぜ作ったか" in body
     assert "ざっくりどういう仕組みか" in body
-    assert "GFS 31通りとECMWF 31通り、合計62通り" in body
+    assert "GFS・ECMWFを混ぜずにモデル別" in body
     assert "日本周辺の短期予報を重視してJMAを主予報" in body
     assert "八丈島・東京方面 台風影響目安" in body
     assert "運航率に0.9・0.8・0.7を掛けます" in body
