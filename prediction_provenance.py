@@ -23,6 +23,7 @@ SNAPSHOT_WEATHER_FIELDS = (
     "surface_pressure",
     "_primary_supplement_status",
 )
+WEATHER_FIELD_SOURCES_KEY = "_weather_field_sources"
 MODEL_SPECS = (
     ("jma_seamless", "jma_probability", "weather"),
     ("gfs_seamless", "gfs_probability", "ensembles"),
@@ -82,15 +83,26 @@ def build_prediction_snapshot_rows(days, bundle, generated_at=None, run_id=None)
             if not date_string or not flight_number:
                 continue
             valid_at = _valid_at(date_string, flight.get("forecast_hour"))
+            weather_values = {
+                key: flight.get(key)
+                for key in SNAPSHOT_WEATHER_FIELDS
+                if key in flight
+            }
+            field_sources = flight.get(WEATHER_FIELD_SOURCES_KEY)
+            if not isinstance(field_sources, dict):
+                field_sources = {
+                    key: "unknown" for key in weather_values if key != "_primary_supplement_status"
+                }
             weather_json = json.dumps(
-                {
-                    key: flight.get(key)
-                    for key in SNAPSHOT_WEATHER_FIELDS
-                    if key in flight
-                },
+                weather_values,
                 ensure_ascii=False,
                 sort_keys=True,
                 default=str,
+            )
+            weather_field_sources_json = json.dumps(
+                field_sources,
+                ensure_ascii=False,
+                sort_keys=True,
             )
             calculation_status = flight.get("calculation_status")
             if calculation_status is None:
@@ -158,6 +170,7 @@ def build_prediction_snapshot_rows(days, bundle, generated_at=None, run_id=None)
                         "config_version": config_version,
                         "provenance_status": provenance_status,
                         "weather_json": weather_json,
+                        "weather_field_sources_json": weather_field_sources_json,
                         "typhoon_risk_level": typhoon_risk_level,
                         "created_at": generated_timestamp,
                     }

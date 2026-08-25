@@ -9,6 +9,7 @@ on:
 
 permissions:
   contents: read
+  issues: write
   pages: write
   id-token: write
 
@@ -97,6 +98,19 @@ jobs:
             echo "Cloudflare Web Analytics access counts updated." >> "$GITHUB_STEP_SUMMARY"
           else
             echo "Cloudflare Web Analytics was unavailable; forecast deployment continued with last-known-good or unavailable access counts." >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - name: Notify access analytics outage
+        if: steps.access_stats.outcome != 'success'
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          issue_number="$(gh issue list --state open --search 'Cloudflare Web Analytics outage in:title' --json number --jq '.[0].number')"
+          if [ -n "$issue_number" ]; then
+            gh issue comment "$issue_number" --body "Pages run $GITHUB_RUN_IDでもCloudflare Web Analyticsを取得できませんでした。アクセス数はstaleまたはunavailableとして公開を継続しました。"
+          else
+            gh issue create --title "Cloudflare Web Analytics outage" --body "Pages run $GITHUB_RUN_IDでCloudflare Web Analyticsを取得できませんでした。アクセス数はstaleまたはunavailableとして公開を継続しました。Step Summaryとaccess_stats.jsonを確認してください。"
           fi
 
       - name: Upload data quality report

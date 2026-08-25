@@ -14,8 +14,12 @@ from bigquery_schema import (
     ensure_destination,
 )
 from bigquery_storage import build_upsert_sql
-from flight_metadata import VALID_STORED_STATUSES, flight_display_name, normalize_database_status
-
+from flight_metadata import (
+    VALID_STORED_STATUSES,
+    classify_status_reason_with_confidence,
+    flight_display_name,
+    normalize_database_status,
+)
 
 DEFAULT_DB = Path(__file__).resolve().parent / "flights.db"
 
@@ -29,11 +33,25 @@ def read_sqlite_rows(db_file):
     try:
         columns = {row[1] for row in conn.execute("PRAGMA table_info(flight_weather_logs)")}
         reason_column = "status_reason" if "status_reason" in columns else "NULL AS status_reason"
+        reason_source_column = (
+            "status_reason_source" if "status_reason_source" in columns else "NULL AS status_reason_source"
+        )
+        reason_observed_column = (
+            "status_reason_observed_at"
+            if "status_reason_observed_at" in columns
+            else "NULL AS status_reason_observed_at"
+        )
+        reason_confidence_column = (
+            "status_reason_confidence"
+            if "status_reason_confidence" in columns
+            else "NULL AS status_reason_confidence"
+        )
         return conn.execute(
             f"""
             SELECT date, flight_number, scheduled_time, status,
                    wind_direction, wind_speed, wind_gusts,
-                   cloud_cover_low, visibility, NULL AS visibility_source, {reason_column}, created_at
+                   cloud_cover_low, visibility, NULL AS visibility_source, {reason_column},
+                   {reason_source_column}, {reason_observed_column}, {reason_confidence_column}, created_at
             FROM flight_weather_logs
             ORDER BY date, flight_number
             """
@@ -51,6 +69,9 @@ def normalize_row(row, migrated_at=None):
     if status not in VALID_STORED_STATUSES:
         raise ValueError(f"Unsupported flight status: {row['status']}")
     status_reason = "遅延" if row["status"] == "遅延" else row["status_reason"]
+    category, inferred_confidence = classify_status_reason_with_confidence(
+        status, status_reason
+    )
     return {
         "date": row["date"],
         "flight_number": row["flight_number"],
@@ -64,6 +85,12 @@ def normalize_row(row, migrated_at=None):
         "visibility": row["visibility"],
         "visibility_source": row["visibility_source"],
         "status_reason": status_reason,
+        "status_reason_category": category,
+        "status_reason_source": row["status_reason_source"] or (
+            "legacy_migration" if status_reason else None
+        ),
+        "status_reason_observed_at": row["status_reason_observed_at"],
+        "status_reason_confidence": row["status_reason_confidence"] or inferred_confidence,
         "created_at": row["created_at"],
         "migrated_at": migrated_at.isoformat(),
     }

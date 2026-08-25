@@ -6,9 +6,8 @@ from pathlib import Path
 
 import requests
 
-from app_config import FLIGHTS, HACHIJO_AIRPORT_LATITUDE, HACHIJO_AIRPORT_LONGITUDE
+from app_config import FLIGHTS, HACHIJO_AIRPORT_LATITUDE, HACHIJO_AIRPORT_LONGITUDE, JST
 from bigquery_storage import upsert_flight_weather_logs
-
 
 DEFAULT_CSV_FILE = "user_raw_data.csv"
 UNKNOWN_REASON = "未確認"
@@ -24,11 +23,15 @@ FLIGHT_MAPPING = tuple(
 def parse_date_range(date_str):
     date_str = date_str.strip()
     if "〜" not in date_str:
-        return [datetime.strptime(date_str, "%Y-%m-%d").strftime("%Y-%m-%d")]
+        return [
+            datetime.strptime(date_str, "%Y-%m-%d")
+            .replace(tzinfo=JST)
+            .strftime("%Y-%m-%d")
+        ]
 
     start_part, end_part = date_str.split("〜", maxsplit=1)
-    start_dt = datetime.strptime(start_part, "%Y-%m-%d")
-    end_dt = datetime.strptime(f"{start_dt.year}-{end_part}", "%Y-%m-%d")
+    start_dt = datetime.strptime(start_part, "%Y-%m-%d").replace(tzinfo=JST)
+    end_dt = datetime.strptime(f"{start_dt.year}-{end_part}", "%Y-%m-%d").replace(tzinfo=JST)
     if end_dt < start_dt:
         end_dt = end_dt.replace(year=end_dt.year + 1)
 
@@ -101,7 +104,7 @@ def build_weather_map(hourly):
 
     weather_map = {}
     for index, timestamp in enumerate(times):
-        observed_at = datetime.strptime(timestamp, "%Y-%m-%dT%H:%M")
+        observed_at = datetime.strptime(timestamp, "%Y-%m-%dT%H:%M").replace(tzinfo=JST)
         weather = {
             field: hourly[source_field][index]
             for field, source_field in source_fields.items()
@@ -158,6 +161,9 @@ def build_import_items(raw_records, weather_map):
                         "scheduled_time": flight["scheduled_time"],
                         "status": status,
                         "status_reason": status_reason,
+                        "status_reason_source": "csv_import"
+                        if status in {"欠航", "条件付き→引返欠航"}
+                        else None,
                         **weather,
                         "visibility_source": "open_meteo_archive",
                     }

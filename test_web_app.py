@@ -163,6 +163,14 @@ def test_main_forecast_uses_jma_and_supplements_unavailable_fields():
     assert result["2026-06-20T08:00"]["precipitation"] == 0.0
     assert result["2026-06-20T08:00"]["pressure_msl"] is None
     assert result["2026-06-20T08:00"]["_primary_supplement_status"] == "complete"
+    assert result["2026-06-20T08:00"]["_weather_field_sources"] == {
+        "wind_direction": "jma",
+        "wind_speed": "jma",
+        "wind_gusts": "open_meteo_supplement",
+        "cloud_cover_low": "jma",
+        "visibility": "open_meteo_supplement",
+        "precipitation": "jma",
+    }
 
 
 def test_main_forecast_keeps_jma_when_supplement_is_unavailable():
@@ -185,6 +193,8 @@ def test_main_forecast_keeps_jma_when_supplement_is_unavailable():
     assert weather["wind_gusts"] is None
     assert weather["visibility"] is None
     assert weather["_primary_supplement_status"] == "unavailable"
+    assert weather["_weather_field_sources"]["wind_gusts"] == "missing"
+    assert weather["_weather_field_sources"]["visibility"] == "missing"
 
 
 def test_typhoon_impacts_use_jma_flight_risk_levels():
@@ -281,6 +291,14 @@ def test_primary_supplement_reports_fields_that_remain_missing():
         "visibility": None,
         "precipitation": 0.0,
         "_primary_supplement_status": "partial",
+        "_weather_field_sources": {
+            "wind_direction": "jma",
+            "wind_speed": "jma",
+            "wind_gusts": "open_meteo_supplement",
+            "cloud_cover_low": "jma",
+            "visibility": "missing",
+            "precipitation": "jma",
+        },
     }
 
 

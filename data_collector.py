@@ -213,7 +213,9 @@ def parse_flight_data_odpt(flights):
     return result
 
 
-def get_flight_data_odpt(api_key, raw_sink=None, run_id=None, attempt=1):
+def get_flight_data_odpt(
+    api_key, raw_sink=None, run_id=None, attempt=1, target_date=None
+):
     """Fetch ANA HND-to-HAC arrival outcomes without logging the secret URL."""
     print("ODPT APIから運航実績データを取得中...")
     params = {
@@ -221,6 +223,8 @@ def get_flight_data_odpt(api_key, raw_sink=None, run_id=None, attempt=1):
         "odpt:arrivalAirport": "odpt.Airport:HAC",
         "acl:consumerKey": api_key,
     }
+    if target_date:
+        params["odpt:flightDate"] = target_date
     try:
         response = _request_with_retries(
             "https://api.odpt.org/api/v4/odpt:FlightInformationArrival",
@@ -230,7 +234,7 @@ def get_flight_data_odpt(api_key, raw_sink=None, run_id=None, attempt=1):
         response.raise_for_status()
         flights = response.json()
         if raw_sink and run_id:
-            raw_sink("odpt_flight_information_arrival", flights, None, attempt)
+            raw_sink("odpt_flight_information_arrival", flights, target_date, attempt)
     except requests.RequestException as exc:
         raise _safe_request_error("ODPT API", exc) from None
     except ValueError as exc:
@@ -269,9 +273,9 @@ def merge_with_daily_schedule(date_str, actual_flights):
     return merged
 
 
-def get_demo_flight_data():
-    today = datetime.now(JST).strftime("%Y-%m-%d")
-    flights = get_scheduled_flights(today, default_status="運航")
+def get_demo_flight_data(date_str=None):
+    date_str = date_str or datetime.now(JST).strftime("%Y-%m-%d")
+    flights = get_scheduled_flights(date_str, default_status="運航")
     flights[1]["status"] = "運航(条件付)"
     return flights
 
@@ -354,10 +358,21 @@ def main():
         "--replay-run-id",
         help="BigQueryのraw保存から指定run_idの日次データを再生して本表へ反映する",
     )
+    parser.add_argument(
+        "--date",
+        dest="target_date",
+        help="収集対象日をYYYY-MM-DDで指定する（未指定時はJSTの当日）",
+    )
     args = parser.parse_args()
 
-    if sum(bool(value) for value in (args.demo, args.cleanup_only, args.replay_run_id)) > 1:
-        parser.error("--demo、--cleanup-only、--replay-run-idは同時に指定できません。")
+    if sum(bool(value) for value in (args.demo, args.cleanup_only, args.replay_run_id, args.target_date)) > 1:
+        parser.error("--demo、--cleanup-only、--replay-run-id、--dateは同時に指定できません。")
+
+    if args.target_date:
+        try:
+            datetime.strptime(args.target_date, "%Y-%m-%d").replace(tzinfo=JST)
+        except ValueError:
+            parser.error("--dateはYYYY-MM-DD形式で指定してください。")
 
     if args.cleanup_only:
         removed = delete_unresolved_status_rows()
@@ -370,10 +385,10 @@ def main():
         return
 
     api_key = os.getenv("ODPT_API_KEY")
-    today = datetime.now(JST).strftime("%Y-%m-%d")
+    target_date = args.target_date or datetime.now(JST).strftime("%Y-%m-%d")
 
     if args.demo:
-        flights = get_demo_flight_data()
+        flights = get_demo_flight_data(target_date)
         completed = []
         for flight in flights:
             weather = get_weather_data(
@@ -393,6 +408,10 @@ def main():
     attempt = 1
     started_at = datetime.now(timezone.utc).isoformat()
     raw_rows = 0
+    source_status = {
+        "odpt_flight_information_arrival": "pending",
+        "open_meteo_forecast": "pending",
+    }
     print(f"収集run_id: {run_id}")
 
     def raw_sink(source, payload, target_date, raw_attempt):
@@ -405,24 +424,33 @@ def main():
             attempt=raw_attempt,
         )
         raw_rows += 1
+        source_status[source] = "raw_saved"
 
     tracking_started = False
     try:
         record_collection_run(
             run_id,
-            today,
+            target_date,
             "started",
             attempt=attempt,
             started_at=started_at,
+            source_status=source_status,
         )
         tracking_started = True
         removed = delete_unresolved_status_rows()
         if removed:
             print(f"BigQueryから未取得ステータス {removed} 件を削除しました。")
         flights = merge_with_daily_schedule(
-            today,
-            get_flight_data_odpt(api_key, raw_sink=raw_sink, run_id=run_id, attempt=attempt),
+            target_date,
+            get_flight_data_odpt(
+                api_key,
+                target_date=target_date,
+                raw_sink=raw_sink,
+                run_id=run_id,
+                attempt=attempt,
+            ),
         )
+        source_status["odpt_flight_information_arrival"] = "succeeded"
 
         completed = []
         for flight in flights:
@@ -435,6 +463,10 @@ def main():
                 attempt=attempt,
             )
             item = {**flight, **weather}
+            weather_source = weather.get("visibility_source", "open_meteo_forecast")
+            source_status[weather_source] = "succeeded"
+            if weather_source == "open_meteo_archive":
+                source_status["open_meteo_forecast"] = "fallback"
             if item["status"] in {"欠航", "条件付き→引返欠航"}:
                 item["status_reason"] = item.get("status_reason") or UNKNOWN_REASON
             completed.append(item)
@@ -443,21 +475,30 @@ def main():
         saved_count = save_collected_data(completed)
         record_collection_run(
             run_id,
-            today,
+            target_date,
             "succeeded",
             attempt=attempt,
             started_at=started_at,
             completed_at=datetime.now(timezone.utc).isoformat(),
             rows_written=saved_count,
             raw_rows=raw_rows,
+            source_status=source_status,
         )
         print("データ自動収集処理が完了しました。")
     except Exception as exc:
         if tracking_started:
+            source_status = {
+                source: (
+                    status
+                    if status in {"succeeded", "fallback"}
+                    else "failed"
+                )
+                for source, status in source_status.items()
+            }
             try:
                 record_collection_run(
                     run_id,
-                    today,
+                    target_date,
                     "failed",
                     attempt=attempt,
                     started_at=started_at,
@@ -465,6 +506,7 @@ def main():
                     error_code=exc.__class__.__name__,
                     error_message=str(exc)[:500],
                     raw_rows=raw_rows,
+                    source_status=source_status,
                 )
             except Exception:  # noqa: BLE001 - preserve the original collection failure
                 print("収集失敗の記録にも失敗しました。")

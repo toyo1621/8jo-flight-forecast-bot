@@ -49,9 +49,11 @@ JMA主予報の取得に失敗した場合、7時間以内のキャッシュが�
 python data_collector.py --replay-run-id <run_id>
 ```
 
-日次workflowは直近14日分の`collection_runs`を確認し、3便の成功記録がない日をStep Summaryとartifactへ出します。欠損日がある場合はworkflowを失敗させ、run_idを特定してraw再生または原因修正を行います。
+日次workflowは直近14日分の`collection_runs`を確認し、3便の成功記録がない日をStep Summaryとartifactへ出します。最終成功日、連続欠損日数、最新runも表示します。欠損日がある場合はworkflowを失敗させ、run_idを特定してraw再生または原因修正を行います。欠損検知が失敗した場合は、既存の未解決Issueへ追記するか新規Issueを作成します。
 
-欠航理由カテゴリは`weather`（天候・台風・強風等）、`operational`（機材・整備・乗員等）、`airport`（空港・滑走路・管制等）、`other`、`unknown`、`not_applicable`に分けます。理由がない、または未確認の行は`unknown`で保存し、天候起因の学習・評価へ自動算入しません。
+収集を過去日に再実行する場合は、`python data_collector.py --date YYYY-MM-DD`を使います。収集runにはODPT・気象ソースごとの状態、開始・完了時刻、raw保存件数が残ります。
+
+欠航理由カテゴリは`weather`（天候・台風・強風等）、`operational`（機材・整備・乗員等）、`airport`（空港・滑走路・管制等）、`other`、`unknown`、`not_applicable`に分けます。理由がない、または未確認の行は`unknown`で保存し、天候起因の学習・評価へ自動算入しません。`status_reason_source`、`status_reason_observed_at`、`status_reason_confidence`は不明な場合に推測で埋めません。
 
 確認項目:
 
@@ -101,7 +103,7 @@ Pagesの静的生成時に、公開対象のJMA・GFS・ECMWFの各値を`predic
 
 `provenance_status=unknown`の旧キャッシュや取得時刻不明の行は、後続の外部評価で厳密な時系列検証から除外します。これは欠測を現在の予報として扱わないための区別です。
 
-週次の`Evaluate published forecasts` workflowは、実績と結合した公開値を対象に、モデル別Brier score、10ポイント幅の信頼度ビン、ECE、運航率ベースライン、常時運航ベースライン、時系列ローリング分割をJSON/Markdown artifactへ出力します。評価対象がない場合は`insufficient_data`として成功扱いにせず、レポート生成後にworkflowを失敗させます。
+週次の`Evaluate published forecasts` workflowは、実績と結合した公開値を対象に、モデル別・便別・リード日別Brier score、10ポイント幅の信頼度ビン、ECE、運航率ベースライン、常時運航ベースライン、条件付運航の感度分析、時系列ローリング分割をJSON/Markdown artifactへ出力します。評価対象がない場合は`insufficient_data`として成功扱いにせず、レポート生成後にworkflowを失敗させます。詳細は`docs/evaluation.md`を参照してください。
 
 ## データ修正の原則
 

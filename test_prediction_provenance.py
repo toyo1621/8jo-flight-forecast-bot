@@ -21,6 +21,13 @@ def test_prediction_snapshot_rows_capture_time_and_source_provenance():
                     "wind_gusts": 7.0,
                     "cloud_cover_low": 20.0,
                     "visibility": 15.0,
+                    "_weather_field_sources": {
+                        "wind_direction": "jma",
+                        "wind_speed": "jma",
+                        "wind_gusts": "open_meteo_supplement",
+                        "cloud_cover_low": "jma",
+                        "visibility": "open_meteo_supplement",
+                    },
                 }
             ],
         }
@@ -55,6 +62,7 @@ def test_prediction_snapshot_rows_capture_time_and_source_provenance():
     assert rows[1]["calculation_status"] == "available"
     assert rows[2]["probability"] is None
     assert rows[2]["calculation_status"] == "available"
+    assert json.loads(rows[0]["weather_field_sources_json"])["wind_gusts"] == "open_meteo_supplement"
     breakdown = json.loads(rows[0]["factor_breakdown_json"])
     assert breakdown["external_typhoon"]["risk_level"] == "low"
     assert breakdown["ablation"] == {}

@@ -57,14 +57,16 @@ def _probability(value):
     return value
 
 
-def _outcome_label(row):
+def _outcome_label(row, conditional_operated=True):
     status = normalize_status(row.get("outcome_status") or row.get("status"))
     if status not in VALID_STORED_STATUSES:
         return None
+    if status == "運航(条件付)" and not conditional_operated:
+        return 0
     return 1 if status in OPERATED_STATUSES else 0
 
 
-def partition_evaluable_predictions(rows, population="all"):
+def partition_evaluable_predictions(rows, population="all", conditional_operated=True):
     if population not in {"all", "weather_only"}:
         raise ValueError("評価母集団が正しくありません。")
     eligible = []
@@ -92,7 +94,7 @@ def partition_evaluable_predictions(rows, population="all"):
         if retrieved_at and retrieved_at > generated_at:
             excluded["retrieval_after_prediction"] += 1
             continue
-        outcome = _outcome_label(row)
+        outcome = _outcome_label(row, conditional_operated=conditional_operated)
         if outcome is None:
             excluded["unknown_outcome"] += 1
             continue
@@ -281,6 +283,65 @@ def rolling_time_evaluation(rows, min_train_dates=3):
     return folds
 
 
+def _grouped_metrics(rows, key_function):
+    grouped = {}
+    for row in rows:
+        key = key_function(row)
+        grouped.setdefault(key, []).append(row)
+    return {
+        str(key): metric_summary(grouped[key])
+        for key in sorted(grouped, key=lambda value: str(value))
+    }
+
+
+def _lead_day(row):
+    try:
+        lead_hours = int(row.get("lead_hours"))
+    except (TypeError, ValueError):
+        return "unknown"
+    return max(0, lead_hours) // 24
+
+
+def _reason_coverage(rows, key_function):
+    grouped = {}
+    for row in rows:
+        status = normalize_status(row.get("outcome_status") or row.get("status"))
+        if status in OPERATED_STATUSES:
+            continue
+        key = key_function(row)
+        grouped.setdefault(key, []).append(row)
+
+    result = {}
+    for key, members in sorted(grouped.items(), key=lambda item: str(item[0])):
+        unknown_count = sum(
+            1
+            for row in members
+            if row.get("status_reason_category") not in CANCELLATION_REASON_CATEGORIES
+            or row.get("status_reason_category") == "unknown"
+        )
+        result[str(key)] = {
+            "cancellation_count": len(members),
+            "unknown_reason_count": unknown_count,
+            "unknown_reason_rate_percent": round(unknown_count / len(members) * 100, 2),
+            "categories": dict(
+                Counter(
+                    row.get("status_reason_category")
+                    if row.get("status_reason_category") in CANCELLATION_REASON_CATEGORIES
+                    else "unknown"
+                    for row in members
+                )
+            ),
+        }
+    return result
+
+
+def _model_metrics(rows):
+    return {
+        model: metric_summary([row for row in rows if row.get("model") == model])
+        for model in sorted({row.get("model", "unknown") for row in rows})
+    }
+
+
 def evaluate_rows(rows, generated_at=None):
     eligible, excluded = partition_evaluable_predictions(rows, population="all")
     weather_eligible, weather_excluded = partition_evaluable_predictions(
@@ -302,6 +363,11 @@ def evaluate_rows(rows, generated_at=None):
         if normalize_status(row.get("outcome_status") or row.get("status"))
         not in OPERATED_STATUSES
     )
+    conditional_as_non_operated, conditional_excluded = partition_evaluable_predictions(
+        rows,
+        population="all",
+        conditional_operated=False,
+    )
     return {
         "status": "ok" if eligible else "insufficient_data",
         "generated_at": generated_at or datetime.now(UTC).isoformat(),
@@ -312,6 +378,31 @@ def evaluate_rows(rows, generated_at=None):
         "category_coverage": dict(category_coverage),
         "weather_only_count": len(weather_eligible),
         "models": models,
+        "by_flight": _grouped_metrics(eligible, lambda row: row.get("flight_number", "unknown")),
+        "by_lead_day": _grouped_metrics(eligible, _lead_day),
+        "reason_coverage_by_flight": _reason_coverage(
+            rows, lambda row: row.get("flight_number", "unknown")
+        ),
+        "reason_coverage_by_period": _reason_coverage(
+            rows, lambda row: row.get("forecast_target_date", row.get("target_date", "unknown"))
+        ),
+        "conditional_status_sensitivity": {
+            "current_as_operated": {
+                "eligible_count": len(eligible),
+                "overall": metric_summary(eligible),
+                "models": _model_metrics(eligible),
+            },
+            "as_non_operated": {
+                "eligible_count": len(conditional_as_non_operated),
+                "excluded_counts": conditional_excluded,
+                "overall": metric_summary(conditional_as_non_operated),
+                "models": _model_metrics(conditional_as_non_operated),
+            },
+        },
+        "by_version": _grouped_metrics(
+            eligible,
+            lambda row: f"{row.get('code_version') or 'unknown'}@{row.get('config_version') or 'unknown'}",
+        ),
         "factor_ablation": factor_ablation_evaluation(rows),
         "rolling_time": rolling_time_evaluation(eligible),
         "rolling_time_weather_only": rolling_time_evaluation(weather_eligible),
@@ -331,14 +422,20 @@ def fetch_prediction_outcomes(lookback_days=365):
           s.model,
           s.calculation_status,
           s.probability,
+          s.lead_hours,
           s.factor_breakdown_json,
+          s.code_version,
+          s.config_version,
           s.prediction_generated_at,
           s.weather_retrieved_at,
           s.weather_valid_at,
           s.provenance_status,
           h.status AS outcome_status,
           h.status_reason_category,
-          h.status_reason
+          h.status_reason,
+          h.status_reason_source,
+          h.status_reason_observed_at,
+          h.status_reason_confidence
         FROM `{_collection_table_path(PREDICTION_SNAPSHOT_TABLE, config)}` s
         JOIN `{table_path(config)}` h
           ON h.date = s.forecast_target_date
@@ -386,6 +483,55 @@ def markdown_report(report):
                     "",
                 ]
             )
+    lines.extend(["## 便別・リード日別指標", ""])
+    by_flight = report.get("by_flight", {})
+    by_lead_day = report.get("by_lead_day", {})
+    if by_flight:
+        lines.append("### 便別")
+        lines.extend(
+            f"- `{flight}`: {metrics['count']}件 / Brier {metrics['brier_score']} / ECE {metrics['expected_calibration_error_percent']}"
+            for flight, metrics in by_flight.items()
+        )
+    else:
+        lines.append("- 便別に分解できる評価対象がありません。")
+    if by_lead_day:
+        lines.append("### リード日別")
+        lines.extend(
+            f"- `{lead_day}`日先: {metrics['count']}件 / Brier {metrics['brier_score']} / ECE {metrics['expected_calibration_error_percent']}"
+            for lead_day, metrics in by_lead_day.items()
+        )
+    else:
+        lines.append("- リード日別に分解できる評価対象がありません。")
+    by_version = report.get("by_version", {})
+    if by_version:
+        lines.append("### コード・設定版別（変更前後比較用）")
+        lines.extend(
+            f"- `{version}`: {metrics['count']}件 / Brier {metrics['brier_score']} / ECE {metrics['expected_calibration_error_percent']}"
+            for version, metrics in by_version.items()
+        )
+    sensitivity = report.get("conditional_status_sensitivity", {})
+    if sensitivity:
+        current = sensitivity.get("current_as_operated", {})
+        alternative = sensitivity.get("as_non_operated", {})
+        lines.extend(
+            [
+                "",
+                "## 条件付運航の感度分析",
+                "",
+                f"- 現行定義（条件付運航を運航扱い）: {current.get('eligible_count', 0)}件",
+                f"- 感度分析（条件付運航を非運航扱い）: {alternative.get('eligible_count', 0)}件",
+            ]
+        )
+    lines.extend(["", "## 欠航理由の未知率", ""])
+    reason_by_flight = report.get("reason_coverage_by_flight", {})
+    if reason_by_flight:
+        lines.extend(
+            f"- `{flight}`: {summary['unknown_reason_count']}/{summary['cancellation_count']}件 "
+            f"({summary['unknown_reason_rate_percent']}%)"
+            for flight, summary in reason_by_flight.items()
+        )
+    else:
+        lines.append("- 欠航実績がないため未集計")
     lines.extend(["## 時系列ローリング分割", ""])
     if report["rolling_time"]:
         lines.extend(

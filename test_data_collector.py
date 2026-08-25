@@ -104,6 +104,23 @@ def test_odpt_transient_failure_is_retried_and_raw_payload_can_be_captured():
     assert captured[0][0] == "odpt_flight_information_arrival"
 
 
+def test_odpt_request_can_filter_by_target_date():
+    response = Mock(status_code=200)
+    response.json.return_value = [
+        {
+            "odpt:originAirport": "odpt.Airport:HND",
+            "odpt:flightNumber": ["NH1891"],
+            "odpt:flightStatus": "odpt.FlightStatus:Normal",
+            "odpt:flightDate": "2026-07-15",
+        }
+    ]
+
+    with patch("data_collector.requests.get", return_value=response) as get:
+        get_flight_data_odpt("test-key", target_date="2026-07-15")
+
+    assert get.call_args.kwargs["params"]["odpt:flightDate"] == "2026-07-15"
+
+
 def test_replay_collection_run_rebuilds_rows_from_raw_payloads():
     odpt_payload = [
         {
@@ -201,3 +218,31 @@ def test_collection_failure_does_not_write_bigquery(monkeypatch):
     save.assert_not_called()
     assert record_run.call_count == 2
     assert record_run.call_args_list[-1].args[2] == "failed"
+
+
+def test_collection_date_argument_is_recorded_and_passed_to_odpt(monkeypatch):
+    monkeypatch.setattr("sys.argv", ["data_collector.py", "--date", "2026-07-15"])
+    monkeypatch.setenv("ODPT_API_KEY", "test-key")
+    weather = {
+        "wind_direction": 180.0,
+        "wind_speed": 5.0,
+        "wind_gusts": 8.0,
+        "cloud_cover_low": 20.0,
+        "visibility": 15.0,
+        "visibility_source": "open_meteo_forecast",
+    }
+    with (
+        patch("data_collector.delete_unresolved_status_rows", return_value=0),
+        patch(
+            "data_collector.get_flight_data_odpt",
+            return_value=[_actual_flight(number) for number in ("ANA1891", "ANA1893", "ANA1895")],
+        ) as get_flights,
+        patch("data_collector.get_weather_data", return_value=weather),
+        patch("data_collector.record_collection_run") as record_run,
+        patch("data_collector.save_collected_data", return_value=3),
+    ):
+        main()
+
+    assert get_flights.call_args.kwargs["target_date"] == "2026-07-15"
+    assert record_run.call_args_list[0].args[1] == "2026-07-15"
+    assert record_run.call_args_list[-1].kwargs["source_status"]["odpt_flight_information_arrival"] == "succeeded"

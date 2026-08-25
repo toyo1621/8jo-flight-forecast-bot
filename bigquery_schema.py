@@ -22,6 +22,9 @@ SCHEMA = (
     bigquery.SchemaField("visibility_source", "STRING"),
     bigquery.SchemaField("status_reason", "STRING"),
     bigquery.SchemaField("status_reason_category", "STRING"),
+    bigquery.SchemaField("status_reason_source", "STRING"),
+    bigquery.SchemaField("status_reason_observed_at", "TIMESTAMP"),
+    bigquery.SchemaField("status_reason_confidence", "FLOAT"),
     bigquery.SchemaField("created_at", "TIMESTAMP"),
     bigquery.SchemaField("migrated_at", "TIMESTAMP", mode="REQUIRED"),
 )
@@ -47,6 +50,7 @@ COLLECTION_RUN_SCHEMA = (
     bigquery.SchemaField("error_message", "STRING"),
     bigquery.SchemaField("rows_written", "INTEGER"),
     bigquery.SchemaField("raw_rows", "INTEGER"),
+    bigquery.SchemaField("source_status_json", "STRING"),
     bigquery.SchemaField("code_version", "STRING"),
     bigquery.SchemaField("created_at", "TIMESTAMP", mode="REQUIRED"),
 )
@@ -75,6 +79,7 @@ PREDICTION_SNAPSHOT_SCHEMA = (
     bigquery.SchemaField("config_version", "STRING", mode="REQUIRED"),
     bigquery.SchemaField("provenance_status", "STRING", mode="REQUIRED"),
     bigquery.SchemaField("weather_json", "STRING", mode="REQUIRED"),
+    bigquery.SchemaField("weather_field_sources_json", "STRING"),
     bigquery.SchemaField("typhoon_risk_level", "STRING"),
     bigquery.SchemaField("created_at", "TIMESTAMP", mode="REQUIRED"),
 )
@@ -89,10 +94,16 @@ def ensure_destination(client, dataset_id, table_id, location):
     table_ref.time_partitioning = bigquery.TimePartitioning(field="date")
     table_ref.clustering_fields = ["flight_number", "status"]
     client.create_table(table_ref, exists_ok=True)
-    client.query(
-        f"ALTER TABLE `{client.project}.{dataset_id}.{table_id}` "
-        "ADD COLUMN IF NOT EXISTS status_reason_category STRING"
-    ).result()
+    for column in (
+        "status_reason_category STRING",
+        "status_reason_source STRING",
+        "status_reason_observed_at TIMESTAMP",
+        "status_reason_confidence FLOAT64",
+    ):
+        client.query(
+            f"ALTER TABLE `{client.project}.{dataset_id}.{table_id}` "
+            f"ADD COLUMN IF NOT EXISTS {column}"
+        ).result()
 
 
 def ensure_collection_destinations(client, dataset_id, location):
@@ -113,6 +124,10 @@ def ensure_collection_destinations(client, dataset_id, location):
     runs_ref.time_partitioning = bigquery.TimePartitioning(field="started_at")
     runs_ref.clustering_fields = ["target_date", "status"]
     client.create_table(runs_ref, exists_ok=True)
+    client.query(
+        f"ALTER TABLE `{client.project}.{dataset_id}.{RUNS_TABLE}` "
+        "ADD COLUMN IF NOT EXISTS source_status_json STRING"
+    ).result()
 
 
 def ensure_prediction_snapshot_destination(client, dataset_id, location):
@@ -132,6 +147,7 @@ def ensure_prediction_snapshot_destination(client, dataset_id, location):
         "weather_factor FLOAT64",
         "typhoon_factor FLOAT64",
         "factor_breakdown_json STRING",
+        "weather_field_sources_json STRING",
     ):
         client.query(
             f"ALTER TABLE `{client.project}.{dataset_id}.{PREDICTION_SNAPSHOT_TABLE}` "

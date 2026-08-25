@@ -1,4 +1,5 @@
 import json
+import math
 import os
 import uuid
 from datetime import datetime, timezone
@@ -21,10 +22,9 @@ from bigquery_schema import (
     ensure_prediction_snapshot_destination,
 )
 from flight_metadata import (
-    CANCELLATION_REASON_CATEGORIES,
     VALID_HISTORY_STATUSES,
     VALID_STORED_STATUSES,
-    classify_status_reason,
+    classify_status_reason_with_confidence,
     flight_display_name,
     normalize_database_status,
     normalize_status,
@@ -105,6 +105,7 @@ def record_collection_run(
     error_message=None,
     rows_written=None,
     raw_rows=None,
+    source_status=None,
     code_version=None,
 ):
     config = settings()
@@ -122,6 +123,7 @@ def record_collection_run(
         "error_message": error_message,
         "rows_written": rows_written,
         "raw_rows": raw_rows,
+        "source_status_json": json.dumps(source_status or {}, ensure_ascii=False, sort_keys=True),
         "code_version": code_version or os.getenv("GITHUB_SHA"),
         "created_at": now,
     }
@@ -192,7 +194,8 @@ def fetch_detailed_history():
     query = f"""
         SELECT CAST(date AS STRING) AS date, flight_number, flight_display_name,
                status, status_reason, wind_direction, wind_speed, wind_gusts,
-               cloud_cover_low, visibility, status_reason_category
+               cloud_cover_low, visibility, status_reason_category,
+               status_reason_source, status_reason_observed_at, status_reason_confidence
         FROM `{table_path(config)}`
         WHERE status IS NOT NULL
           AND wind_direction IS NOT NULL
@@ -212,9 +215,25 @@ def _normalize_item(item, timestamp):
     status = normalize_database_status(item.get("status"))
     if status not in VALID_STORED_STATUSES:
         raise ValueError(f"Unsupported flight status: {item.get('status')}")
-    reason_category = item.get("status_reason_category")
-    if reason_category not in CANCELLATION_REASON_CATEGORIES:
-        reason_category = classify_status_reason(status, item.get("status_reason"))
+    reason_category, inferred_confidence = classify_status_reason_with_confidence(
+        status,
+        item.get("status_reason"),
+        item.get("status_reason_category"),
+    )
+    confidence = item.get("status_reason_confidence", inferred_confidence)
+    try:
+        confidence = float(confidence) if confidence is not None else None
+    except (TypeError, ValueError):
+        confidence = None
+    if confidence is not None and (not math.isfinite(confidence) or not 0 <= confidence <= 1):
+        confidence = None
+    reason_source = item.get("status_reason_source")
+    if not reason_source and reason_category != "not_applicable":
+        reason_source = (
+            "unknown"
+            if not item.get("status_reason") or item.get("status_reason") in {"未確認", "不明", "unknown"}
+            else "unspecified"
+        )
     return {
         "date": item["date"],
         "flight_number": item["flight_number"],
@@ -231,6 +250,9 @@ def _normalize_item(item, timestamp):
         ),
         "status_reason": item.get("status_reason"),
         "status_reason_category": reason_category,
+        "status_reason_source": reason_source,
+        "status_reason_observed_at": item.get("status_reason_observed_at"),
+        "status_reason_confidence": confidence,
         "created_at": timestamp,
         "migrated_at": timestamp,
     }
@@ -266,16 +288,36 @@ def build_upsert_sql(destination, staging):
               THEN COALESCE(T.status_reason_category, S.status_reason_category)
             ELSE S.status_reason_category
           END,
+          status_reason_source = CASE
+            WHEN S.status = T.status
+              AND (S.status_reason IS NULL OR S.status_reason = '未確認')
+              THEN COALESCE(T.status_reason_source, S.status_reason_source)
+            ELSE S.status_reason_source
+          END,
+          status_reason_observed_at = CASE
+            WHEN S.status = T.status
+              AND (S.status_reason IS NULL OR S.status_reason = '未確認')
+              THEN COALESCE(T.status_reason_observed_at, S.status_reason_observed_at)
+            ELSE S.status_reason_observed_at
+          END,
+          status_reason_confidence = CASE
+            WHEN S.status = T.status
+              AND (S.status_reason IS NULL OR S.status_reason = '未確認')
+              THEN COALESCE(T.status_reason_confidence, S.status_reason_confidence)
+            ELSE S.status_reason_confidence
+          END,
           created_at = COALESCE(T.created_at, S.created_at),
           migrated_at = COALESCE(T.migrated_at, S.migrated_at)
         WHEN NOT MATCHED THEN INSERT
           (date, flight_number, flight_display_name, scheduled_time, status, wind_direction,
            wind_speed, wind_gusts, cloud_cover_low, visibility, visibility_source, status_reason,
-           status_reason_category, created_at, migrated_at)
+           status_reason_category, status_reason_source, status_reason_observed_at,
+           status_reason_confidence, created_at, migrated_at)
         VALUES
           (S.date, S.flight_number, S.flight_display_name, S.scheduled_time, S.status,
            S.wind_direction, S.wind_speed, S.wind_gusts, S.cloud_cover_low, S.visibility,
            S.visibility_source, S.status_reason, S.status_reason_category,
+           S.status_reason_source, S.status_reason_observed_at, S.status_reason_confidence,
            S.created_at, S.migrated_at)
     """
 

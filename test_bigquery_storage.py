@@ -1,3 +1,4 @@
+import json
 from unittest.mock import Mock, patch
 
 import pytest
@@ -90,6 +91,44 @@ def test_normalize_item_uses_database_status_and_visibility_source():
 
     assert result["status"] == "運航(条件付)"
     assert result["visibility_source"] == "open_meteo_archive"
+
+
+def test_normalize_item_keeps_reason_metadata_and_marks_heuristic_confidence():
+    result = bigquery_storage._normalize_item(
+        {
+            "date": "2025-06-15",
+            "flight_number": "ANA1891",
+            "status": "欠航",
+            "status_reason": "強風",
+            "status_reason_source": "airline_notice",
+            "status_reason_observed_at": "2025-06-15T07:00:00+09:00",
+        },
+        "2026-06-22T00:00:00+00:00",
+    )
+
+    assert result["status_reason_category"] == "weather"
+    assert result["status_reason_source"] == "airline_notice"
+    assert result["status_reason_observed_at"] == "2025-06-15T07:00:00+09:00"
+    assert result["status_reason_confidence"] == 0.5
+
+
+def test_record_collection_run_serializes_source_status():
+    client = Mock(project="hachijo-flight-forecast")
+    client.insert_rows_json.return_value = []
+
+    with (
+        patch("bigquery_storage.bigquery.Client", return_value=client),
+        patch("bigquery_storage.ensure_collection_destinations"),
+    ):
+        bigquery_storage.record_collection_run(
+            "run-1",
+            "2026-08-24",
+            "failed",
+            source_status={"odpt": "failed"},
+        )
+
+    row = client.insert_rows_json.call_args.args[1][0]
+    assert json.loads(row["source_status_json"]) == {"odpt": "failed"}
 
 
 def test_collector_uses_bigquery_backend():
