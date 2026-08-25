@@ -85,6 +85,38 @@ def test_build_daily_forecasts():
     assert days[0]["confidence"]["source"] == "lead_time_caution"
 
 
+def test_build_daily_forecasts_evaluates_each_ensemble_member_once():
+    members = [
+        {"_model": "gfs_seamless", "_member_id": "gfs_seamless:01", "wind_speed": 5.0},
+        {"_model": "gfs_seamless", "_member_id": "gfs_seamless:02", "wind_speed": 6.0},
+    ]
+    calls = []
+
+    def predictor(**weather):
+        calls.append(weather)
+        return {
+            "probability": weather.get("wind_speed", 0.0),
+            "alert_required": False,
+            "warning_msg": "特になし",
+            "data_count": 10,
+            "step_used": 1,
+        }
+
+    with (
+        patch("web_app.predict_flight_probability", side_effect=predictor),
+        patch("web_app.find_similar_flights", return_value=[]),
+    ):
+        build_daily_forecasts(
+            SAMPLE_WEATHER,
+            ensembles_by_time={"2026-06-20T08:00": members},
+            reference_date=date(2026, 6, 19),
+            current_time=datetime(2026, 6, 19, 12, 0, tzinfo=JST),
+        )
+
+    assert len(calls) == 1 + len(members)
+    assert [call["wind_speed"] for call in calls] == [4.0, 5.0, 6.0]
+
+
 def test_forecast_period_reaches_ten_days_ahead():
     assert FORECAST_DAYS == 11
 
