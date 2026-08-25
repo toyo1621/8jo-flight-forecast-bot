@@ -1,9 +1,7 @@
 import logging
-from collections import Counter
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timedelta
 from pathlib import Path
-from statistics import median
 
 import requests
 from flask import Flask, render_template
@@ -25,7 +23,17 @@ from app_config import (
     TYPHOON_IMPACT_SOURCE,
     TYPHOON_NUMERIC_ADJUSTMENT_ENABLED,
 )
-from ensemble_quality import evaluate_ensemble_confidence
+from clients.open_meteo import (
+    fetch_deterministic_forecast as client_fetch_deterministic_forecast,
+)
+from clients.open_meteo import (
+    fetch_ensemble_model as client_fetch_ensemble_model,
+)
+from clients.open_meteo import (
+    select_evenly,
+)
+from clients.typhoon_impact import fetch_typhoon_impacts as client_fetch_typhoon_impacts
+from ensemble_evaluation import RISK_LABELS, evaluate_ensemble_members, risk_labels
 from flight_metadata import flight_display_name
 from forecast_cache import (
     forecast_source_timestamp,
@@ -36,11 +44,7 @@ from forecast_cache import (
 )
 from forecast_engine import find_similar_flights, predict_flight_probability
 from presentation import decorate_flight_for_display
-from typhoon_impact import (
-    has_factor_breakdown,
-    normalize_typhoon_impact,
-    typhoon_risk_level,
-)
+from typhoon_impact import has_factor_breakdown, typhoon_risk_level
 
 BASE_DIR = Path(__file__).resolve().parent
 LOGGER = logging.getLogger(__name__)
@@ -57,46 +61,14 @@ PRIMARY_SUPPLEMENT_STATUS_KEY = "_primary_supplement_status"
 
 
 def _fetch_deterministic_forecast(model=None, latitude=HACHIJO_AIRPORT_LATITUDE, longitude=HACHIJO_AIRPORT_LONGITUDE):
-    params = {
-        "latitude": latitude,
-        "longitude": longitude,
-        "hourly": "wind_speed_10m,wind_direction_10m,wind_gusts_10m,cloud_cover_low,visibility,precipitation,pressure_msl,surface_pressure",
-        "wind_speed_unit": "ms",
-        "timezone": "Asia/Tokyo",
-        "forecast_days": FORECAST_DAYS,
-    }
-    if model:
-        params["models"] = model
-    response = requests.get(
-        MAIN_FORECAST_URL,
-        params=params,
-        timeout=10,
+    return client_fetch_deterministic_forecast(
+        model=model,
+        latitude=latitude,
+        longitude=longitude,
+        endpoint=MAIN_FORECAST_URL,
+        forecast_days=FORECAST_DAYS,
+        request_get=requests.get,
     )
-    response.raise_for_status()
-    hourly = response.json().get("hourly", {})
-    times = hourly.get("time", [])
-    required = {
-        "wind_speed_10m",
-        "wind_direction_10m",
-        "cloud_cover_low",
-        "precipitation",
-    }
-    if not times or any(len(hourly.get(key, [])) != len(times) for key in required):
-        raise ValueError("気象データの構造が正しくありません。")
-
-    weather_by_time = {}
-    for index, timestamp in enumerate(times):
-        weather_by_time[timestamp] = {
-            "wind_speed": hourly["wind_speed_10m"][index],
-            "wind_direction": hourly["wind_direction_10m"][index],
-            "wind_gusts": _optional_hourly_value(hourly, "wind_gusts_10m", index),
-            "cloud_cover_low": hourly["cloud_cover_low"][index],
-            "visibility": _meters_to_km(_optional_hourly_value(hourly, "visibility", index)),
-            "precipitation": hourly["precipitation"][index],
-            "pressure_msl": _optional_hourly_value(hourly, "pressure_msl", index),
-            "surface_pressure": _optional_hourly_value(hourly, "surface_pressure", index),
-        }
-    return weather_by_time
 
 
 def fetch_forecast():
@@ -132,54 +104,12 @@ def _supplement_primary_forecast(primary, supplement):
 
 
 def fetch_typhoon_impacts():
-    response = requests.get(
-        TYPHOON_IMPACT_API_URL,
-        params={"source": TYPHOON_IMPACT_SOURCE},
-        timeout=15,
+    return client_fetch_typhoon_impacts(
+        endpoint=TYPHOON_IMPACT_API_URL,
+        source=TYPHOON_IMPACT_SOURCE,
+        valid_levels={"low", *TYPHOON_IMPACT_MULTIPLIERS},
+        request_get=requests.get,
     )
-    response.raise_for_status()
-    payload = response.json()
-    if not isinstance(payload, dict) or payload.get("source") != TYPHOON_IMPACT_SOURCE:
-        raise ValueError("台風影響度APIのデータソースが正しくありません。")
-
-    days = payload.get("days")
-    if not isinstance(days, list) or not days:
-        raise ValueError("台風影響度APIの日別データがありません。")
-
-    valid_levels = {"low", *TYPHOON_IMPACT_MULTIPLIERS}
-    source_details = payload.get("sourceDetails") or {}
-    score_config = payload.get("scoreConfig") or {}
-    factor_weights = (score_config.get("targetWeights") or {}).get("flight", {})
-    factor_max_values = score_config.get("factorMaxValues", {})
-    impacts = {}
-    for day in days:
-        if not isinstance(day, dict):
-            continue
-        targets = day.get("targets")
-        target = targets.get("flight", {}) if isinstance(targets, dict) else {}
-        if not isinstance(target, dict):
-            target = {}
-        level = target.get("riskLevel")
-        date_string = day.get("date")
-        if isinstance(date_string, str) and level in valid_levels:
-            impacts[date_string] = normalize_typhoon_impact(
-                {
-                    "risk_level": level,
-                    "score": target.get("score"),
-                    "factors": target.get("factors", {}),
-                    "inputs": target.get("inputs", {}),
-                    "reasons": target.get("reasons", []),
-                    "source_mode": source_details.get("mode"),
-                    "source_provider": source_details.get("weatherProvider"),
-                    "typhoon_provider": source_details.get("typhoonProvider"),
-                    "score_config_version": score_config.get("version"),
-                    "factor_weights": factor_weights,
-                    "factor_max_values": factor_max_values,
-                }
-            )
-    if not impacts:
-        raise ValueError("台風影響度APIに利用可能な飛行機向け影響度がありません。")
-    return impacts
 
 
 def fetch_ensemble_forecast():
@@ -217,72 +147,20 @@ def fetch_ensemble_forecast():
 
 
 def _select_evenly(values, limit):
-    if limit is None or len(values) <= limit:
-        return values
-    if limit <= 1:
-        return values[:limit]
-    indices = [round(index * (len(values) - 1) / (limit - 1)) for index in range(limit)]
-    return [values[index] for index in indices]
+    return select_evenly(values, limit)
 
 
 def _fetch_ensemble_model(model, variables, max_members=None):
-    response = requests.get(
-        ENSEMBLE_FORECAST_URL,
-        params={
-            "latitude": HACHIJO_AIRPORT_LATITUDE,
-            "longitude": HACHIJO_AIRPORT_LONGITUDE,
-            "hourly": ",".join(variables),
-            "models": model,
-            "wind_speed_unit": "ms",
-            "timezone": "Asia/Tokyo",
-            "forecast_days": FORECAST_DAYS,
-        },
-        timeout=20,
+    return client_fetch_ensemble_model(
+        model=model,
+        variables=variables,
+        max_members=max_members,
+        latitude=HACHIJO_AIRPORT_LATITUDE,
+        longitude=HACHIJO_AIRPORT_LONGITUDE,
+        endpoint=ENSEMBLE_FORECAST_URL,
+        forecast_days=FORECAST_DAYS,
+        request_get=requests.get,
     )
-    response.raise_for_status()
-    hourly = response.json().get("hourly", {})
-    times = hourly.get("time", [])
-    member_key = variables[0]
-    suffixes = [
-        key.removeprefix(member_key)
-        for key in hourly
-        if key == member_key or key.startswith(f"{member_key}_member")
-    ]
-    suffixes = _select_evenly(suffixes, max_members)
-    if not times or not suffixes:
-        raise ValueError("アンサンブル予報の構造が正しくありません。")
-
-    ensembles_by_time = {}
-    for index, timestamp in enumerate(times):
-        members = []
-        for suffix in suffixes:
-            keys = [f"{variable}{suffix}" for variable in variables]
-            if any(key not in hourly or index >= len(hourly[key]) for key in keys):
-                continue
-            values = [hourly[key][index] for key in keys]
-            if any(value is None for value in values):
-                continue
-            weather = {
-                variable.removesuffix("_10m"): value
-                for variable, value in zip(variables, values)
-            }
-            weather["_model"] = model
-            if "visibility" in weather:
-                weather["visibility"] = _meters_to_km(weather["visibility"])
-            members.append(weather)
-        ensembles_by_time[timestamp] = members
-    return ensembles_by_time
-
-
-def _meters_to_km(value):
-    return round(value / 1000, 1) if value is not None else None
-
-
-def _optional_hourly_value(hourly, key, index):
-    values = hourly.get(key)
-    if values is None or index >= len(values):
-        return None
-    return values[index]
 
 
 def _prediction_weather(weather):
@@ -293,8 +171,8 @@ def _prediction_weather(weather):
     }
 
 
-def calculate_confidence(ensemble_members, baseline_weather=None, flight_number=None):
-    return evaluate_ensemble_confidence(
+def calculate_ensemble_evaluation(ensemble_members, baseline_weather=None, flight_number=None):
+    return evaluate_ensemble_members(
         ensemble_members,
         baseline_weather=baseline_weather,
         flight_number=flight_number,
@@ -303,88 +181,32 @@ def calculate_confidence(ensemble_members, baseline_weather=None, flight_number=
     )
 
 
+def calculate_confidence(ensemble_members, baseline_weather=None, flight_number=None):
+    return calculate_ensemble_evaluation(
+        ensemble_members,
+        baseline_weather=baseline_weather,
+        flight_number=flight_number,
+    ).confidence
+
+
 def calculate_model_reference_probabilities(ensemble_members, baseline_weather=None, flight_number=None):
-    baseline_weather = baseline_weather or {}
-    probabilities = {}
-    for member in ensemble_members:
-        model = member.get("_model")
-        if not model:
-            continue
-        weather = {key: value for key, value in member.items() if key != "_model"}
-        result = predict_flight_probability(
-            **_prediction_weather({**baseline_weather, **weather}),
-            flight_number=flight_number,
-        )
-        if result.get("calculation_status", "available") != "available":
-            continue
-        probability = result.get("probability")
-        if probability is not None:
-            probabilities.setdefault(model, []).append(probability)
-    return {
-        model: round(median(values), 1)
-        for model, values in probabilities.items()
-        if values
-    }
-
-
-RISK_LABELS = (
-    "南風注意",
-    "視程不良リスク",
-    "降水注意",
-    "低層雲の影響注意",
-    "突風注意",
-    "強風注意",
-    "台風接近リスク",
-)
-
-
-def _risk_labels(warning_msg):
-    if not warning_msg or warning_msg in {"なし", "特になし"}:
-        return []
-    labels = []
-    for warning in str(warning_msg).split("、"):
-        for label in RISK_LABELS:
-            if warning.startswith(label):
-                labels.append(label)
-                break
-    return labels
-
-
-def _format_risk_summary(counts, total):
-    if not counts:
-        return "特になし"
-    return "、".join(
-        f"{label} ({counts[label]}/{total}通り)"
-        for label in RISK_LABELS
-        if counts.get(label)
-    )
+    return calculate_ensemble_evaluation(
+        ensemble_members,
+        baseline_weather=baseline_weather,
+        flight_number=flight_number,
+    ).model_probabilities
 
 
 def calculate_model_reference_risks(ensemble_members, baseline_weather=None, flight_number=None):
-    baseline_weather = baseline_weather or {}
-    risk_counts = {}
-    totals = Counter()
-    for member in ensemble_members:
-        model = member.get("_model")
-        if not model:
-            continue
-        weather = {key: value for key, value in member.items() if key != "_model"}
-        result = predict_flight_probability(
-            **_prediction_weather({**baseline_weather, **weather}),
-            flight_number=flight_number,
-        )
-        totals[model] += 1
-        risk_counts.setdefault(model, Counter()).update(_risk_labels(result.get("warning_msg")))
-
-    return {
-        model: _format_risk_summary(risk_counts.get(model, Counter()), total)
-        for model, total in totals.items()
-        if total
-    }
+    return calculate_ensemble_evaluation(
+        ensemble_members,
+        baseline_weather=baseline_weather,
+        flight_number=flight_number,
+    ).model_risks
 
 
 def deterministic_risk_summary(result):
-    labels = set(_risk_labels(result.get("warning_msg")))
+    labels = set(risk_labels(result.get("warning_msg")))
     return "、".join(label for label in RISK_LABELS if label in labels) or "特になし"
 
 
@@ -702,26 +524,19 @@ def build_daily_forecasts(
                 **_prediction_weather(weather),
                 flight_number=flight["number"],
             )
-            confidence = calculate_confidence(
+            ensemble_evaluation = calculate_ensemble_evaluation(
                 ensembles_by_time.get(timestamp, []),
                 weather,
                 flight_number=flight["number"],
             )
+            confidence = ensemble_evaluation.confidence
             result = _with_typhoon_impact(result, typhoon_impact)
-            model_probabilities = calculate_model_reference_probabilities(
-                ensembles_by_time.get(timestamp, []),
-                weather,
-                flight_number=flight["number"],
-            )
+            model_probabilities = ensemble_evaluation.model_probabilities
             model_probabilities = {
                 model: _with_typhoon_probability_adjustment(probability, typhoon_impact)
                 for model, probability in model_probabilities.items()
             }
-            model_risks = calculate_model_reference_risks(
-                ensembles_by_time.get(timestamp, []),
-                weather,
-                flight_number=flight["number"],
-            )
+            model_risks = ensemble_evaluation.model_risks
             model_risks = {
                 model: _with_typhoon_risk_summary(risk, typhoon_impact)
                 for model, risk in model_risks.items()

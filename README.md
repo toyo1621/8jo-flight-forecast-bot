@@ -273,13 +273,16 @@ GitHub Actionsでは、BigQuery上の重複、未知ステータス、未知便�
 - 依存関係はDependabotで週次確認し、CIでは`pip-audit`、定期実行ではCodeQLを使って既知脆弱性とコード上の問題を検査します。
 - データ修正と運用障害はGitHub Issueテンプレートで記録できます。
 
-詳細は[`SECURITY.md`](SECURITY.md)、[`docs/operations.md`](docs/operations.md)、[`docs/nfr_scorecard.md`](docs/nfr_scorecard.md)を参照してください。
+詳細は[`SECURITY.md`](SECURITY.md)、[`docs/operations.md`](docs/operations.md)、[`docs/architecture.md`](docs/architecture.md)、[`docs/nfr_scorecard.md`](docs/nfr_scorecard.md)を参照してください。
 
 ## 主なファイル
 
 | パス | 役割 |
 | --- | --- |
-| `web_app.py` | Flaskアプリ、気象予報取得、信頼度計算 |
+| `web_app.py` | Flaskアプリ、取得・キャッシュ・表示のオーケストレーション |
+| `clients/` | Open-Meteo・台風影響度APIのHTTPクライアントとレスポンス解析 |
+| `ensemble_evaluation.py` | memberを一度だけ評価し、モデル別集計を導出 |
+| `ensemble_quality.py` | モデル別のアンサンブル品質・欠測要約 |
 | `app_config.py` | 予報日数、確率しきい値、補正倍率などの共通設定 |
 | `forecast_cache.py` | Open-Meteo取得失敗時に使う前回予報キャッシュ |
 | `presentation.py` | 便カード・詳細画面向けの表示用データ整形 |

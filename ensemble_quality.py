@@ -23,16 +23,17 @@ def _grade(spread):
     return "E", "40ポイント超"
 
 
-def _member_weather(member, baseline_weather, prediction_fields):
-    weather = dict(baseline_weather)
+def build_member_weather(member, baseline_weather, prediction_fields):
+    weather = dict(baseline_weather or {})
     for key, value in member.items():
-        if key != "_model" and value is not None:
+        if key not in {"_model", "_member_id"} and value is not None:
             weather[key] = value
     return {key: weather[key] for key in prediction_fields if key in weather}
 
 
 def _variable_coverage(members, baseline_weather, prediction_fields):
     total = len(members)
+    baseline_weather = baseline_weather or {}
     coverage = {}
     for field in prediction_fields:
         values = [member.get(field) for member in members if member.get(field) is not None]
@@ -60,15 +61,11 @@ def _variable_coverage(members, baseline_weather, prediction_fields):
     return coverage
 
 
-def _model_summary(model, members, baseline_weather, flight_number, predictor, prediction_fields):
+def _model_summary_from_results(model, members, results, baseline_weather, prediction_fields):
     expected_count = EXPECTED_MEMBER_COUNTS.get(model, len(members))
     variable_coverage = _variable_coverage(members, baseline_weather, prediction_fields)
     probabilities = []
-    for member in members:
-        result = predictor(
-            **_member_weather(member, baseline_weather, prediction_fields),
-            flight_number=flight_number,
-        )
+    for result in results:
         if result.get("calculation_status", "available") != "available":
             continue
         probability = result.get("probability")
@@ -118,7 +115,7 @@ def _model_summary(model, members, baseline_weather, flight_number, predictor, p
     }
     if valid_count >= MIN_CONFIDENCE_MEMBERS:
         low = _percentile(probabilities, 0.1)
-        median = _percentile(probabilities, 0.5)
+        median_probability = _percentile(probabilities, 0.5)
         high = _percentile(probabilities, 0.9)
         spread = round(high - low, 1)
         grade, grade_label = _grade(spread)
@@ -126,7 +123,7 @@ def _model_summary(model, members, baseline_weather, flight_number, predictor, p
             {
                 "status": "available",
                 "low_probability": low,
-                "median_probability": median,
+                "median_probability": median_probability,
                 "high_probability": high,
                 "spread": spread,
                 "grade": grade,
@@ -136,37 +133,7 @@ def _model_summary(model, members, baseline_weather, flight_number, predictor, p
     return summary
 
 
-def evaluate_ensemble_confidence(
-    ensemble_members,
-    baseline_weather=None,
-    flight_number=None,
-    predictor=None,
-    prediction_fields=(),
-):
-    """Return model-separated scenario spread and explicit missingness metadata."""
-    if predictor is None:
-        raise ValueError("ensemble評価には予測関数が必要です。")
-    baseline_weather = baseline_weather or {}
-    grouped = {model: [] for model in EXPECTED_MEMBER_COUNTS}
-    unrecognized_member_count = 0
-    for member in ensemble_members or []:
-        model = member.get("_model")
-        if model in grouped:
-            grouped[model].append(member)
-        else:
-            unrecognized_member_count += 1
-
-    models = {
-        model: _model_summary(
-            model,
-            members,
-            baseline_weather,
-            flight_number,
-            predictor,
-            prediction_fields,
-        )
-        for model, members in grouped.items()
-    }
+def _combine_model_summaries(models, unrecognized_member_count=0):
     available = [item for item in models.values() if item["status"] == "available"]
     partial = [item for item in models.values() if item["status"] != "available"]
     if not available:
@@ -220,3 +187,48 @@ def evaluate_ensemble_confidence(
         "unrecognized_member_count": unrecognized_member_count,
         "caution": " ".join(cautions) if cautions else None,
     }
+
+
+def summarize_ensemble_results(evaluations, baseline_weather=None, prediction_fields=()):
+    """Summarize already-computed member results without invoking the predictor."""
+    grouped_members = {model: [] for model in EXPECTED_MEMBER_COUNTS}
+    grouped_results = {model: [] for model in EXPECTED_MEMBER_COUNTS}
+    unrecognized_member_count = 0
+    for evaluation in evaluations or []:
+        model = evaluation.model
+        if model in grouped_members:
+            grouped_members[model].append(evaluation.member)
+            grouped_results[model].append(evaluation.result)
+        else:
+            unrecognized_member_count += 1
+
+    models = {
+        model: _model_summary_from_results(
+            model,
+            grouped_members[model],
+            grouped_results[model],
+            baseline_weather,
+            prediction_fields,
+        )
+        for model in grouped_members
+    }
+    return _combine_model_summaries(models, unrecognized_member_count)
+
+
+def evaluate_ensemble_confidence(
+    ensemble_members,
+    baseline_weather=None,
+    flight_number=None,
+    predictor=None,
+    prediction_fields=(),
+):
+    """Compatibility wrapper for callers that only need confidence metadata."""
+    from ensemble_evaluation import evaluate_ensemble_members
+
+    return evaluate_ensemble_members(
+        ensemble_members,
+        baseline_weather=baseline_weather,
+        flight_number=flight_number,
+        predictor=predictor,
+        prediction_fields=prediction_fields,
+    ).confidence
