@@ -9,7 +9,6 @@ import requests
 from flask import Flask, render_template
 
 from app_config import (
-    CONFIDENCE_GRADES,
     ENSEMBLE_FORECAST_URL,
     FLIGHTS,
     FORECAST_CONFIG_VERSION,
@@ -26,6 +25,7 @@ from app_config import (
     TYPHOON_IMPACT_SOURCE,
     TYPHOON_NUMERIC_ADJUSTMENT_ENABLED,
 )
+from ensemble_quality import evaluate_ensemble_confidence
 from flight_metadata import flight_display_name
 from forecast_cache import (
     forecast_source_timestamp,
@@ -294,41 +294,13 @@ def _prediction_weather(weather):
 
 
 def calculate_confidence(ensemble_members, baseline_weather=None, flight_number=None):
-    baseline_weather = baseline_weather or {}
-    probabilities = []
-    for weather in ensemble_members:
-        result = predict_flight_probability(
-            **_prediction_weather(
-                {**baseline_weather, **{key: value for key, value in weather.items() if key != "_model"}}
-            ),
-            flight_number=flight_number,
-        )
-        if result.get("calculation_status", "available") != "available":
-            continue
-        probability = result.get("probability")
-        if probability is not None:
-            probabilities.append(probability)
-    probabilities.sort()
-    if len(probabilities) < 10:
-        return None
-
-    low = probabilities[round((len(probabilities) - 1) * 0.1)]
-    high = probabilities[round((len(probabilities) - 1) * 0.9)]
-    spread = round(high - low, 1)
-    for threshold, grade, label in CONFIDENCE_GRADES:
-        if spread <= threshold:
-            break
-    else:
-        grade, label = "E", "40ポイント超"
-    return {
-        "grade": grade,
-        "label": label,
-        "spread": spread,
-        "low_probability": round(low, 1),
-        "high_probability": round(high, 1),
-        "member_count": len(probabilities),
-        "source": "ensemble",
-    }
+    return evaluate_ensemble_confidence(
+        ensemble_members,
+        baseline_weather=baseline_weather,
+        flight_number=flight_number,
+        predictor=predict_flight_probability,
+        prediction_fields=PREDICTION_WEATHER_FIELDS,
+    )
 
 
 def calculate_model_reference_probabilities(ensemble_members, baseline_weather=None, flight_number=None):
@@ -418,21 +390,13 @@ def deterministic_risk_summary(result):
 
 def fallback_confidence(target_date, reference_date):
     lead_days = max((target_date - reference_date).days, 0)
-    if lead_days == 0:
-        grade, label = "A", "10ポイント以内"
-    elif lead_days == 1:
-        grade, label = "B", "20ポイント以内"
-    elif lead_days <= 3:
-        grade, label = "C", "30ポイント以内"
-    elif lead_days <= 5:
-        grade, label = "D", "40ポイント以内"
-    else:
-        grade, label = "E", "40ポイント超"
     return {
-        "grade": grade,
-        "label": label,
+        "grade": None,
+        "label": "評価不可",
         "lead_days": lead_days,
-        "source": "lead_time",
+        "source": "lead_time_caution",
+        "confidence_kind": "lead_time_caution",
+        "caution": "アンサンブル予報が不足しているため、lead timeだけの暫定評価です。",
     }
 
 
@@ -783,12 +747,21 @@ def build_daily_forecasts(
                 )
             )
         if flights:
-            confidence_values = [flight["confidence"] for flight in flights if flight["confidence"]]
+            confidence_values = [
+                flight["confidence"]
+                for flight in flights
+                if flight["confidence"] and flight["confidence"].get("grade")
+            ]
             if confidence_values:
                 day_confidence = max(
                     confidence_values,
                     key=lambda confidence: "ABCDE".index(confidence["grade"]),
                 )
+                day_confidence = dict(day_confidence)
+                day_confidence["summary_basis"] = "worst_flight"
+                day_confidence["flight_count"] = len(flights)
+                day_confidence["evaluated_flight_count"] = len(confidence_values)
+                day_confidence["unevaluated_flight_count"] = len(flights) - len(confidence_values)
             else:
                 day_confidence = fallback_confidence(date.date(), reference_date)
             days.append(
