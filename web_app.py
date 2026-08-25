@@ -24,6 +24,7 @@ from app_config import (
     TYPHOON_IMPACT_LABELS,
     TYPHOON_IMPACT_MULTIPLIERS,
     TYPHOON_IMPACT_SOURCE,
+    TYPHOON_NUMERIC_ADJUSTMENT_ENABLED,
 )
 from flight_metadata import flight_display_name
 from forecast_cache import (
@@ -35,6 +36,11 @@ from forecast_cache import (
 )
 from forecast_engine import find_similar_flights, predict_flight_probability
 from presentation import decorate_flight_for_display
+from typhoon_impact import (
+    has_factor_breakdown,
+    normalize_typhoon_impact,
+    typhoon_risk_level,
+)
 
 BASE_DIR = Path(__file__).resolve().parent
 LOGGER = logging.getLogger(__name__)
@@ -141,6 +147,10 @@ def fetch_typhoon_impacts():
         raise ValueError("台風影響度APIの日別データがありません。")
 
     valid_levels = {"low", *TYPHOON_IMPACT_MULTIPLIERS}
+    source_details = payload.get("sourceDetails") or {}
+    score_config = payload.get("scoreConfig") or {}
+    factor_weights = (score_config.get("targetWeights") or {}).get("flight", {})
+    factor_max_values = score_config.get("factorMaxValues", {})
     impacts = {}
     for day in days:
         if not isinstance(day, dict):
@@ -152,7 +162,21 @@ def fetch_typhoon_impacts():
         level = target.get("riskLevel")
         date_string = day.get("date")
         if isinstance(date_string, str) and level in valid_levels:
-            impacts[date_string] = level
+            impacts[date_string] = normalize_typhoon_impact(
+                {
+                    "risk_level": level,
+                    "score": target.get("score"),
+                    "factors": target.get("factors", {}),
+                    "inputs": target.get("inputs", {}),
+                    "reasons": target.get("reasons", []),
+                    "source_mode": source_details.get("mode"),
+                    "source_provider": source_details.get("weatherProvider"),
+                    "typhoon_provider": source_details.get("typhoonProvider"),
+                    "score_config_version": score_config.get("version"),
+                    "factor_weights": factor_weights,
+                    "factor_max_values": factor_max_values,
+                }
+            )
     if not impacts:
         raise ValueError("台風影響度APIに利用可能な飛行機向け影響度がありません。")
     return impacts
@@ -453,30 +477,71 @@ def _append_warning(result, warning):
     return result
 
 
-def _typhoon_risk_warning(risk_level):
-    label = TYPHOON_IMPACT_LABELS.get(risk_level)
+def _typhoon_risk_warning(impact):
+    label = TYPHOON_IMPACT_LABELS.get(typhoon_risk_level(impact))
     return f"台風接近リスク{label}" if label else None
 
 
-def _with_typhoon_impact(result, risk_level):
+def _typhoon_factor(impact):
+    return TYPHOON_IMPACT_MULTIPLIERS.get(typhoon_risk_level(impact), 1.0)
+
+
+def _factor_ablation(result, impact):
+    probability = result.get("probability")
+    if probability is None:
+        return {}
+    base_probability = result.get("base_probability")
+    if base_probability is None:
+        base_probability = probability
+    weather_factor = result.get("weather_factor", 1.0) or 1.0
+    typhoon_factor = _typhoon_factor(impact)
+    return {
+        "base": round(base_probability, 1),
+        "weather_only": round(base_probability * weather_factor, 1),
+        "typhoon_only": round(base_probability * typhoon_factor, 1),
+        "combined": round(base_probability * weather_factor * typhoon_factor, 1),
+    }
+
+
+def _with_typhoon_impact(result, impact):
     result = dict(result)
+    risk_level = typhoon_risk_level(impact)
     multiplier = TYPHOON_IMPACT_MULTIPLIERS.get(risk_level)
-    warning = _typhoon_risk_warning(risk_level)
-    if multiplier is None or warning is None or result.get("probability") is None:
+    warning = _typhoon_risk_warning(impact)
+    if risk_level is None or result.get("probability") is None:
         return result
-    result["probability"] = round(result["probability"] * multiplier, 1)
+    base_probability = result.get("base_probability")
+    if base_probability is None:
+        base_probability = result["probability"]
+    weather_factor = result.get("weather_factor", 1.0) or 1.0
+    result["typhoon_factor"] = 1.0 if multiplier is None else multiplier
+    result["factor_ablation"] = _factor_ablation(result, impact)
+    if multiplier is None:
+        result["typhoon_adjustment_status"] = "not_applicable"
+        return result
+    if not TYPHOON_NUMERIC_ADJUSTMENT_ENABLED or not has_factor_breakdown(impact):
+        result["typhoon_factor"] = None
+        result["typhoon_adjustment_status"] = "warning_only"
+        return _append_warning(result, f"{warning}（数値補正なし）")
+    result["typhoon_adjustment_status"] = "applied"
+    result["probability"] = round(base_probability * weather_factor * multiplier, 1)
     return _append_warning(result, warning)
 
 
-def _with_typhoon_probability_adjustment(probability, risk_level):
-    multiplier = TYPHOON_IMPACT_MULTIPLIERS.get(risk_level)
-    if probability is None or multiplier is None:
+def _with_typhoon_probability_adjustment(probability, impact):
+    multiplier = TYPHOON_IMPACT_MULTIPLIERS.get(typhoon_risk_level(impact))
+    if (
+        probability is None
+        or multiplier is None
+        or not TYPHOON_NUMERIC_ADJUSTMENT_ENABLED
+        or not has_factor_breakdown(impact)
+    ):
         return probability
     return round(probability * multiplier, 1)
 
 
-def _with_typhoon_risk_summary(summary, risk_level):
-    warning = _typhoon_risk_warning(risk_level)
+def _with_typhoon_risk_summary(summary, impact):
+    warning = _typhoon_risk_warning(impact)
     if warning is None:
         return summary
     if not summary or summary == "特になし":
@@ -511,6 +576,24 @@ def _append_typhoon_coverage_notice(notices, weather, impacts):
     notices.append(f"{period}の台風影響度は未取得のため、台風補正を適用していません。")
 
 
+def _append_typhoon_factor_notice(notices, impacts):
+    missing_breakdown_dates = [
+        date_string
+        for date_string, impact in impacts.items()
+        if typhoon_risk_level(impact) in TYPHOON_IMPACT_MULTIPLIERS
+        and not has_factor_breakdown(impact)
+    ]
+    if missing_breakdown_dates:
+        notices.append(
+            "台風影響度の因子内訳が取得できないため、"
+            "該当日の台風接近リスクは注意表示のみで数値補正していません。"
+        )
+    if not TYPHOON_NUMERIC_ADJUSTMENT_ENABLED:
+        notices.append(
+            "台風補正の検証用feature flagが無効のため、台風接近リスクは注意表示のみです。"
+        )
+
+
 def load_forecast_bundle(logger=None):
     cached = load_cached_forecast_bundle()
     fresh_cached = cached if is_cached_forecast_fresh(cached, source="weather") else None
@@ -538,6 +621,7 @@ def load_forecast_bundle(logger=None):
                 fresh_cached["weather"],
                 cached_typhoon_impacts,
             )
+            _append_typhoon_factor_notice(notices, cached_typhoon_impacts)
             return {
                 "weather": fresh_cached["weather"],
                 "ensembles": cached_ensembles,
@@ -595,6 +679,7 @@ def load_forecast_bundle(logger=None):
             notices.append("台風影響度を取得できなかったため、台風補正は適用していません。")
 
     _append_typhoon_coverage_notice(notices, weather, typhoon_impacts)
+    _append_typhoon_factor_notice(notices, typhoon_impacts)
     saved = save_forecast_bundle(
         weather,
         ensembles=ensembles,
@@ -636,7 +721,7 @@ def build_daily_forecasts(
     days = []
     for date_string in dates:
         date = datetime.strptime(date_string, "%Y-%m-%d").replace(tzinfo=JST)
-        typhoon_risk_level = typhoon_impacts_by_date.get(date_string)
+        typhoon_impact = typhoon_impacts_by_date.get(date_string)
         flights = []
         for flight in FLIGHTS:
             if date.date() == current_time.date() and _flight_display_expired(date_string, flight["time"], current_time):
@@ -658,14 +743,14 @@ def build_daily_forecasts(
                 weather,
                 flight_number=flight["number"],
             )
-            result = _with_typhoon_impact(result, typhoon_risk_level)
+            result = _with_typhoon_impact(result, typhoon_impact)
             model_probabilities = calculate_model_reference_probabilities(
                 ensembles_by_time.get(timestamp, []),
                 weather,
                 flight_number=flight["number"],
             )
             model_probabilities = {
-                model: _with_typhoon_probability_adjustment(probability, typhoon_risk_level)
+                model: _with_typhoon_probability_adjustment(probability, typhoon_impact)
                 for model, probability in model_probabilities.items()
             }
             model_risks = calculate_model_reference_risks(
@@ -674,7 +759,7 @@ def build_daily_forecasts(
                 flight_number=flight["number"],
             )
             model_risks = {
-                model: _with_typhoon_risk_summary(risk, typhoon_risk_level)
+                model: _with_typhoon_risk_summary(risk, typhoon_impact)
                 for model, risk in model_risks.items()
             }
             flights.append(

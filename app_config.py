@@ -1,5 +1,5 @@
+import os
 from datetime import timedelta, timezone
-
 
 JST = timezone(timedelta(hours=9))
 
@@ -10,7 +10,7 @@ FORECAST_DAYS = 11
 MAIN_FORECAST_URL = "https://api.open-meteo.com/v1/forecast"
 ENSEMBLE_FORECAST_URL = "https://ensemble-api.open-meteo.com/v1/ensemble"
 JMA_MODEL_NAME = "jma_seamless"
-FORECAST_CONFIG_VERSION = "2026-08-25-1"
+FORECAST_CONFIG_VERSION = "2026-08-25-2"
 
 FLIGHTS = (
     {"number": "ANA1891", "time": "08:30", "forecast_hour": 8},
@@ -32,6 +32,9 @@ TYPHOON_IMPACT_LABELS = {
     "high": "中",
     "severe": "大",
 }
+TYPHOON_NUMERIC_ADJUSTMENT_ENABLED = os.getenv(
+    "TYPHOON_NUMERIC_ADJUSTMENT_ENABLED", "true"
+).lower() in {"1", "true", "yes", "on"}
 
 VISIBILITY_RISK_KM = 5.0
 VISIBILITY_PROBABILITY_MULTIPLIER = 0.6
