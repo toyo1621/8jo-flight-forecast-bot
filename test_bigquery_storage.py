@@ -27,6 +27,33 @@ def test_normalize_item_formats_time():
     assert result["visibility_source"] is None
 
 
+def test_raw_payload_redacts_secret_like_fields():
+    payload = bigquery_storage._raw_payload_json(
+        {"acl:consumerKey": "secret-key", "nested": {"token": "secret-token"}}
+    )
+
+    assert "secret-key" not in payload
+    assert "secret-token" not in payload
+    assert payload.count("[REDACTED]") == 2
+
+
+def test_save_raw_collection_payload_writes_redacted_json():
+    client = Mock(project="hachijo-flight-forecast")
+    client.insert_rows_json.return_value = []
+
+    with (
+        patch("bigquery_storage.bigquery.Client", return_value=client),
+        patch("bigquery_storage.ensure_collection_destinations"),
+    ):
+        row = bigquery_storage.save_raw_collection_payload(
+            "run-1", "odpt", {"acl:consumerKey": "secret"}, target_date="2026-08-24"
+        )
+
+    assert row["redaction_applied"] is True
+    assert "secret" not in row["payload_json"]
+    client.insert_rows_json.assert_called_once()
+
+
 def test_normalize_item_uses_database_status_and_visibility_source():
     result = bigquery_storage._normalize_item(
         {

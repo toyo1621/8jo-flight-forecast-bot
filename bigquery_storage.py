@@ -1,3 +1,4 @@
+import json
 import os
 import uuid
 from datetime import datetime, timezone
@@ -5,7 +6,17 @@ from functools import lru_cache
 
 from google.cloud import bigquery
 
-from bigquery_schema import DEFAULT_DATASET, DEFAULT_LOCATION, DEFAULT_PROJECT, DEFAULT_TABLE, SCHEMA, ensure_destination
+from bigquery_schema import (
+    DEFAULT_DATASET,
+    DEFAULT_LOCATION,
+    DEFAULT_PROJECT,
+    DEFAULT_TABLE,
+    RAW_TABLE,
+    RUNS_TABLE,
+    SCHEMA,
+    ensure_collection_destinations,
+    ensure_destination,
+)
 from flight_metadata import (
     VALID_HISTORY_STATUSES,
     VALID_STORED_STATUSES,
@@ -27,6 +38,105 @@ def settings():
 def table_path(config=None):
     config = config or settings()
     return f"{config['project']}.{config['dataset']}.{config['table']}"
+
+
+def _collection_table_path(table, config=None):
+    config = config or settings()
+    return f"{config['project']}.{config['dataset']}.{table}"
+
+
+_SECRET_KEY_PARTS = ("key", "token", "secret", "password", "authorization", "credential")
+
+
+def _redact_raw_payload(value, key=None):
+    if key and any(part in key.lower() for part in _SECRET_KEY_PARTS):
+        return "[REDACTED]"
+    if isinstance(value, dict):
+        return {_key: _redact_raw_payload(item, _key) for _key, item in value.items()}
+    if isinstance(value, list):
+        return [_redact_raw_payload(item) for item in value]
+    return value
+
+
+def _raw_payload_json(payload):
+    return json.dumps(
+        _redact_raw_payload(payload), ensure_ascii=False, sort_keys=True, default=str
+    )
+
+
+def _insert_collection_rows(client, table, rows):
+    errors = client.insert_rows_json(table, rows)
+    if errors:
+        raise RuntimeError(f"BigQueryへの{table}書き込みに失敗しました。")
+
+
+def save_raw_collection_payload(
+    run_id, source, payload, target_date=None, attempt=1, fetched_at=None
+):
+    config = settings()
+    client = bigquery.Client(project=config["project"], location=config["location"])
+    ensure_collection_destinations(client, config["dataset"], config["location"])
+    row = {
+        "run_id": run_id,
+        "attempt": attempt,
+        "source": source,
+        "target_date": target_date,
+        "fetched_at": fetched_at or datetime.now(timezone.utc).isoformat(),
+        "payload_json": _raw_payload_json(payload),
+        "redaction_applied": True,
+    }
+    _insert_collection_rows(client, _collection_table_path(RAW_TABLE, config), [row])
+    return row
+
+
+def record_collection_run(
+    run_id,
+    target_date,
+    status,
+    attempt=1,
+    started_at=None,
+    completed_at=None,
+    error_code=None,
+    error_message=None,
+    rows_written=None,
+    raw_rows=None,
+    code_version=None,
+):
+    config = settings()
+    client = bigquery.Client(project=config["project"], location=config["location"])
+    ensure_collection_destinations(client, config["dataset"], config["location"])
+    now = datetime.now(timezone.utc).isoformat()
+    row = {
+        "run_id": run_id,
+        "attempt": attempt,
+        "target_date": target_date,
+        "status": status,
+        "started_at": started_at or now,
+        "completed_at": completed_at,
+        "error_code": error_code,
+        "error_message": error_message,
+        "rows_written": rows_written,
+        "raw_rows": raw_rows,
+        "code_version": code_version or os.getenv("GITHUB_SHA"),
+        "created_at": now,
+    }
+    _insert_collection_rows(client, _collection_table_path(RUNS_TABLE, config), [row])
+    return row
+
+
+def load_raw_collection_payloads(run_id):
+    config = settings()
+    client = bigquery.Client(project=config["project"], location=config["location"])
+    query = f"""
+        SELECT source, target_date, payload_json, attempt
+        FROM `{_collection_table_path(RAW_TABLE, config)}`
+        WHERE run_id = @run_id
+        ORDER BY fetched_at, source
+    """
+    job_config = bigquery.QueryJobConfig(
+        query_parameters=[bigquery.ScalarQueryParameter("run_id", "STRING", run_id)]
+    )
+    return [dict(row.items()) for row in client.query(query, job_config=job_config).result()]
 
 
 @lru_cache(maxsize=1)

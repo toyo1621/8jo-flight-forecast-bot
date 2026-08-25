@@ -1,14 +1,22 @@
 import argparse
+import json
 import os
-from datetime import datetime
+import time
+import uuid
+from datetime import datetime, timezone
 
 import requests
 from dotenv import load_dotenv
 
 from app_config import FLIGHTS, HACHIJO_AIRPORT_LATITUDE, HACHIJO_AIRPORT_LONGITUDE, JST
-from bigquery_storage import delete_unresolved_status_rows, upsert_flight_weather_logs
+from bigquery_storage import (
+    delete_unresolved_status_rows,
+    load_raw_collection_payloads,
+    record_collection_run,
+    save_raw_collection_payload,
+    upsert_flight_weather_logs,
+)
 from flight_metadata import VALID_STORED_STATUSES
-
 
 load_dotenv()
 
@@ -47,18 +55,78 @@ class CollectionError(RuntimeError):
     """Raised when a collection run cannot produce a complete, trustworthy day."""
 
 
+RETRYABLE_HTTP_STATUS_CODES = frozenset({408, 425, 429, 500, 502, 503, 504})
+MAX_REQUEST_ATTEMPTS = 3
+
+
 def _safe_request_error(source, exc):
     status_code = getattr(getattr(exc, "response", None), "status_code", None)
     suffix = f" (HTTP {status_code})" if status_code else ""
     return CollectionError(f"{source}からのデータ取得に失敗しました{suffix}。")
 
 
-def get_weather_data(date_str, scheduled_time_str, target_hour=None):
+def _request_with_retries(url, params, source, timeout=10):
+    last_error = None
+    for attempt in range(1, MAX_REQUEST_ATTEMPTS + 1):
+        try:
+            response = requests.get(url, params=params, timeout=timeout)
+        except requests.RequestException as exc:
+            last_error = exc
+            if attempt == MAX_REQUEST_ATTEMPTS:
+                raise _safe_request_error(source, exc) from None
+            time.sleep(2 ** (attempt - 1))
+            continue
+
+        if response.status_code in RETRYABLE_HTTP_STATUS_CODES and attempt < MAX_REQUEST_ATTEMPTS:
+            time.sleep(2 ** (attempt - 1))
+            continue
+        return response
+
+    raise _safe_request_error(source, last_error) from None
+
+
+def _parse_weather_payload(payload, date_str, target_hour, visibility_source="open_meteo_forecast"):
+    if not isinstance(payload, dict):
+        raise CollectionError("Open-Meteo APIの応答構造が不正です。")
+    hourly = payload.get("hourly")
+    if not isinstance(hourly, dict):
+        raise CollectionError("気象データにhourly項目がありません。")
+
+    target_timestamp = f"{date_str}T{target_hour:02d}:00"
+    try:
+        target_index = hourly["time"].index(target_timestamp)
+        weather = {
+            "wind_direction": hourly["wind_direction_10m"][target_index],
+            "wind_speed": hourly["wind_speed_10m"][target_index],
+            "wind_gusts": hourly["wind_gusts_10m"][target_index],
+            "cloud_cover_low": hourly["cloud_cover_low"][target_index],
+            "visibility": hourly["visibility"][target_index],
+        }
+    except (KeyError, IndexError, AttributeError, ValueError) as exc:
+        raise CollectionError(f"気象データに対象時刻 {target_timestamp} がありません。") from exc
+
+    missing = [field for field, value in weather.items() if value is None]
+    if missing:
+        raise CollectionError(f"気象データが欠測しています: {', '.join(missing)}")
+
+    return {
+        "wind_direction": weather["wind_direction"],
+        "wind_speed": round(weather["wind_speed"] / 3.6, 2),
+        "wind_gusts": round(weather["wind_gusts"] / 3.6, 2),
+        "cloud_cover_low": weather["cloud_cover_low"],
+        "visibility": round(weather["visibility"] / 1000.0, 2),
+        "visibility_source": visibility_source,
+    }
+
+
+def get_weather_data(
+    date_str, scheduled_time_str, target_hour=None, raw_sink=None, run_id=None, attempt=1
+):
     """Fetch complete weather data for the configured forecast hour."""
     print(f"Open-Meteo APIから {date_str} {scheduled_time_str} の気象データを取得中...")
     if target_hour is None:
         try:
-            target_hour = datetime.strptime(scheduled_time_str, "%H:%M").hour
+            target_hour = datetime.strptime(scheduled_time_str, "%H:%M").replace(tzinfo=JST).hour
         except ValueError as exc:
             raise CollectionError(f"定刻を解釈できません: {scheduled_time_str}") from exc
     if not isinstance(target_hour, int) or not 0 <= target_hour <= 23:
@@ -73,49 +141,27 @@ def get_weather_data(date_str, scheduled_time_str, target_hour=None):
         "end_date": date_str,
     }
     try:
-        response = requests.get("https://api.open-meteo.com/v1/forecast", params=params, timeout=10)
+        response = _request_with_retries(
+            "https://api.open-meteo.com/v1/forecast", params, "Open-Meteo API"
+        )
+        response_source = "open_meteo_forecast"
         if response.status_code != 200:
             print("予測APIでエラーが発生したため、アーカイブAPIにフォールバックします...")
-            response = requests.get(
+            response = _request_with_retries(
                 "https://archive-api.open-meteo.com/v1/archive",
-                params=params,
-                timeout=10,
+                params,
+                "Open-Meteo Archive API",
             )
+            response_source = "open_meteo_archive"
         response.raise_for_status()
-        hourly = response.json().get("hourly")
-        if not isinstance(hourly, dict):
-            raise CollectionError("気象データにhourly項目がありません。")
-
-        target_timestamp = f"{date_str}T{target_hour:02d}:00"
-        try:
-            target_index = hourly["time"].index(target_timestamp)
-        except (KeyError, AttributeError, ValueError) as exc:
-            raise CollectionError(f"気象データに対象時刻 {target_timestamp} がありません。") from exc
-
-        weather = {
-            "wind_direction": hourly["wind_direction_10m"][target_index],
-            "wind_speed": hourly["wind_speed_10m"][target_index],
-            "wind_gusts": hourly["wind_gusts_10m"][target_index],
-            "cloud_cover_low": hourly["cloud_cover_low"][target_index],
-            "visibility": hourly["visibility"][target_index],
-        }
+        payload = response.json()
+        if raw_sink and run_id:
+            raw_sink(response_source, payload, date_str, attempt)
+        return _parse_weather_payload(payload, date_str, target_hour, response_source)
     except requests.RequestException as exc:
         raise _safe_request_error("Open-Meteo API", exc) from None
-    except (KeyError, IndexError, TypeError, ValueError) as exc:
+    except (TypeError, ValueError) as exc:
         raise CollectionError("Open-Meteo APIの応答構造が不正です。") from exc
-
-    missing = [field for field, value in weather.items() if value is None]
-    if missing:
-        raise CollectionError(f"気象データが欠測しています: {', '.join(missing)}")
-
-    return {
-        "wind_direction": weather["wind_direction"],
-        "wind_speed": round(weather["wind_speed"] / 3.6, 2),
-        "wind_gusts": round(weather["wind_gusts"] / 3.6, 2),
-        "cloud_cover_low": weather["cloud_cover_low"],
-        "visibility": round(weather["visibility"] / 1000.0, 2),
-        "visibility_source": "open_meteo_forecast",
-    }
 
 
 def get_scheduled_flights(date_str, default_status=None):
@@ -129,27 +175,7 @@ def get_scheduled_flights(date_str, default_status=None):
     ]
 
 
-def get_flight_data_odpt(api_key):
-    """Fetch ANA HND-to-HAC arrival outcomes without logging the secret URL."""
-    print("ODPT APIから運航実績データを取得中...")
-    params = {
-        "odpt:operator": "odpt.Operator:ANA",
-        "odpt:arrivalAirport": "odpt.Airport:HAC",
-        "acl:consumerKey": api_key,
-    }
-    try:
-        response = requests.get(
-            "https://api.odpt.org/api/v4/odpt:FlightInformationArrival",
-            params=params,
-            timeout=10,
-        )
-        response.raise_for_status()
-        flights = response.json()
-    except requests.RequestException as exc:
-        raise _safe_request_error("ODPT API", exc) from None
-    except ValueError as exc:
-        raise CollectionError("ODPT APIのJSON応答を解釈できません。") from exc
-
+def parse_flight_data_odpt(flights):
     if not isinstance(flights, list):
         raise CollectionError("ODPT APIの応答構造が不正です。")
 
@@ -185,6 +211,32 @@ def get_flight_data_odpt(api_key):
         raise CollectionError("ODPT APIから対象3便を1件も取得できませんでした。")
     print(f"ODPT APIから {len(result)} 件の対象便を取得しました。")
     return result
+
+
+def get_flight_data_odpt(api_key, raw_sink=None, run_id=None, attempt=1):
+    """Fetch ANA HND-to-HAC arrival outcomes without logging the secret URL."""
+    print("ODPT APIから運航実績データを取得中...")
+    params = {
+        "odpt:operator": "odpt.Operator:ANA",
+        "odpt:arrivalAirport": "odpt.Airport:HAC",
+        "acl:consumerKey": api_key,
+    }
+    try:
+        response = _request_with_retries(
+            "https://api.odpt.org/api/v4/odpt:FlightInformationArrival",
+            params,
+            "ODPT API",
+        )
+        response.raise_for_status()
+        flights = response.json()
+        if raw_sink and run_id:
+            raw_sink("odpt_flight_information_arrival", flights, None, attempt)
+    except requests.RequestException as exc:
+        raise _safe_request_error("ODPT API", exc) from None
+    except ValueError as exc:
+        raise CollectionError("ODPT APIのJSON応答を解釈できません。") from exc
+
+    return parse_flight_data_odpt(flights)
 
 
 def merge_with_daily_schedule(date_str, actual_flights):
@@ -239,6 +291,55 @@ def save_collected_data(flights_with_weather):
     validate_collected_records(flights_with_weather)
     saved_count = upsert_flight_weather_logs(flights_with_weather)
     print(f"BigQueryに {saved_count} 件のデータを保存・更新しました。")
+    return saved_count
+
+
+def replay_collection_run(run_id):
+    """Rebuild one day's validated rows from a previously landed raw run."""
+    raw_rows = load_raw_collection_payloads(run_id)
+    if not raw_rows:
+        raise CollectionError(f"raw保存が見つからないrun_idです: {run_id}")
+
+    odpt_rows = [row for row in raw_rows if row["source"] == "odpt_flight_information_arrival"]
+    if not odpt_rows:
+        raise CollectionError(f"ODPTのraw保存が見つからないrun_idです: {run_id}")
+    try:
+        flights = parse_flight_data_odpt(json.loads(odpt_rows[-1]["payload_json"]))
+    except (KeyError, TypeError, ValueError, json.JSONDecodeError) as exc:
+        raise CollectionError(f"ODPTのraw保存を再生できません: {run_id}") from exc
+
+    dates = {flight["date"] for flight in flights}
+    if len(dates) != 1:
+        raise CollectionError("raw保存に複数日の運航情報が含まれています。")
+    date_str = dates.pop()
+    weather_rows = [
+        row for row in raw_rows if row["source"] in {"open_meteo_forecast", "open_meteo_archive"}
+    ]
+    if not weather_rows:
+        raise CollectionError(f"気象のraw保存が見つからないrun_idです: {run_id}")
+
+    merged = merge_with_daily_schedule(date_str, flights)
+    completed = []
+    for flight in merged:
+        weather = None
+        for raw_row in reversed(weather_rows):
+            try:
+                weather = _parse_weather_payload(
+                    json.loads(raw_row["payload_json"]),
+                    date_str,
+                    flight["target_hour"],
+                    raw_row["source"],
+                )
+                break
+            except (CollectionError, KeyError, TypeError, ValueError, json.JSONDecodeError):
+                continue
+        if weather is None:
+            raise CollectionError(f"{flight['flight_number']}の気象raw保存を再生できません。")
+        item = {**flight, **weather}
+        if item["status"] in {"欠航", "条件付き→引返欠航"}:
+            item["status_reason"] = item.get("status_reason") or UNKNOWN_REASON
+        completed.append(item)
+    return save_collected_data(completed)
 
 
 def main():
@@ -249,14 +350,23 @@ def main():
         action="store_true",
         help="BigQuery上の未取得・未対応ステータス行を削除して終了する",
     )
+    parser.add_argument(
+        "--replay-run-id",
+        help="BigQueryのraw保存から指定run_idの日次データを再生して本表へ反映する",
+    )
     args = parser.parse_args()
 
-    if args.demo and args.cleanup_only:
-        parser.error("--demo と --cleanup-only は同時に指定できません。")
+    if sum(bool(value) for value in (args.demo, args.cleanup_only, args.replay_run_id)) > 1:
+        parser.error("--demo、--cleanup-only、--replay-run-idは同時に指定できません。")
 
     if args.cleanup_only:
         removed = delete_unresolved_status_rows()
         print(f"BigQueryから未取得・未対応ステータス {removed} 件を削除しました。")
+        return
+
+    if args.replay_run_id:
+        replay_collection_run(args.replay_run_id)
+        print(f"raw保存の再生が完了しました: {args.replay_run_id}")
         return
 
     api_key = os.getenv("ODPT_API_KEY")
@@ -264,32 +374,101 @@ def main():
 
     if args.demo:
         flights = get_demo_flight_data()
-    else:
-        if not api_key or api_key == "your_odpt_api_key_here":
-            raise RuntimeError("ODPT_API_KEYが未設定です。")
+        completed = []
+        for flight in flights:
+            weather = get_weather_data(
+                flight["date"],
+                flight["scheduled_time"],
+                target_hour=flight["target_hour"],
+            )
+            completed.append({**flight, **weather})
+        validate_collected_records(completed)
+        print("デモモードのためBigQueryへは保存しません。")
+        return
+
+    if not api_key or api_key == "your_odpt_api_key_here":
+        raise RuntimeError("ODPT_API_KEYが未設定です。")
+
+    run_id = uuid.uuid4().hex
+    attempt = 1
+    started_at = datetime.now(timezone.utc).isoformat()
+    raw_rows = 0
+    print(f"収集run_id: {run_id}")
+
+    def raw_sink(source, payload, target_date, raw_attempt):
+        nonlocal raw_rows
+        save_raw_collection_payload(
+            run_id,
+            source,
+            payload,
+            target_date=target_date,
+            attempt=raw_attempt,
+        )
+        raw_rows += 1
+
+    tracking_started = False
+    try:
+        record_collection_run(
+            run_id,
+            today,
+            "started",
+            attempt=attempt,
+            started_at=started_at,
+        )
+        tracking_started = True
         removed = delete_unresolved_status_rows()
         if removed:
             print(f"BigQueryから未取得ステータス {removed} 件を削除しました。")
-        flights = merge_with_daily_schedule(today, get_flight_data_odpt(api_key))
-
-    completed = []
-    for flight in flights:
-        weather = get_weather_data(
-            flight["date"],
-            flight["scheduled_time"],
-            target_hour=flight["target_hour"],
+        flights = merge_with_daily_schedule(
+            today,
+            get_flight_data_odpt(api_key, raw_sink=raw_sink, run_id=run_id, attempt=attempt),
         )
-        item = {**flight, **weather}
-        if item["status"] in {"欠航", "条件付き→引返欠航"}:
-            item["status_reason"] = item.get("status_reason") or UNKNOWN_REASON
-        completed.append(item)
 
-    validate_collected_records(completed)
-    if args.demo:
-        print("デモモードのためBigQueryへは保存しません。")
-        return
-    save_collected_data(completed)
-    print("データ自動収集処理が完了しました。")
+        completed = []
+        for flight in flights:
+            weather = get_weather_data(
+                flight["date"],
+                flight["scheduled_time"],
+                target_hour=flight["target_hour"],
+                raw_sink=raw_sink,
+                run_id=run_id,
+                attempt=attempt,
+            )
+            item = {**flight, **weather}
+            if item["status"] in {"欠航", "条件付き→引返欠航"}:
+                item["status_reason"] = item.get("status_reason") or UNKNOWN_REASON
+            completed.append(item)
+
+        validate_collected_records(completed)
+        saved_count = save_collected_data(completed)
+        record_collection_run(
+            run_id,
+            today,
+            "succeeded",
+            attempt=attempt,
+            started_at=started_at,
+            completed_at=datetime.now(timezone.utc).isoformat(),
+            rows_written=saved_count,
+            raw_rows=raw_rows,
+        )
+        print("データ自動収集処理が完了しました。")
+    except Exception as exc:
+        if tracking_started:
+            try:
+                record_collection_run(
+                    run_id,
+                    today,
+                    "failed",
+                    attempt=attempt,
+                    started_at=started_at,
+                    completed_at=datetime.now(timezone.utc).isoformat(),
+                    error_code=exc.__class__.__name__,
+                    error_message=str(exc)[:500],
+                    raw_rows=raw_rows,
+                )
+            except Exception:  # noqa: BLE001 - preserve the original collection failure
+                print("収集失敗の記録にも失敗しました。")
+        raise
 
 
 if __name__ == "__main__":

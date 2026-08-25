@@ -91,11 +91,38 @@ jobs:
             echo "Data quality report was not generated." >> "$GITHUB_STEP_SUMMARY"
           fi
 
+      - name: Check collection coverage
+        id: collection_coverage
+        if: always()
+        env:
+          GCP_PROJECT_ID: hachijo-flight-forecast
+          BIGQUERY_DATASET: flight_forecast
+          BIGQUERY_TABLE: flight_weather_logs
+          BIGQUERY_LOCATION: asia-northeast1
+        run: python collection_monitor.py --days 14 --output collection_coverage_report.md --fail-on-missing
+
+      - name: Add collection coverage report to summary
+        if: always()
+        run: |
+          if [ -f collection_coverage_report.md ]; then
+            cat collection_coverage_report.md >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "Collection coverage report was not generated." >> "$GITHUB_STEP_SUMMARY"
+          fi
+
       - name: Upload data quality report
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: collection-data-quality-report
           path: data_quality_report.md
+          if-no-files-found: ignore
+
+      - name: Upload collection coverage report
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: collection-coverage-report
+          path: collection_coverage_report.md
           if-no-files-found: ignore
 
