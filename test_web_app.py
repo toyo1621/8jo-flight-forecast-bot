@@ -48,6 +48,15 @@ SAMPLE_WEATHER = {
 }
 
 
+def typhoon_impact(level):
+    return {
+        "risk_level": level,
+        "score": 72,
+        "factors": {"wind": 20, "rain": 10},
+        "inputs": {"windSpeedMps": 8, "rainfallMm24h": 12},
+    }
+
+
 def test_build_daily_forecasts():
     result = {
         "probability": 88.0,
@@ -158,7 +167,14 @@ def test_typhoon_impacts_use_jma_flight_risk_levels():
             {
                 "date": "2026-07-14",
                 "summaryRiskLevel": "high",
-                "targets": {"flight": {"riskLevel": "medium"}},
+                "targets": {
+                    "flight": {
+                        "riskLevel": "medium",
+                        "score": 42,
+                        "factors": {"wind": 20},
+                        "inputs": {"windSpeedMps": 8},
+                    }
+                },
             },
         ],
     }
@@ -168,7 +184,11 @@ def test_typhoon_impacts_use_jma_flight_risk_levels():
 
     response.raise_for_status.assert_called_once()
     assert get.call_args.kwargs["params"] == {"source": "jma"}
-    assert impacts == {"2026-07-13": "low", "2026-07-14": "medium"}
+    assert impacts["2026-07-13"]["risk_level"] == "low"
+    assert impacts["2026-07-13"]["factor_breakdown_available"] is False
+    assert impacts["2026-07-14"]["risk_level"] == "medium"
+    assert impacts["2026-07-14"]["factors"] == {"wind": 20}
+    assert impacts["2026-07-14"]["inputs"] == {"windSpeedMps": 8}
 
 
 def test_typhoon_impacts_do_not_fall_back_to_summary_risk():
@@ -192,7 +212,8 @@ def test_typhoon_impacts_do_not_fall_back_to_summary_risk():
     with patch("web_app.requests.get", return_value=response):
         impacts = fetch_typhoon_impacts()
 
-    assert impacts == {"2026-07-14": "medium"}
+    assert list(impacts) == ["2026-07-14"]
+    assert impacts["2026-07-14"]["risk_level"] == "medium"
 
 
 def test_primary_supplement_reports_fields_that_remain_missing():
@@ -250,12 +271,14 @@ def test_daily_forecast_skips_main_weather_without_required_values():
 def test_typhoon_risk_uses_external_impact_multipliers():
     result = {"probability": 97.0, "warning_msg": "特になし", "alert_required": False}
 
-    quiet = _with_typhoon_impact(result, "low")
-    small = _with_typhoon_impact(result, "medium")
-    medium = _with_typhoon_impact(result, "high")
-    large = _with_typhoon_impact(result, "severe")
+    quiet = _with_typhoon_impact(result, typhoon_impact("low"))
+    small = _with_typhoon_impact(result, typhoon_impact("medium"))
+    medium = _with_typhoon_impact(result, typhoon_impact("high"))
+    large = _with_typhoon_impact(result, typhoon_impact("severe"))
 
-    assert quiet == result
+    assert quiet["probability"] == result["probability"]
+    assert quiet["typhoon_factor"] == 1.0
+    assert quiet["typhoon_adjustment_status"] == "not_applicable"
     assert small["probability"] == 87.3
     assert small["warning_msg"] == "台風接近リスク小"
     assert medium["probability"] == 77.6
@@ -263,7 +286,50 @@ def test_typhoon_risk_uses_external_impact_multipliers():
     assert large["probability"] == 67.9
     assert large["warning_msg"] == "台風接近リスク大"
     assert all(item["alert_required"] is True for item in (small, medium, large))
-    assert _with_typhoon_risk_summary("台風接近リスク", "severe") == "台風接近リスク大"
+    assert _with_typhoon_risk_summary("台風接近リスク", typhoon_impact("severe")) == "台風接近リスク大"
+
+
+def test_typhoon_factor_is_kept_separate_from_weather_factor():
+    result = {
+        "probability": 72.0,
+        "base_probability": 80.0,
+        "weather_factor": 0.9,
+        "weather_factors": {"low_cloud": 0.9},
+        "warning_msg": "低層雲の影響注意",
+        "alert_required": True,
+    }
+
+    adjusted = _with_typhoon_impact(result, typhoon_impact("severe"))
+
+    assert adjusted["probability"] == 50.4
+    assert adjusted["typhoon_factor"] == 0.7
+    assert adjusted["factor_ablation"] == {
+        "base": 80.0,
+        "weather_only": 72.0,
+        "typhoon_only": 56.0,
+        "combined": 50.4,
+    }
+
+
+def test_typhoon_factor_breakdown_missing_keeps_warning_without_numeric_adjustment():
+    result = {"probability": 80.0, "warning_msg": "特になし", "alert_required": False}
+
+    adjusted = _with_typhoon_impact(result, "severe")
+
+    assert adjusted["probability"] == 80.0
+    assert adjusted["typhoon_factor"] is None
+    assert adjusted["typhoon_adjustment_status"] == "warning_only"
+    assert "数値補正なし" in adjusted["warning_msg"]
+
+
+def test_typhoon_numeric_adjustment_can_be_disabled_for_small_samples():
+    result = {"probability": 80.0, "warning_msg": "特になし", "alert_required": False}
+
+    with patch("web_app.TYPHOON_NUMERIC_ADJUSTMENT_ENABLED", False):
+        adjusted = _with_typhoon_impact(result, typhoon_impact("severe"))
+
+    assert adjusted["probability"] == 80.0
+    assert adjusted["typhoon_adjustment_status"] == "warning_only"
 
 
 def test_typhoon_risk_does_not_turn_unavailable_into_a_number():
@@ -274,7 +340,7 @@ def test_typhoon_risk_does_not_turn_unavailable_into_a_number():
         "alert_required": False,
     }
 
-    adjusted = _with_typhoon_impact(result, "severe")
+    adjusted = _with_typhoon_impact(result, typhoon_impact("severe"))
 
     assert adjusted == result
 
@@ -305,7 +371,7 @@ def test_typhoon_risk_applies_to_all_flights_on_same_day():
             weather,
             reference_date=date(2026, 6, 24),
             current_time=datetime(2026, 6, 24, 10, 0, tzinfo=JST),
-            typhoon_impacts_by_date={"2026-06-28": "severe"},
+            typhoon_impacts_by_date={"2026-06-28": typhoon_impact("severe")},
         )
 
     assert [flight["probability"] for flight in days[0]["flights"]] == [67.9, 67.9, 67.9]
@@ -501,6 +567,8 @@ def test_low_cloud_and_gust_adjustments_each_use_09():
 
     assert result["data_count"] == 9
     assert result["probability"] == 27.0
+    assert result["weather_factors"] == {"low_cloud": 0.9, "gust": 0.9}
+    assert result["weather_factor"] == 0.81
 
 
 def test_severe_visibility_low_cloud_and_gust_adjustments_are_stronger():

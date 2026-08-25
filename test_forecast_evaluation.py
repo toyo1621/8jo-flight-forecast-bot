@@ -4,6 +4,7 @@ from forecast_evaluation import (
     brier_score,
     evaluate_rows,
     expected_calibration_error,
+    factor_ablation_evaluation,
     markdown_report,
     partition_evaluable_predictions,
     rolling_time_evaluation,
@@ -94,3 +95,36 @@ def test_evaluate_rows_reports_insufficient_data_without_inventing_metrics():
     assert report["models"] == {}
     assert report["weather_only_count"] == 0
     assert "評価可能な予測値がありません" in markdown_report(report)
+
+
+def test_factor_ablation_compares_recorded_factors_without_reconstructing_them():
+    rows = [
+        _row(
+            probability=50.0,
+            outcome_status="運航",
+        )
+        | {
+            "factor_breakdown_json": (
+                '{"ablation": {"base": 80, "weather_only": 70, '
+                '"typhoon_only": 64, "combined": 56}}'
+            ),
+        },
+        _row(
+            probability=40.0,
+            outcome_status="欠航",
+            category="weather",
+        )
+        | {
+            "factor_breakdown_json": (
+                '{"ablation": {"base": 80, "weather_only": 60, '
+                '"typhoon_only": 64, "combined": 48}}'
+            ),
+        },
+    ]
+
+    report = factor_ablation_evaluation(rows)
+
+    assert report["status"] == "ok"
+    assert report["all"]["base"]["count"] == 2
+    assert report["all"]["combined"]["count"] == 2
+    assert report["weather_only"]["combined"]["count"] == 2

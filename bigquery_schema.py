@@ -59,6 +59,10 @@ PREDICTION_SNAPSHOT_SCHEMA = (
     bigquery.SchemaField("model", "STRING", mode="REQUIRED"),
     bigquery.SchemaField("calculation_status", "STRING", mode="REQUIRED"),
     bigquery.SchemaField("probability", "FLOAT"),
+    bigquery.SchemaField("base_probability", "FLOAT"),
+    bigquery.SchemaField("weather_factor", "FLOAT"),
+    bigquery.SchemaField("typhoon_factor", "FLOAT"),
+    bigquery.SchemaField("factor_breakdown_json", "STRING"),
     bigquery.SchemaField("prediction_generated_at", "TIMESTAMP", mode="REQUIRED"),
     bigquery.SchemaField("weather_retrieved_at", "TIMESTAMP"),
     bigquery.SchemaField("weather_valid_at", "TIMESTAMP", mode="REQUIRED"),
@@ -123,3 +127,13 @@ def ensure_prediction_snapshot_destination(client, dataset_id, location):
     table_ref.time_partitioning = bigquery.TimePartitioning(field="prediction_generated_at")
     table_ref.clustering_fields = ["forecast_target_date", "flight_number", "model"]
     client.create_table(table_ref, exists_ok=True)
+    for column in (
+        "base_probability FLOAT64",
+        "weather_factor FLOAT64",
+        "typhoon_factor FLOAT64",
+        "factor_breakdown_json STRING",
+    ):
+        client.query(
+            f"ALTER TABLE `{client.project}.{dataset_id}.{PREDICTION_SNAPSHOT_TABLE}` "
+            f"ADD COLUMN IF NOT EXISTS {column}"
+        ).result()

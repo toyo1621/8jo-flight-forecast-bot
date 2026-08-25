@@ -196,6 +196,63 @@ def metric_summary(rows):
     }
 
 
+def _factor_breakdown(row):
+    value = row.get("factor_breakdown_json")
+    if isinstance(value, dict):
+        return value
+    if not value:
+        return {}
+    try:
+        parsed = json.loads(value)
+    except (TypeError, ValueError):
+        return {}
+    return parsed if isinstance(parsed, dict) else {}
+
+
+def factor_ablation_evaluation(rows):
+    """Compare the recorded JMA factors on the same out-of-time population."""
+    eligible, excluded = partition_evaluable_predictions(rows, population="all")
+    weather_eligible, weather_excluded = partition_evaluable_predictions(
+        rows, population="weather_only"
+    )
+    names = ("base", "weather_only", "typhoon_only", "combined")
+    metrics = {}
+    weather_metrics = {}
+    missing = Counter(excluded)
+
+    def build_population(population_rows):
+        grouped = {name: [] for name in names}
+        for row in population_rows:
+            if row.get("model") != "jma_seamless":
+                continue
+            ablation = _factor_breakdown(row).get("ablation")
+            if not isinstance(ablation, dict):
+                missing["missing_factor_ablation"] += 1
+                continue
+            for name in names:
+                probability = _probability(ablation.get(name))
+                if probability is None:
+                    missing[f"missing_factor_{name}"] += 1
+                    continue
+                grouped[name].append({**row, "probability": probability})
+        return grouped
+
+    for name, population_rows in build_population(eligible).items():
+        metrics[name] = metric_summary(population_rows)
+        metrics[name]["rolling_time"] = rolling_time_evaluation(population_rows)
+    for name, population_rows in build_population(weather_eligible).items():
+        weather_metrics[name] = metric_summary(population_rows)
+        weather_metrics[name]["rolling_time"] = rolling_time_evaluation(population_rows)
+    missing.update({f"weather_only_{key}": value for key, value in weather_excluded.items()})
+    return {
+        "status": "ok" if any(summary["count"] for summary in metrics.values()) else "insufficient_data",
+        "model": "jma_seamless",
+        "excluded_counts": dict(missing),
+        "all": metrics,
+        "weather_only": weather_metrics,
+    }
+
+
 def rolling_time_evaluation(rows, min_train_dates=3):
     grouped = {}
     for row in sorted(rows, key=lambda item: (item.get("target_date"), item.get("model", ""))):
@@ -255,6 +312,7 @@ def evaluate_rows(rows, generated_at=None):
         "category_coverage": dict(category_coverage),
         "weather_only_count": len(weather_eligible),
         "models": models,
+        "factor_ablation": factor_ablation_evaluation(rows),
         "rolling_time": rolling_time_evaluation(eligible),
         "rolling_time_weather_only": rolling_time_evaluation(weather_eligible),
     }
@@ -273,6 +331,7 @@ def fetch_prediction_outcomes(lookback_days=365):
           s.model,
           s.calculation_status,
           s.probability,
+          s.factor_breakdown_json,
           s.prediction_generated_at,
           s.weather_retrieved_at,
           s.weather_valid_at,
@@ -335,6 +394,18 @@ def markdown_report(report):
         )
     else:
         lines.append("- 学習期間を確保できるデータがないため未実施")
+    lines.extend(["", "## 補正因子ablation（JMA）", ""])
+    ablation = report["factor_ablation"]
+    if ablation["status"] != "ok":
+        lines.append("- 因子内訳を持つ評価可能なJMA予測がないため未実施")
+    else:
+        for name, metrics in ablation["all"].items():
+            weather_metrics = ablation["weather_only"][name]
+            lines.append(
+                f"- `{name}`: {metrics['count']}件 / Brier {metrics['brier_score']} / "
+                f"時系列fold {len(metrics['rolling_time'])} / "
+                f"天候起因限定 {weather_metrics['count']}件・Brier {weather_metrics['brier_score']}"
+            )
     return "\n".join(lines) + "\n"
 
 

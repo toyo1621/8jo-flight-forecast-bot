@@ -140,6 +140,9 @@ def predict_flight_probability(
         reason_code = "no_history" if not history else "below_minimum_history"
         return {
             "probability": None,
+            "base_probability": None,
+            "weather_factor": None,
+            "weather_factors": {},
             "calculation_status": "insufficient_history",
             "reason_code": reason_code,
             "alert_required": False,
@@ -185,6 +188,8 @@ def predict_flight_probability(
         base_prob = (score_sum / total) * 100.0
         
     prob = base_prob
+    weather_factor = 1.0
+    weather_factors = {}
     warnings = []
     alert_required = False
 
@@ -198,36 +203,51 @@ def predict_flight_probability(
     # 2. 霧・低層雲量による減算補正
     if visibility is not None and visibility < VISIBILITY_RISK_KM:
         if visibility < SEVERE_VISIBILITY_RISK_KM:
-            prob *= SEVERE_VISIBILITY_PROBABILITY_MULTIPLIER
+            factor = SEVERE_VISIBILITY_PROBABILITY_MULTIPLIER
         else:
-            prob *= VISIBILITY_PROBABILITY_MULTIPLIER
+            factor = VISIBILITY_PROBABILITY_MULTIPLIER
+        prob *= factor
+        weather_factor *= factor
+        weather_factors["visibility"] = factor
         warnings.append(f"視程不良リスク ({visibility} km)")
 
     if precipitation is not None and precipitation >= PRECIPITATION_RISK_MM:
         if precipitation >= SEVERE_PRECIPITATION_RISK_MM:
-            prob *= SEVERE_PRECIPITATION_PROBABILITY_MULTIPLIER
+            factor = SEVERE_PRECIPITATION_PROBABILITY_MULTIPLIER
         else:
-            prob *= PRECIPITATION_PROBABILITY_MULTIPLIER
+            factor = PRECIPITATION_PROBABILITY_MULTIPLIER
+        prob *= factor
+        weather_factor *= factor
+        weather_factors["precipitation"] = factor
         warnings.append(f"降水注意 (予報降水量: {precipitation} mm/h)")
 
     if cloud_cover_low is not None and cloud_cover_low > LOW_CLOUD_RISK_PERCENT:
         if cloud_cover_low >= SEVERE_LOW_CLOUD_RISK_PERCENT:
-            prob *= SEVERE_LOW_CLOUD_PROBABILITY_MULTIPLIER
+            factor = SEVERE_LOW_CLOUD_PROBABILITY_MULTIPLIER
         else:
-            prob *= LOW_CLOUD_PROBABILITY_MULTIPLIER
+            factor = LOW_CLOUD_PROBABILITY_MULTIPLIER
+        prob *= factor
+        weather_factor *= factor
+        weather_factors["low_cloud"] = factor
         warnings.append(f"低層雲の影響注意 (低層雲量 {cloud_cover_low}%)")
         
     # 3. 台風・強風による補正
     is_windy = False
     if wind_gusts is not None and wind_gusts >= GUST_RISK_MS:
         if wind_gusts >= SEVERE_GUST_RISK_MS:
-            prob *= SEVERE_GUST_PROBABILITY_MULTIPLIER
+            factor = SEVERE_GUST_PROBABILITY_MULTIPLIER
         else:
-            prob *= WIND_PROBABILITY_MULTIPLIER
+            factor = WIND_PROBABILITY_MULTIPLIER
+        prob *= factor
+        weather_factor *= factor
+        weather_factors["gust"] = factor
         is_windy = True
         warnings.append(f"突風注意 (予報突風: {wind_gusts} m/s)")
     elif wind_speed is not None and wind_speed >= STRONG_WIND_RISK_MS:
-        prob *= WIND_PROBABILITY_MULTIPLIER
+        factor = WIND_PROBABILITY_MULTIPLIER
+        prob *= factor
+        weather_factor *= factor
+        weather_factors["wind"] = factor
         is_windy = True
         warnings.append(f"強風注意 (予報風速: {wind_speed} m/s)")
         
@@ -242,6 +262,9 @@ def predict_flight_probability(
     
     return {
         "probability": round(final_prob, 1),
+        "base_probability": round(base_prob, 1),
+        "weather_factor": round(weather_factor, 6),
+        "weather_factors": weather_factors,
         "calculation_status": "available",
         "reason_code": None,
         "alert_required": alert_required,

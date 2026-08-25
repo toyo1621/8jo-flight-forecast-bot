@@ -10,6 +10,7 @@ from app_config import (
     JST,
     MAIN_FORECAST_URL,
 )
+from typhoon_impact import normalize_typhoon_impact
 
 SNAPSHOT_WEATHER_FIELDS = (
     "wind_direction",
@@ -74,7 +75,8 @@ def build_prediction_snapshot_rows(days, bundle, generated_at=None, run_id=None)
 
     for day in days:
         date_string = day.get("date")
-        typhoon_risk_level = typhoon_impacts.get(date_string)
+        typhoon_impact = normalize_typhoon_impact(typhoon_impacts.get(date_string))
+        typhoon_risk_level = typhoon_impact.get("risk_level")
         for flight in day.get("flights", []):
             flight_number = flight.get("raw_number") or flight.get("flight_number")
             if not date_string or not flight_number:
@@ -120,6 +122,30 @@ def build_prediction_snapshot_rows(days, bundle, generated_at=None, run_id=None)
                         "model": model,
                         "calculation_status": model_status,
                         "probability": probability,
+                        "base_probability": flight.get("base_probability")
+                        if model == "jma_seamless"
+                        else None,
+                        "weather_factor": flight.get("weather_factor")
+                        if model == "jma_seamless"
+                        else None,
+                        "typhoon_factor": flight.get("typhoon_factor"),
+                        "factor_breakdown_json": json.dumps(
+                            {
+                                "base_probability": flight.get("base_probability"),
+                                "weather_factor": flight.get("weather_factor"),
+                                "weather_factors": flight.get("weather_factors", {}),
+                                "typhoon_factor": flight.get("typhoon_factor"),
+                                "typhoon_adjustment_status": flight.get(
+                                    "typhoon_adjustment_status"
+                                ),
+                                "ablation": flight.get("factor_ablation", {}),
+                                "external_typhoon": typhoon_impact,
+                            }
+                            if model == "jma_seamless"
+                            else {"external_typhoon": typhoon_impact},
+                            ensure_ascii=False,
+                            sort_keys=True,
+                        ),
                         "prediction_generated_at": generated_timestamp,
                         "weather_retrieved_at": retrieved_at,
                         "weather_valid_at": valid_at.isoformat() if valid_at else generated_timestamp,

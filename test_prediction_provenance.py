@@ -1,3 +1,5 @@
+import json
+
 from prediction_provenance import build_prediction_snapshot_rows
 
 
@@ -53,6 +55,9 @@ def test_prediction_snapshot_rows_capture_time_and_source_provenance():
     assert rows[1]["calculation_status"] == "available"
     assert rows[2]["probability"] is None
     assert rows[2]["calculation_status"] == "available"
+    breakdown = json.loads(rows[0]["factor_breakdown_json"])
+    assert breakdown["external_typhoon"]["risk_level"] == "low"
+    assert breakdown["ablation"] == {}
 
 
 def test_prediction_snapshot_marks_missing_retrieval_as_unknown():
