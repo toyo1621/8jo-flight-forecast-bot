@@ -16,14 +16,29 @@ from web_app import (
 
 DIST_DIR = BASE_DIR / "dist"
 FAVICON_VERSION = "20260713-2"
+SITE_URL = "https://toyo1621.github.io/8jo-flight-forecast-bot/"
+
+
+def write_search_assets(output_dir):
+    (output_dir / "robots.txt").write_text(
+        f"User-agent: *\nAllow: /\n\nSitemap: {SITE_URL}sitemap.xml\n",
+        encoding="utf-8",
+    )
+    (output_dir / "sitemap.xml").write_text(
+        "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n"
+        "<urlset xmlns=\"http://www.sitemaps.org/schemas/sitemap/0.9\">\n"
+        f"  <url><loc>{SITE_URL}</loc></url>\n"
+        "</urlset>\n",
+        encoding="utf-8",
+    )
 
 
 def add_brand_assets(html):
     if "static/favicon.svg" not in html:
         html = html.replace(
-            "  <title>八丈島便 運航の目安</title>",
+            "</title>",
             (
-                "  <title>八丈島便 運航の目安</title>\n"
+                "</title>\n"
                 f"  <link rel=\"icon\" type=\"image/svg+xml\" href=\"static/favicon.svg?v={FAVICON_VERSION}\">\n"
                 f"  <link rel=\"apple-touch-icon\" href=\"static/logo.svg?v={FAVICON_VERSION}\">\n"
                 f"  <link rel=\"stylesheet\" href=\"static/favicon-brand.css?v={FAVICON_VERSION}\">"
@@ -70,6 +85,7 @@ def build_site(output_dir=DIST_DIR):
 
     output_dir.mkdir(parents=True, exist_ok=True)
     (output_dir / ".nojekyll").touch()
+    write_search_assets(output_dir)
     (output_dir / "index.html").write_text(add_brand_assets(html), encoding="utf-8")
     shutil.copytree(BASE_DIR / "static", output_dir / "static", dirs_exist_ok=True)
     print(f"Built {output_dir / 'index.html'} with {len(days)} forecast days.")

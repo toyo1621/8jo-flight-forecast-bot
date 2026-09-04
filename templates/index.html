@@ -3,8 +3,39 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="description" content="羽田→八丈島便の運航傾向を、過去の運航実績と天気から見やすくするサイトです。">
-  <title>八丈島便 運航の目安</title>
+  <meta name="description" content="羽田空港→八丈島空港（ANA1891・ANA1893・ANA1895）の運航目安。JMA主予報、GFS・ECMWF、台風影響度、過去実績から、八丈島便の天候リスクを確認できます。">
+  <meta name="robots" content="index,follow">
+  <meta name="theme-color" content="#071c2c">
+  <link rel="canonical" href="https://toyo1621.github.io/8jo-flight-forecast-bot/">
+  <meta property="og:type" content="website">
+  <meta property="og:site_name" content="八丈島の飛行機運航目安">
+  <meta property="og:title" content="八丈島の飛行機運航目安｜羽田便の天気・過去実績">
+  <meta property="og:description" content="羽田空港→八丈島空港のANA便について、JMA主予報、GFS・ECMWF、台風影響度、過去実績から運航目安を確認できます。">
+  <meta property="og:url" content="https://toyo1621.github.io/8jo-flight-forecast-bot/">
+  <meta property="og:image" content="https://toyo1621.github.io/8jo-flight-forecast-bot/static/logo.svg">
+  <meta property="og:image:alt" content="八丈島フライト予測のロゴ">
+  <meta name="twitter:card" content="summary">
+  <meta name="twitter:title" content="八丈島の飛行機運航目安｜羽田便の天気・過去実績">
+  <meta name="twitter:description" content="羽田空港→八丈島空港のANA便の運航目安を、天気・台風影響度・過去実績から確認できます。">
+  <title>八丈島の飛行機運航目安｜羽田便の天気・過去実績</title>
+  <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@type": "WebApplication",
+      "name": "八丈島の飛行機運航目安",
+      "description": "羽田空港から八丈島空港へ向かうANA便の運航目安を、天気・台風影響度・過去実績から確認できるWebアプリです。",
+      "url": "https://toyo1621.github.io/8jo-flight-forecast-bot/",
+      "applicationCategory": "TravelApplication",
+      "operatingSystem": "Web",
+      "inLanguage": "ja-JP",
+      "isAccessibleForFree": true,
+      "offers": {
+        "@type": "Offer",
+        "price": "0",
+        "priceCurrency": "JPY"
+      }
+    }
+  </script>
   <link rel="stylesheet" href="static/styles.css?v=20260623-12">
   <script src="static/app.js?v=20260619-1" defer></script>
   <!-- Cloudflare Web Analytics: privacy-first pageview measurement without cookies. -->
@@ -18,7 +49,7 @@
     <header class="header">
       <p class="eyebrow">HND / HAC</p>
       <h1>八丈島便 運航の目安</h1>
-      <p class="lead">羽田→八丈島便の運航傾向を、同じ便の過去実績と天気から見やすくするサイトです。</p>
+      <p class="lead">羽田空港から八丈島空港へ向かうANA1891・ANA1893・ANA1895便の運航目安を、天気・台風影響度・過去の運航実績から確認できます。</p>
       <p class="updated">予報データ取得 {{ updated_at }} (6時間ごとに更新)</p>
       <p class="forecast-source">主予報は気象庁(JMA)モデルをOpen-Meteo経由で使用しています。</p>
       <div class="status-legend" aria-label="表示色の説明">
