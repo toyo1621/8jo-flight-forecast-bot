@@ -53,22 +53,27 @@
   {% set access_stats = access_stats|default({"days": [], "generated_at": None, "status": "unavailable"}) %}
   {% set access_stats_status = access_stats.status|default("available" if access_stats.days else "unavailable") %}
   {% set today = days[0] if days else None %}
-  <main class="container">
-    <header class="header">
-      <p class="eyebrow">HND / HAC</p>
-      <h1>{{ page_heading }}</h1>
-      <p class="lead">羽田空港から八丈島空港へ向かうANA1891・ANA1893・ANA1895便の運航目安を、天気・台風影響度・過去の運航実績から確認できます。</p>
-      <p class="updated">予報データ取得 {{ updated_at }} (6時間ごとに更新)</p>
-      <p class="forecast-source">主予報は気象庁(JMA)モデルをOpen-Meteo経由で使用しています。</p>
-      <div class="status-legend" aria-label="表示色の説明">
-        <span><i class="legend-dot legend-dot--blue" aria-hidden="true"></i>青: 参考スコア{{ low_threshold }}以上</span>
-        <span><i class="legend-dot legend-dot--orange" aria-hidden="true"></i>オレンジ: 参考スコア{{ low_threshold }}未満</span>
-      </div>
-      <details class="quick-guide">
-        <summary>数値の見方</summary>
-        <p><strong>見方:</strong> ◎95以上 / 〇75以上 / △35以上 / ×35未満。表示する数値は、同じ便の類似実績から算出した未校正の統計参考値で、将来の運航確率ではありません。比較欄にはGFS・ECMWF・JMAを併記しています。</p>
-        <p>予報シナリオの一致度は、GFS・ECMWFそれぞれのmemberのばらつきを示します。運航結果の正確さや信頼区間ではありません。</p>
-      </details>
+  <main class="container{% if page_variant == "date" %} container--minimal{% endif %}">
+    <header class="header{% if page_variant == "date" %} header--minimal{% endif %}">
+      {% if page_variant == "date" %}
+        <h1 class="visually-hidden">{{ page_heading }}</h1>
+        <p class="page-nav"><a href="{{ asset_prefix }}">トップページへ｜今日の八丈島便の運航目安を見る</a></p>
+      {% else %}
+        <p class="eyebrow">HND / HAC</p>
+        <h1>{{ page_heading }}</h1>
+        <p class="lead">羽田空港から八丈島空港へ向かうANA1891・ANA1893・ANA1895便の運航目安を、天気・台風影響度・過去の運航実績から確認できます。</p>
+        <p class="updated">予報データ取得 {{ updated_at }} (6時間ごとに更新)</p>
+        <p class="forecast-source">主予報は気象庁(JMA)モデルをOpen-Meteo経由で使用しています。</p>
+        <div class="status-legend" aria-label="表示色の説明">
+          <span><i class="legend-dot legend-dot--blue" aria-hidden="true"></i>青: 参考スコア{{ low_threshold }}以上</span>
+          <span><i class="legend-dot legend-dot--orange" aria-hidden="true"></i>オレンジ: 参考スコア{{ low_threshold }}未満</span>
+        </div>
+        <details class="quick-guide">
+          <summary>数値の見方</summary>
+          <p><strong>見方:</strong> ◎95以上 / 〇75以上 / △35以上 / ×35未満。表示する数値は、同じ便の類似実績から算出した未校正の統計参考値で、将来の運航確率ではありません。比較欄にはGFS・ECMWF・JMAを併記しています。</p>
+          <p>予報シナリオの一致度は、GFS・ECMWFそれぞれのmemberのばらつきを示します。運航結果の正確さや信頼区間ではありません。</p>
+        </details>
+      {% endif %}
     </header>
 
     <section class="today-summary" aria-labelledby="today-summary-title">
