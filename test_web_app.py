@@ -1182,7 +1182,7 @@ def test_index_renders_forecast():
     assert response.status_code == 200
     body = response.get_data(as_text=True)
     assert "八丈島便 運航の目安" in body
-    assert "羽田→八丈島便の運航傾向を、同じ便の過去実績と天気から見やすくするサイトです。" in body
+    assert "羽田空港から八丈島空港へ向かうANA1891・ANA1893・ANA1895便の運航目安を、天気・台風影響度・過去の運航実績から確認できます。" in body
     assert "天候信頼度は、Open-Meteo APIからオープンデータ" not in body
     assert "比較欄にはGFS・ECMWF・JMAを併記" in body
     assert "主予報は気象庁(JMA)モデルをOpen-Meteo経由で使用しています。" in body
