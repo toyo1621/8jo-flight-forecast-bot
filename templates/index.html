@@ -1,30 +1,37 @@
 <!doctype html>
 <html lang="ja">
 <head>
+  {% set asset_prefix = asset_prefix|default("", true) %}
+  {% set site_url = site_url|default("https://toyo1621.github.io/8jo-flight-forecast-bot/") %}
+  {% set page_url = page_url|default(site_url) %}
+  {% set page_title = page_title|default("八丈島の飛行機運航目安｜羽田便の天気・過去実績") %}
+  {% set page_description = page_description|default("羽田空港から八丈島空港へ向かうANA便の運航目安を、JMA主予報、GFS・ECMWF、台風影響度、過去実績から確認できます。") %}
+  {% set page_heading = page_heading|default("八丈島便 運航の目安") %}
+  {% set page_variant = page_variant|default("home") %}
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="description" content="羽田空港→八丈島空港（ANA1891・ANA1893・ANA1895）の運航目安。JMA主予報、GFS・ECMWF、台風影響度、過去実績から、八丈島便の天候リスクを確認できます。">
+  <meta name="description" content="{{ page_description }}">
   <meta name="robots" content="index,follow">
   <meta name="theme-color" content="#071c2c">
-  <link rel="canonical" href="https://toyo1621.github.io/8jo-flight-forecast-bot/">
+  <link rel="canonical" href="{{ page_url }}">
   <meta property="og:type" content="website">
   <meta property="og:site_name" content="八丈島の飛行機運航目安">
-  <meta property="og:title" content="八丈島の飛行機運航目安｜羽田便の天気・過去実績">
-  <meta property="og:description" content="羽田空港→八丈島空港のANA便について、JMA主予報、GFS・ECMWF、台風影響度、過去実績から運航目安を確認できます。">
-  <meta property="og:url" content="https://toyo1621.github.io/8jo-flight-forecast-bot/">
-  <meta property="og:image" content="https://toyo1621.github.io/8jo-flight-forecast-bot/static/logo.svg">
+  <meta property="og:title" content="{{ page_title }}">
+  <meta property="og:description" content="{{ page_description }}">
+  <meta property="og:url" content="{{ page_url }}">
+  <meta property="og:image" content="{{ site_url }}static/logo.svg">
   <meta property="og:image:alt" content="八丈島フライト予測のロゴ">
   <meta name="twitter:card" content="summary">
-  <meta name="twitter:title" content="八丈島の飛行機運航目安｜羽田便の天気・過去実績">
-  <meta name="twitter:description" content="羽田空港→八丈島空港のANA便の運航目安を、天気・台風影響度・過去実績から確認できます。">
-  <title>八丈島の飛行機運航目安｜羽田便の天気・過去実績</title>
+  <meta name="twitter:title" content="{{ page_title }}">
+  <meta name="twitter:description" content="{{ page_description }}">
+  <title>{{ page_title }}</title>
   <script type="application/ld+json">
     {
       "@context": "https://schema.org",
       "@type": "WebApplication",
       "name": "八丈島の飛行機運航目安",
-      "description": "羽田空港から八丈島空港へ向かうANA便の運航目安を、天気・台風影響度・過去実績から確認できるWebアプリです。",
-      "url": "https://toyo1621.github.io/8jo-flight-forecast-bot/",
+      "description": {{ page_description|tojson }},
+      "url": {{ page_url|tojson }},
       "applicationCategory": "TravelApplication",
       "operatingSystem": "Web",
       "inLanguage": "ja-JP",
@@ -36,8 +43,8 @@
       }
     }
   </script>
-  <link rel="stylesheet" href="static/styles.css?v=20260623-12">
-  <script src="static/app.js?v=20260619-1" defer></script>
+  <link rel="stylesheet" href="{{ asset_prefix }}static/styles.css?v=20260623-13">
+  <script src="{{ asset_prefix }}static/app.js?v=20260619-1" defer></script>
   <!-- Cloudflare Web Analytics: privacy-first pageview measurement without cookies. -->
   <script type="module" src="https://static.cloudflareinsights.com/beacon.min.js" data-cf-beacon='{"token": "afc2a7c7ee1a4ab2a9738a04695321b9"}'></script>
 </head>
@@ -45,22 +52,73 @@
   {% set low_threshold = low_probability_threshold|default(60)|round|int %}
   {% set access_stats = access_stats|default({"days": [], "generated_at": None, "status": "unavailable"}) %}
   {% set access_stats_status = access_stats.status|default("available" if access_stats.days else "unavailable") %}
+  {% set today = days[0] if days else None %}
   <main class="container">
     <header class="header">
       <p class="eyebrow">HND / HAC</p>
-      <h1>八丈島便 運航の目安</h1>
+      <h1>{{ page_heading }}</h1>
       <p class="lead">羽田空港から八丈島空港へ向かうANA1891・ANA1893・ANA1895便の運航目安を、天気・台風影響度・過去の運航実績から確認できます。</p>
       <p class="updated">予報データ取得 {{ updated_at }} (6時間ごとに更新)</p>
       <p class="forecast-source">主予報は気象庁(JMA)モデルをOpen-Meteo経由で使用しています。</p>
       <div class="status-legend" aria-label="表示色の説明">
-        <span><i class="legend-dot legend-dot--blue" aria-hidden="true"></i>青: 統計参考値{{ low_threshold }}%以上</span>
-        <span><i class="legend-dot legend-dot--orange" aria-hidden="true"></i>オレンジ: 統計参考値{{ low_threshold }}%未満</span>
+        <span><i class="legend-dot legend-dot--blue" aria-hidden="true"></i>青: 参考スコア{{ low_threshold }}以上</span>
+        <span><i class="legend-dot legend-dot--orange" aria-hidden="true"></i>オレンジ: 参考スコア{{ low_threshold }}未満</span>
       </div>
-      <div class="quick-guide" aria-label="画面の見方">
-        <p><strong>見方:</strong> ◎95%以上 / 〇75%以上 / △35%以上 / ×35%未満。表示する%は、同じ便の類似実績から算出した未校正の統計参考値で、将来の運航確率ではありません。比較欄にはGFS・ECMWF・JMAを併記しています。</p>
+      <details class="quick-guide">
+        <summary>数値の見方</summary>
+        <p><strong>見方:</strong> ◎95以上 / 〇75以上 / △35以上 / ×35未満。表示する数値は、同じ便の類似実績から算出した未校正の統計参考値で、将来の運航確率ではありません。比較欄にはGFS・ECMWF・JMAを併記しています。</p>
         <p>予報シナリオの一致度は、GFS・ECMWFそれぞれのmemberのばらつきを示します。運航結果の正確さや信頼区間ではありません。</p>
-      </div>
+      </details>
     </header>
+
+    <section class="today-summary" aria-labelledby="today-summary-title">
+      {% if today %}
+        <div class="today-summary-header">
+          <div>
+            <p class="summary-kicker">{% if page_variant == "date" %}選択した日{% else %}最初に確認{% endif %}</p>
+            <h2 id="today-summary-title">{% if page_variant == "date" %}{{ today.date_label }}の運航目安{% else %}今日の運航目安{% endif %}</h2>
+          </div>
+          <time datetime="{{ today.date }}">{{ today.date_label }} ({{ today.weekday }})</time>
+        </div>
+        {% if today.flights %}
+          <div class="today-flight-list">
+            {% for flight in today.flights %}
+              <a class="today-flight" href="#flight-{{ today.date }}-{{ flight.raw_number }}">
+                <span class="today-flight-main">
+                  <strong>{{ flight.number }}</strong>
+                  <span>{{ flight.time }} 着</span>
+                </span>
+                <span class="today-flight-score">
+                  {% if flight.calculation_status == "available" %}
+                    <span class="probability-symbol">{{ flight.probability_symbol }}</span>
+                    <strong>{{ flight.probability }}</strong><span class="score-unit"> / 100</span>
+                  {% else %}
+                    <strong>算出不可</strong>
+                  {% endif %}
+                </span>
+                <span class="today-flight-action">詳細を見る</span>
+              </a>
+            {% endfor %}
+          </div>
+          <p class="today-summary-note">表示は未校正の運航参考スコアです。最終的な運航状況は公式情報を確認してください。</p>
+        {% else %}
+          <p class="today-empty">表示対象の便がありません。公式の運航情報をご確認ください。</p>
+        {% endif %}
+        <nav class="today-actions" aria-label="公式情報と詳しい見方">
+          <a class="official-link" href="https://www.ana.co.jp/fs/dom/jp/" target="_blank" rel="noopener noreferrer">ANA公式の運航状況</a>
+          <a class="secondary-link" href="https://www.islandaccess.metro.tokyo.lg.jp/traffic/hachijojima/" target="_blank" rel="noopener noreferrer">東京都の八丈島運航状況</a>
+          {% if page_variant == "date" %}
+            <a class="secondary-link" href="{{ asset_prefix }}">トップへ戻る</a>
+            <a class="secondary-link" href="{{ asset_prefix }}guide/">見方・計算方法</a>
+          {% else %}
+            <a class="secondary-link" href="guide/">見方・計算方法</a>
+          {% endif %}
+        </nav>
+      {% else %}
+        <h2 id="today-summary-title">運航目安を取得できません</h2>
+        <p class="today-empty">予報データがないため、公式の運航情報をご確認ください。</p>
+      {% endif %}
+    </section>
 
     {% if error %}
       <p class="error" role="alert">{{ error }}</p>
@@ -71,9 +129,14 @@
 
     <div class="days">
       {% for day in days %}
-        <section class="day">
+        <section class="day" id="date-{{ day.date }}">
           <div class="day-heading">
-            <h2><time datetime="{{ day.date }}">{{ day.date_label }} <span>({{ day.weekday }})</span></time></h2>
+            <div class="day-title">
+              <h2><time datetime="{{ day.date }}">{{ day.date_label }} <span>({{ day.weekday }})</span></time></h2>
+              {% if page_variant != "date" %}
+                <a class="day-share-link" href="forecast/{{ day.date }}/">この日のページを共有</a>
+              {% endif %}
+            </div>
             {% if day.confidence.grade %}
               <div class="confidence confidence--{{ day.confidence.grade|lower }}">
                 <span>予報シナリオの一致度</span>
@@ -96,23 +159,23 @@
           {% endif %}
           <div class="flights">
             {% for flight in day.flights %}
-              <article class="flight{% if flight.is_low_probability %} flight--low-probability{% endif %}" role="button" tabindex="0" aria-haspopup="dialog" data-dialog="detail-{{ day.date }}-{{ flight.raw_number }}">
+              <article id="flight-{{ day.date }}-{{ flight.raw_number }}" class="flight{% if flight.is_low_probability %} flight--low-probability{% endif %}" role="button" tabindex="0" aria-haspopup="dialog" data-dialog="detail-{{ day.date }}-{{ flight.raw_number }}">
                 <div class="flight-meta">
                   <p class="flight-number">{{ flight.number }}</p>
                   <p class="flight-time">{{ flight.time }} 着</p>
                 </div>
                 <p class="probability">
                   {% if flight.calculation_status == "available" %}
-                    <span class="probability-symbol">{{ flight.probability_symbol }}</span><strong>{{ flight.probability }}</strong><span class="probability-unit">%</span>
+                    <span class="probability-symbol">{{ flight.probability_symbol }}</span><strong>{{ flight.probability }}</strong><span class="probability-unit"> / 100</span>
                   {% else %}
                     <span class="probability-unavailable" role="status">算出不可</span>
                   {% endif %}
-                  <small>(JMA主予報 / 統計参考値)</small>
+                  <small>JMA主予報 / 未校正の参考スコア</small>
                 </p>
-                <div class="model-probabilities" aria-label="モデル別の統計参考値">
+                <div class="model-probabilities" aria-label="モデル別の運航参考スコア">
                   {% for model in flight.model_probabilities %}
                     <p class="model-probability model-probability--{{ model.tone }}">
-                      <span><img class="model-flag" src="{{ model.flag_path }}" alt="{{ model.flag_alt }}">{{ model.label }}</span><strong><span class="probability-inline-symbol">{{ model.symbol }}</span>{{ model.probability }}%</strong>
+                      <span><img class="model-flag" src="{{ asset_prefix }}{{ model.flag_path }}" alt="{{ model.flag_alt }}">{{ model.label }}</span><strong><span class="probability-inline-symbol">{{ model.symbol }}</span>{{ model.probability }}<span class="score-unit"> / 100</span></strong>
                     </p>
                   {% endfor %}
                 </div>
@@ -140,10 +203,10 @@
                     <div><dt>視程</dt><dd>{{ flight.visibility }} km</dd></div>
                     <div><dt>降水量</dt><dd>{% if flight.precipitation is not none %}{{ flight.precipitation }} mm/h{% else %}欠測{% endif %}</dd></div>
                     <div><dt>気圧</dt><dd>{% if flight.pressure_msl is not none %}{{ flight.pressure_msl }} hPa{% else %}欠測{% endif %}</dd></div>
-                    <div><dt>主予報(JMA)での統計参考値</dt><dd>{% if flight.calculation_status == "available" %}<span class="probability-inline-symbol">{{ flight.probability_symbol }}</span>{{ flight.probability }}%{% else %}算出不可{% endif %}</dd></div>
+                    <div><dt>主予報(JMA)での統計参考値（運航参考スコア）</dt><dd>{% if flight.calculation_status == "available" %}<span class="probability-inline-symbol">{{ flight.probability_symbol }}</span>{{ flight.probability }} / 100{% else %}算出不可{% endif %}</dd></div>
                     <div><dt>過去実績の集計対象</dt><dd>{{ flight.number }} / {{ flight.data_count }}件</dd></div>
                     {% for model in flight.model_probabilities %}
-                      <div><dt>{{ model.label }}予報での統計参考値</dt><dd><span class="probability-inline-symbol">{{ model.symbol }}</span>{{ model.probability }}%</dd></div>
+                      <div><dt>{{ model.label }}予報での統計参考値（運航参考スコア）</dt><dd><span class="probability-inline-symbol">{{ model.symbol }}</span>{{ model.probability }} / 100</dd></div>
                     {% endfor %}
                   </dl>
                 </section>
@@ -152,7 +215,7 @@
                   <div class="model-risk-list">
                     {% for model in flight.model_probabilities %}
                       <article class="model-risk model-risk--{{ model.risk_tone }}">
-                        <strong><img class="model-flag" src="{{ model.flag_path }}" alt="{{ model.flag_alt }}">{{ model.label }}</strong>
+                        <strong><img class="model-flag" src="{{ asset_prefix }}{{ model.flag_path }}" alt="{{ model.flag_alt }}">{{ model.label }}</strong>
                         <span>{{ model.risk }}</span>
                       </article>
                     {% endfor %}
@@ -195,14 +258,14 @@
         <h3>ざっくりどういう仕組みか</h3>
         <ol class="system-flow">
           <li>主予報には、<a href="https://open-meteo.com/en/docs/jma-api" rel="noreferrer">気象庁(JMA)のGSM・MSMモデル</a>をOpen-Meteo経由で使います。JMAモデルで提供されない最大瞬間風速・視程はOpen-Meteo標準予報で補完します。</li>
-          <li>BigQueryに保存した同じ便の過去実績から、予報と風向・風速が近い事例を探して、運航統計参考値を計算します。</li>
-          <li>視程不良、降水、低層雲量80%超、強風・突風、台風接近リスクの場合は参考値を補正します。上限は97%です。</li>
+          <li>BigQueryに保存した同じ便の過去実績から、予報と風向・風速が近い事例を探して、運航参考スコアを計算します。</li>
+          <li>視程不良、降水、低層雲量80%超、強風・突風、台風接近リスクの場合は参考スコアを補正します。上限は97です。</li>
           <li>詳細画面では、低視程・低層雲・強風など、その日の問題点を重視して近い過去実績10件を表示します。</li>
           <li>GFS・ECMWFを混ぜずにモデル別のmember数、欠測率、10〜90パーセンタイル幅を計算し、利用可能モデルの最悪値を予報シナリオの一致度A〜Eとして表示します。必要数に届かない場合は評価不可です。</li>
           <li>日本周辺の短期予報を重視してJMAを主予報とし、GFS・ECMWFも残してモデルごとの見方の違いを比較できるようにしています。</li>
           <li>台風接近リスクは、<a href="https://8jo-typhoon-ensemble.toyo1621.workers.dev/?source=jma" rel="noreferrer">八丈島・東京方面 台風影響目安</a>の飛行機向け影響度を使います。注意度lowは補正なし、medium・high・severeをリスク小・中・大として、運航率に0.9・0.8・0.7を掛けます。</li>
           <li>便カードと詳細画面の比較欄にはGFS・ECMWF・JMAを併記します。JMA欄は主予報と同じ値です。</li>
-          <li>統計参考値{{ low_threshold }}%未満の便はオレンジで表示し、当日便は到着予定時刻の30分後を過ぎると非表示にします。</li>
+          <li>運航参考スコア{{ low_threshold }}未満の便はオレンジで表示し、当日便は到着予定時刻の30分後を過ぎると非表示にします。</li>
         </ol>
         <p>GitHub Actionsで6時間ごとに再計算し、静的サイトとして公開しています。</p>
       </article>
@@ -218,10 +281,12 @@
     </section>
 
     <footer>
-      <p>運航可否は最終的に航空会社の判断に従ってください。最新の運航情報はANA公式サイトでご確認ください。</p>
-      <p>表示する%は統計的な校正・精度検証が未実施の参考値であり、実際の運航確率ではありません。</p>
+      <img class="footer-logo" src="{{ asset_prefix }}static/logo.svg?v=20260713-2" alt="" aria-hidden="true">
+      <p>運航可否は最終的に航空会社の判断に従ってください。最新の運航情報は<a href="https://www.ana.co.jp/fs/dom/jp/" target="_blank" rel="noopener noreferrer">ANA公式の運航状況</a>でご確認ください。</p>
+      <p>表示する数値は統計的な校正・精度検証が未実施の運航参考スコアであり、実際の運航確率ではありません。</p>
       <p>予報シナリオの一致度は、GFS・ECMWFそれぞれのアンサンブル予報の中央80%における統計参考値の幅から算出します。A: 10ポイント以内、B: 20以内、C: 30以内、D: 40以内、E: 40超。運航結果の正確さや信頼区間ではありません。</p>
       <p>気象データ: <a href="https://www.jma.go.jp/" rel="noreferrer">気象庁(JMA)</a>モデル (<a href="https://open-meteo.com/" rel="noreferrer">Open-Meteo</a>経由) / 運航実績: <a href="https://www.odpt.org/" rel="noreferrer">公共交通オープンデータセンター</a></p>
+      <p><a href="{{ asset_prefix }}guide/">運航参考スコアの見方・計算方法</a></p>
       {% if access_stats.days and access_stats_status in ["available", "stale"] %}
         <section class="access-stats" aria-labelledby="access-stats-title">
           <h2 id="access-stats-title">過去7日間のアクセス数</h2>

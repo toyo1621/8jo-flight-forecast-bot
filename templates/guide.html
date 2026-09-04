@@ -1,0 +1,110 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="八丈島便の運航参考スコア、JMA・GFS・ECMWFの見方、台風接近リスクの補正方法と公式運航情報を説明します。">
+  <meta name="robots" content="index,follow">
+  <meta name="theme-color" content="#071c2c">
+  <link rel="canonical" href="{{ page_url }}">
+  <meta property="og:type" content="article">
+  <meta property="og:site_name" content="八丈島の飛行機運航目安">
+  <meta property="og:title" content="八丈島便の欠航リスク・運航目安の見方">
+  <meta property="og:description" content="八丈島便の運航参考スコア、JMA・GFS・ECMWFの見方、台風接近リスクの補正方法を説明します。">
+  <meta property="og:url" content="{{ page_url }}">
+  <meta property="og:image" content="{{ site_url }}static/logo.svg">
+  <meta property="og:image:alt" content="八丈島フライト予測のロゴ">
+  <meta name="twitter:card" content="summary">
+  <title>八丈島便の欠航リスク・運航目安の見方</title>
+  <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@type": "WebPage",
+      "name": "八丈島便の欠航リスク・運航目安の見方",
+      "description": "八丈島便の運航参考スコア、JMA・GFS・ECMWFの見方、台風接近リスクの補正方法を説明します。",
+      "url": {{ page_url|tojson }},
+      "isPartOf": {
+        "@type": "WebSite",
+        "name": "八丈島の飛行機運航目安",
+        "url": {{ site_url|tojson }}
+      },
+      "inLanguage": "ja-JP"
+    }
+  </script>
+  <link rel="icon" type="image/svg+xml" href="../static/favicon.svg?v=20260713-2">
+  <link rel="apple-touch-icon" href="../static/logo.svg?v=20260713-2">
+  <link rel="stylesheet" href="../static/favicon-brand.css?v=20260713-2">
+  <link rel="stylesheet" href="../static/styles.css?v=20260623-13">
+</head>
+<body>
+  <main class="container guide-page">
+    <header class="header guide-header">
+      <p class="eyebrow">GUIDE / HACHIJIMA</p>
+      <h1>八丈島便の欠航リスク・運航目安の見方</h1>
+      <p class="lead">羽田空港から八丈島空港へ向かうANA便について、天気と過去の運航実績から算出した参考スコアを確認するためのページです。</p>
+      <p class="page-nav"><a href="../">今日の八丈島便の運航目安を見る</a></p>
+    </header>
+
+    <div class="guide-sections">
+      <section class="guide-section guide-section--wide">
+        <p class="about-label">FIRST</p>
+        <h2>まず公式の運航状況を確認</h2>
+        <p>このサイトの表示は、旅行や出発前の判断材料です。予約便の運航可否、遅延、欠航は、必ず運航会社の最新情報で確認してください。</p>
+        <div class="guide-links">
+          <a class="official-link" href="https://www.ana.co.jp/fs/dom/jp/" target="_blank" rel="noopener noreferrer">ANA公式の運航状況</a>
+          <a class="secondary-link" href="https://www.islandaccess.metro.tokyo.lg.jp/traffic/hachijojima/" target="_blank" rel="noopener noreferrer">東京都の八丈島運航状況</a>
+        </div>
+      </section>
+
+      <section class="guide-section">
+        <p class="about-label">SCORE</p>
+        <h2>運航参考スコアとは</h2>
+        <p>便ごとに、同じ便の過去実績から予報条件が近い事例を集計して、0〜100の参考スコアとして表示しています。値が高いほど、今回の条件に近い過去便で通常運航が多かったことを示します。</p>
+        <p class="guide-callout">この値は未校正の統計参考値であり、将来の運航確率ではありません。</p>
+        <ul class="guide-list">
+          <li>◎ 95以上</li>
+          <li>〇 75以上</li>
+          <li>△ 35以上</li>
+          <li>× 35未満</li>
+        </ul>
+      </section>
+
+      <section class="guide-section">
+        <p class="about-label">FORECAST</p>
+        <h2>JMA・GFS・ECMWFの役割</h2>
+        <p>主予報は日本周辺の短期予報を重視して、気象庁(JMA)モデルをOpen-Meteo経由で使用しています。GFS・ECMWFは主予報に混ぜず、モデルごとの参考スコアと予報シナリオの一致度を比較するために併記しています。</p>
+        <p>一致度はアンサンブルmemberのばらつきを示す指標です。運航結果の正確さや、統計的な信頼区間ではありません。</p>
+      </section>
+
+      <section class="guide-section">
+        <p class="about-label">TYPHOON</p>
+        <h2>台風接近リスクの補正</h2>
+        <p>別の八丈島・東京方面の台風影響目安から、飛行機向けの影響度を取得し、運航参考スコアに反映します。</p>
+        <ul class="guide-list">
+          <li>リスク大: ×0.7</li>
+          <li>リスク中: ×0.8</li>
+          <li>リスク小: ×0.9</li>
+          <li>lowまたは影響度未取得: 台風補正なし</li>
+        </ul>
+        <p><a href="https://8jo-typhoon-ensemble.toyo1621.workers.dev/?source=jma" target="_blank" rel="noopener noreferrer">台風影響目安の詳細を見る</a></p>
+      </section>
+
+      <section class="guide-section guide-section--wide">
+        <p class="about-label">LIMITS</p>
+        <h2>表示の限界</h2>
+        <ul class="guide-list">
+          <li>予報や運航実績の欠測時は、算出不可または影響度未取得として表示します。</li>
+          <li>データはGitHub Actionsで6時間ごとに更新されますが、取得障害時は古い予報を最新として扱わない設計です。</li>
+          <li>気象条件や航空会社の運航判断は変化するため、表示内容だけで搭乗可否を判断しないでください。</li>
+        </ul>
+      </section>
+    </div>
+
+    <footer>
+      <img class="footer-logo" src="../static/logo.svg?v=20260713-2" alt="" aria-hidden="true">
+      <p><a href="../">八丈島便の運航目安トップへ戻る</a></p>
+      <p>気象データ: <a href="https://www.jma.go.jp/" rel="noreferrer">気象庁(JMA)</a>モデル (<a href="https://open-meteo.com/" rel="noreferrer">Open-Meteo</a>経由) / 運航実績: <a href="https://www.odpt.org/" rel="noreferrer">公共交通オープンデータセンター</a></p>
+    </footer>
+  </main>
+</body>
+</html>

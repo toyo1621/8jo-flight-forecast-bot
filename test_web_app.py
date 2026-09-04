@@ -770,7 +770,7 @@ def test_mobile_css_prevents_horizontal_overflow():
 def test_stylesheet_url_has_cache_buster():
     template = (BASE_DIR / "templates" / "index.html").read_text(encoding="utf-8")
 
-    assert 'href="static/styles.css?v=' in template
+    assert 'href="{{ asset_prefix }}static/styles.css?v=' in template
 
 
 def test_template_includes_quick_guide_for_non_experts():
@@ -778,7 +778,7 @@ def test_template_includes_quick_guide_for_non_experts():
     stylesheet = (BASE_DIR / "static" / "styles.css").read_text(encoding="utf-8")
 
     assert 'class="quick-guide"' in template
-    assert "◎95%以上 / 〇75%以上 / △35%以上 / ×35%未満" in template
+    assert "◎95以上 / 〇75以上 / △35以上 / ×35未満" in template
     assert "比較欄にはGFS・ECMWF・JMAを併記" in template
     assert ".quick-guide" in stylesheet
 
@@ -800,11 +800,11 @@ def test_flight_card_shows_model_reference_probabilities_with_threshold_styles()
 
     assert 'class="model-probabilities"' in template
     assert "{% for model in flight.model_probabilities %}" in template
-    assert 'src="{{ model.flag_path }}"' in template
+    assert 'src="{{ asset_prefix }}{{ model.flag_path }}"' in template
     assert "model-probability--{{ model.tone }}" in template
     assert "モデル別リスク" in template
     assert "model-risk--{{ model.risk_tone }}" in template
-    assert "(JMA主予報 / 統計参考値)" in template
+    assert "JMA主予報 / 未校正の参考スコア" in template
     assert "詳しく見る(運航実績・気象情報)" in template
     assert ".model-probability--ok" in stylesheet
     assert ".model-probability--low" in stylesheet
@@ -847,8 +847,8 @@ def test_probability_symbol_thresholds_render_in_template():
         body = render_template("index.html", days=[day], error=None, updated_at="2026/06/20 00:00")
 
     assert "◎</span><strong>96.0" in body
-    assert "〇</span>76.0%" in body
-    assert "×</span>34.9%" in body
+    assert "〇</span>76.0<span class=\"score-unit\"> / 100" in body
+    assert "×</span>34.9<span class=\"score-unit\"> / 100" in body
     assert "JP" in body
     assert "JMA" in body
 
@@ -1182,18 +1182,25 @@ def test_index_renders_forecast():
     assert response.status_code == 200
     body = response.get_data(as_text=True)
     assert "八丈島便 運航の目安" in body
+    assert 'class="today-summary"' in body
+    assert "今日の運航目安" in body
+    assert "ANA公式の運航状況" in body
+    assert 'href="https://www.ana.co.jp/fs/dom/jp/"' in body
+    assert "運航参考スコア" in body
+    assert "88.0 / 100" in body
+    assert ">88.0%</strong>" not in body
     assert "羽田空港から八丈島空港へ向かうANA1891・ANA1893・ANA1895便の運航目安を、天気・台風影響度・過去の運航実績から確認できます。" in body
     assert "天候信頼度は、Open-Meteo APIからオープンデータ" not in body
     assert "比較欄にはGFS・ECMWF・JMAを併記" in body
     assert "主予報は気象庁(JMA)モデルをOpen-Meteo経由で使用しています。" in body
     assert "予報データ取得 " in body
     assert "(6時間ごとに更新)" in body
-    assert "青: 統計参考値60%以上" in body
-    assert "オレンジ: 統計参考値60%未満" in body
+    assert "青: 参考スコア60以上" in body
+    assert "オレンジ: 参考スコア60未満" in body
     assert "主予報: 気象庁(JMA) GSM・MSMモデル (Open-Meteo経由)" in body
     assert "主予報(JMA)での統計参考値" in body
     assert "予報シナリオの一致度" in body
-    assert "モデル別の統計参考値" in body
+    assert "モデル別の運航参考スコア" in body
     assert "未校正の統計参考値で、将来の運航確率ではありません" in body
     assert ">雲量<" not in body
     assert "なぜ作ったか" in body
@@ -1202,7 +1209,7 @@ def test_index_renders_forecast():
     assert "日本周辺の短期予報を重視してJMAを主予報" in body
     assert "八丈島・東京方面 台風影響目安" in body
     assert "運航率に0.9・0.8・0.7を掛けます" in body
-    assert "統計参考値60%未満の便はオレンジ" in body
+    assert "運航参考スコア60未満の便はオレンジ" in body
     assert "GitHub Actionsで6時間ごとに再計算" in body
     assert "気象業法への配慮" in body
     assert "予報気象情報" in body
