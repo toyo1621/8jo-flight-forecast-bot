@@ -171,6 +171,23 @@ h1 {
 .official-link:focus-visible, .secondary-link:focus-visible { outline: 2px solid var(--blue); outline-offset: 2px; }
 .secondary-link { border-color: rgba(255, 255, 255, .18); color: #fff; background: rgba(255, 255, 255, .035); }
 
+.forecast-index {
+  display: grid;
+  grid-template-columns: minmax(150px, .4fr) minmax(0, 1fr);
+  gap: 16px 24px;
+  align-items: center;
+  margin: 0 0 38px;
+  padding: 16px 18px;
+  border-top: 1px solid var(--line);
+  border-bottom: 1px solid var(--line);
+}
+.forecast-index h2 { margin: 0; font-size: 1.05rem; }
+.forecast-index-links { display: flex; flex-wrap: wrap; gap: 7px; }
+.forecast-index-links a { padding: 6px 8px; border: 1px solid rgba(255, 255, 255, .14); border-radius: 5px; color: #fff; font-size: .72rem; font-weight: 700; text-decoration: none; }
+.forecast-index-links a:hover, .forecast-index-links a:focus-visible { border-color: var(--blue); color: var(--blue); }
+.forecast-index-links a:focus-visible { outline: 2px solid var(--blue); outline-offset: 2px; }
+.forecast-index-links span { color: var(--muted); font-weight: 500; }
+
 .error {
   padding: 16px 18px;
   border: 1px solid rgba(255, 138, 114, .4);
@@ -336,12 +353,27 @@ h1 {
 
 .guide-page .guide-header { max-width: 900px; margin-bottom: 42px; }
 .guide-page .guide-header h1 { max-width: 850px; font-size: clamp(2.15rem, 5.5vw, 4.2rem); }
+.guide-index { margin: 0 0 18px; padding: 18px 22px; border: 1px solid rgba(90, 199, 255, .25); border-radius: 8px; background: rgba(7, 28, 45, .62); }
+.guide-index h2 { margin: 0; font-size: 1.05rem; }
+.guide-index-links { display: flex; flex-wrap: wrap; gap: 8px 14px; margin: 12px 0 0; padding: 0; list-style: none; }
+.guide-index-links a { color: var(--blue); font-size: .76rem; font-weight: 800; text-underline-offset: 3px; }
+.guide-index-links a:hover, .guide-index-links a:focus-visible { color: #fff; }
+.guide-index-links a:focus-visible { outline: 2px solid var(--blue); outline-offset: 2px; }
 .guide-sections { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; }
 .guide-section { padding: 28px; border: 1px solid var(--line); border-radius: 8px; background: var(--panel); box-shadow: 0 16px 36px rgba(0, 7, 16, .18); }
 .guide-section--wide { grid-column: 1 / -1; }
 .guide-section h2 { margin: 0 0 14px; color: #effaff; font-size: 1.2rem; }
 .guide-section p { margin: 10px 0 0; color: #fff; font-size: .82rem; line-height: 1.85; }
 .guide-section h2 + p { margin-top: 0; }
+.guide-steps { display: grid; gap: 12px; margin: 0; padding: 0; list-style: none; counter-reset: guide-step; }
+.guide-steps li { display: grid; grid-template-columns: 34px 150px minmax(0, 1fr); gap: 12px; padding: 13px 0; border-top: 1px solid rgba(255, 255, 255, .12); counter-increment: guide-step; }
+.guide-steps li::before { grid-column: 1; grid-row: 1; content: counter(guide-step, decimal-leading-zero); color: var(--cyan); font-size: .7rem; font-weight: 800; letter-spacing: .12em; }
+.guide-steps strong { grid-column: 2; grid-row: 1; color: #effaff; font-size: .84rem; }
+.guide-steps span { grid-column: 3; grid-row: 1; color: #fff; font-size: .82rem; line-height: 1.8; }
+.guide-terms, .guide-faq { display: grid; gap: 0; margin: 0; }
+.guide-terms div, .guide-faq div { display: grid; grid-template-columns: minmax(130px, .3fr) minmax(0, 1fr); gap: 18px; padding: 13px 0; border-top: 1px solid rgba(255, 255, 255, .12); }
+.guide-terms dt, .guide-faq dt { color: #effaff; font-size: .84rem; font-weight: 800; }
+.guide-terms dd, .guide-faq dd { margin: 0; color: #fff; font-size: .82rem; line-height: 1.8; }
 .guide-callout { padding: 10px 12px; border-left: 2px solid var(--amber); background: rgba(255, 196, 94, .08); color: #ffd083 !important; }
 .guide-list { margin: 14px 0 0; padding-left: 1.25rem; color: #fff; font-size: .82rem; line-height: 1.85; }
 .guide-list li + li { margin-top: 4px; }
@@ -416,6 +448,12 @@ footer {
   .header::after { right: 0; width: 55%; }
   .today-flight { grid-template-columns: minmax(0, 1fr) auto; }
   .today-flight-action { grid-column: 1 / -1; justify-self: end; }
+  .forecast-index { grid-template-columns: 1fr; gap: 10px; }
+  .guide-steps li { grid-template-columns: 34px minmax(0, 1fr); gap: 10px; }
+  .guide-steps strong { grid-column: 2; grid-row: 1; }
+  .guide-steps span { grid-column: 2; grid-row: 2; }
+  .guide-steps li::before { grid-column: 1; grid-row: 1 / span 2; }
+  .guide-terms div, .guide-faq div { grid-template-columns: 1fr; gap: 5px; }
   .flights { grid-template-columns: 1fr; }
   .flight { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: start; column-gap: 14px; row-gap: 12px; }
   .flight-meta { min-width: 0; }

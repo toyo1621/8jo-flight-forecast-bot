@@ -120,6 +120,20 @@
       {% endif %}
     </section>
 
+    {% if page_variant != "date" and days|length > 1 %}
+      <nav class="forecast-index" aria-labelledby="forecast-index-title">
+        <div>
+          <p class="summary-kicker">FORECAST DAYS</p>
+          <h2 id="forecast-index-title">予報日を選ぶ</h2>
+        </div>
+        <div class="forecast-index-links">
+          {% for day in days %}
+            <a href="#date-{{ day.date }}">{{ day.date_label }}<span>({{ day.weekday }})</span></a>
+          {% endfor %}
+        </div>
+      </nav>
+    {% endif %}
+
     {% if error %}
       <p class="error" role="alert">{{ error }}</p>
     {% endif %}
