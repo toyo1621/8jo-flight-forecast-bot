@@ -783,6 +783,15 @@ def test_template_includes_quick_guide_for_non_experts():
     assert ".quick-guide" in stylesheet
 
 
+def test_template_includes_forecast_day_index():
+    template = (BASE_DIR / "templates" / "index.html").read_text(encoding="utf-8")
+    stylesheet = (BASE_DIR / "static" / "styles.css").read_text(encoding="utf-8")
+
+    assert 'class="forecast-index"' in template
+    assert 'href="#date-{{ day.date }}"' in template
+    assert ".forecast-index-links" in stylesheet
+
+
 def test_orange_flight_style_depends_on_probability_below_sixty():
     template = (BASE_DIR / "templates" / "index.html").read_text(encoding="utf-8")
     stylesheet = (BASE_DIR / "static" / "styles.css").read_text(encoding="utf-8")

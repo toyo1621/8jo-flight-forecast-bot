@@ -45,8 +45,22 @@
       <p class="page-nav"><a href="../">今日の八丈島便の運航目安を見る</a></p>
     </header>
 
+    <nav class="guide-index" aria-labelledby="guide-index-title">
+      <p class="about-label">INDEX</p>
+      <h2 id="guide-index-title">知りたいところから読む</h2>
+      <ol class="guide-index-links">
+        <li><a href="#how-to">旅行者向けの使い方</a></li>
+        <li><a href="#score">参考スコア</a></li>
+        <li><a href="#forecast">JMA・GFS・ECMWF</a></li>
+        <li><a href="#weather">天候用語</a></li>
+        <li><a href="#typhoon">台風接近リスク</a></li>
+        <li><a href="#faq">よくある質問</a></li>
+        <li><a href="#limits">更新と限界</a></li>
+      </ol>
+    </nav>
+
     <div class="guide-sections">
-      <section class="guide-section guide-section--wide">
+      <section id="official" class="guide-section guide-section--wide">
         <p class="about-label">FIRST</p>
         <h2>まず公式の運航状況を確認</h2>
         <p>このサイトの表示は、旅行や出発前の判断材料です。予約便の運航可否、遅延、欠航は、必ず運航会社の最新情報で確認してください。</p>
@@ -56,7 +70,17 @@
         </div>
       </section>
 
-      <section class="guide-section">
+      <section id="how-to" class="guide-section guide-section--wide">
+        <p class="about-label">HOW TO USE</p>
+        <h2>旅行者向けの使い方</h2>
+        <ol class="guide-steps">
+          <li><strong>予定を立てるとき</strong><span>日別ページで、搭乗予定日の天気・参考スコア・台風接近リスクを確認します。日別URLは同行者との共有にも使えます。</span></li>
+          <li><strong>前日〜当日</strong><span>JMA主予報の参考スコア、GFS・ECMWFの比較、予報シナリオの一致度、注意表示をまとめて見ます。値が高くても公式情報の代わりにはなりません。</span></li>
+          <li><strong>出発前</strong><span><a href="https://www.ana.co.jp/fs/dom/jp/" target="_blank" rel="noopener noreferrer">ANA公式の運航状況</a>で便名と日付を指定して、最新の運航可否・遅延・欠航を確認します。</span></li>
+        </ol>
+      </section>
+
+      <section id="score" class="guide-section">
         <p class="about-label">SCORE</p>
         <h2>運航参考スコアとは</h2>
         <p>便ごとに、同じ便の過去実績から予報条件が近い事例を集計して、0〜100の参考スコアとして表示しています。値が高いほど、今回の条件に近い過去便で通常運航が多かったことを示します。</p>
@@ -67,16 +91,28 @@
           <li>△ 35以上</li>
           <li>× 35未満</li>
         </ul>
+        <p>過去実績が少ない場合は、無理に低い値へ置き換えず「算出不可」と表示します。</p>
       </section>
 
-      <section class="guide-section">
+      <section id="forecast" class="guide-section">
         <p class="about-label">FORECAST</p>
         <h2>JMA・GFS・ECMWFの役割</h2>
         <p>主予報は日本周辺の短期予報を重視して、気象庁(JMA)モデルをOpen-Meteo経由で使用しています。GFS・ECMWFは主予報に混ぜず、モデルごとの参考スコアと予報シナリオの一致度を比較するために併記しています。</p>
         <p>一致度はアンサンブルmemberのばらつきを示す指標です。運航結果の正確さや、統計的な信頼区間ではありません。</p>
       </section>
 
-      <section class="guide-section">
+      <section id="weather" class="guide-section guide-section--wide">
+        <p class="about-label">WEATHER TERMS</p>
+        <h2>画面に出てくる天候用語</h2>
+        <dl class="guide-terms">
+          <div><dt>視程</dt><dd>どのくらい遠くまで見通せるかをkmで示します。値が小さいほど、視界に関する注意が必要です。</dd></div>
+          <div><dt>最大瞬間風速</dt><dd>短時間に吹く強い風の最大値です。平均風速とは別に確認します。</dd></div>
+          <div><dt>低層雲量</dt><dd>低い空を雲が覆う割合です。視程と合わせて、空港周辺の見通しを確認します。</dd></div>
+          <div><dt>降水量</dt><dd>対象時刻の降水の強さをmm/hで示します。雨だけで運航可否が決まるわけではありません。</dd></div>
+        </dl>
+      </section>
+
+      <section id="typhoon" class="guide-section">
         <p class="about-label">TYPHOON</p>
         <h2>台風接近リスクの補正</h2>
         <p>別の八丈島・東京方面の台風影響目安から、飛行機向けの影響度を取得し、運航参考スコアに反映します。</p>
@@ -84,17 +120,30 @@
           <li>リスク大: ×0.7</li>
           <li>リスク中: ×0.8</li>
           <li>リスク小: ×0.9</li>
-          <li>lowまたは影響度未取得: 台風補正なし</li>
+          <li>low: 台風補正なし</li>
+          <li>影響度未取得: lowとはみなさず、台風補正なし</li>
         </ul>
         <p><a href="https://8jo-typhoon-ensemble.toyo1621.workers.dev/?source=jma" target="_blank" rel="noopener noreferrer">台風影響目安の詳細を見る</a></p>
       </section>
 
-      <section class="guide-section guide-section--wide">
+      <section id="faq" class="guide-section">
+        <p class="about-label">FAQ</p>
+        <h2>よくある質問</h2>
+        <dl class="guide-faq">
+          <div><dt>97/100なら飛びますか？</dt><dd>いいえ。過去の類似条件から見た参考スコアであり、航空会社の運航判断や将来の確率ではありません。</dd></div>
+          <div><dt>GFS・ECMWFとJMAが違うのはなぜですか？</dt><dd>予報モデルが異なるためです。JMAを主予報として、他モデルは差やシナリオのばらつきを確認する比較材料にしています。</dd></div>
+          <div><dt>台風リスクが表示されない日は安全ですか？</dt><dd>安全を意味しません。影響度未取得の日は補正を行わず、その旨を表示します。公式情報も確認してください。</dd></div>
+          <div><dt>スコアが「算出不可」なのは欠航という意味ですか？</dt><dd>いいえ。過去実績などが不足して計算できない状態です。欠航相当の値として扱っていません。</dd></div>
+        </dl>
+      </section>
+
+      <section id="limits" class="guide-section">
         <p class="about-label">LIMITS</p>
-        <h2>表示の限界</h2>
+        <h2>更新と表示の限界</h2>
         <ul class="guide-list">
+          <li>予報データはGitHub Actionsで6時間ごとに更新します。画面上の取得時刻が、今回表示している予報の基準時刻です。</li>
           <li>予報や運航実績の欠測時は、算出不可または影響度未取得として表示します。</li>
-          <li>データはGitHub Actionsで6時間ごとに更新されますが、取得障害時は古い予報を最新として扱わない設計です。</li>
+          <li>取得障害時は古い予報を最新として扱わず、キャッシュを使った場合も画面に通知します。</li>
           <li>気象条件や航空会社の運航判断は変化するため、表示内容だけで搭乗可否を判断しないでください。</li>
         </ul>
       </section>

@@ -40,9 +40,13 @@ def test_build_site_persists_prediction_snapshots_before_rendering(tmp_path):
     assert 'rel="canonical"' in html
     assert '"@type": "WebApplication"' in html
     assert (tmp_path / "guide" / "index.html").exists()
+    guide_html = (tmp_path / "guide" / "index.html").read_text(encoding="utf-8")
     assert "https://toyo1621.github.io/8jo-flight-forecast-bot/guide/" in (
         tmp_path / "sitemap.xml"
     ).read_text(encoding="utf-8")
+    assert "旅行者向けの使い方" in guide_html
+    assert "画面に出てくる天候用語" in guide_html
+    assert "よくある質問" in guide_html
 
 
 def test_build_site_writes_shareable_date_pages(tmp_path):
