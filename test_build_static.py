@@ -39,3 +39,50 @@ def test_build_site_persists_prediction_snapshots_before_rendering(tmp_path):
     html = (tmp_path / "index.html").read_text(encoding="utf-8")
     assert 'rel="canonical"' in html
     assert '"@type": "WebApplication"' in html
+    assert (tmp_path / "guide" / "index.html").exists()
+    assert "https://toyo1621.github.io/8jo-flight-forecast-bot/guide/" in (
+        tmp_path / "sitemap.xml"
+    ).read_text(encoding="utf-8")
+
+
+def test_build_site_writes_shareable_date_pages(tmp_path):
+    bundle = {
+        "weather": {},
+        "ensembles": {},
+        "typhoon_impacts": {},
+        "notices": [],
+        "data_updated_at": "2026-08-24T00:00:00+09:00",
+    }
+    day = {
+        "date": "2026-08-25",
+        "date_label": "8/25",
+        "weekday": "火",
+        "flights": [],
+        "confidence": {
+            "grade": None,
+            "label": "評価不可",
+            "source": "lead_time_caution",
+            "lead_days": 1,
+            "caution": "アンサンブル予報が不足しています。",
+        },
+    }
+    with (
+        patch("build_static.load_forecast_bundle", return_value=bundle),
+        patch("build_static.build_daily_forecasts", return_value=[day]),
+        patch("build_static.save_prediction_snapshots", return_value=0),
+        patch("build_static.load_access_stats", return_value={"days": []}),
+    ):
+        build_site(tmp_path)
+
+    date_page = tmp_path / "forecast" / "2026-08-25" / "index.html"
+    assert date_page.exists()
+    date_html = date_page.read_text(encoding="utf-8")
+    assert '<link rel="canonical" href="https://toyo1621.github.io/8jo-flight-forecast-bot/forecast/2026-08-25/">' in date_html
+    assert 'href="../../static/styles.css?' in date_html
+    assert 'href="../../"' in date_html
+    assert 'href="forecast/2026-08-25/"' in (
+        tmp_path / "index.html"
+    ).read_text(encoding="utf-8")
+    assert "https://toyo1621.github.io/8jo-flight-forecast-bot/forecast/2026-08-25/" in (
+        tmp_path / "sitemap.xml"
+    ).read_text(encoding="utf-8")
