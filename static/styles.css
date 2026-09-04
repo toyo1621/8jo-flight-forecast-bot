@@ -428,6 +428,7 @@ footer {
 }
 .contact-section h2 { margin: 0; color: rgba(239, 250, 255, .9); font-size: .82rem; font-weight: 700; }
 .contact-section p { margin: 3px 0 9px; color: rgba(255, 255, 255, .7); font-size: .68rem; }
+.contact-section p a { color: #dff5ff; text-underline-offset: 2px; }
 .contact-section .secondary-link { min-height: 32px; padding: 5px 10px; font-size: .68rem; }
 
 .access-stats {

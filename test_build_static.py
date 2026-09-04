@@ -55,6 +55,12 @@ def test_build_site_persists_prediction_snapshots_before_rendering(tmp_path):
     contact_link = 'href="https://forms.gle/7m2JsHjdi2dNe4Rk6"'
     assert contact_link in html
     assert contact_link in guide_html
+    assert "お問い合わせフォーム（Googleフォーム）を開く" in html
+    assert "お問い合わせフォーム（Googleフォーム）を開く" in guide_html
+    assert 'href="https://x.com/toyo1621"' in html
+    assert 'href="https://www.instagram.com/toyo1621/"' in html
+    assert 'href="https://x.com/toyo1621"' in guide_html
+    assert 'href="https://www.instagram.com/toyo1621/"' in guide_html
     assert html.index('class="contact-section"') < html.index('class="access-stats"')
 
 
@@ -97,6 +103,9 @@ def test_build_site_writes_shareable_date_pages(tmp_path):
     assert '<p class="eyebrow">HND / HAC</p>' not in date_html
     assert '<h1 class="visually-hidden">8/25の八丈島便 運航目安</h1>' in date_html
     assert 'href="https://forms.gle/7m2JsHjdi2dNe4Rk6"' in date_html
+    assert "お問い合わせフォーム（Googleフォーム）を開く" in date_html
+    assert 'href="https://x.com/toyo1621"' in date_html
+    assert 'href="https://www.instagram.com/toyo1621/"' in date_html
     assert date_html.index('class="contact-section"') < date_html.index('class="access-stats"')
     assert 'href="forecast/2026-08-25/"' in (
         tmp_path / "index.html"
