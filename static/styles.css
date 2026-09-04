@@ -51,6 +51,9 @@ body::before {
   padding: 72px 0 40px;
 }
 
+.container--minimal,
+.guide-page--minimal { padding-top: 30px; }
+
 .header {
   position: relative;
   max-width: 750px;
@@ -80,6 +83,24 @@ body::before {
   background: linear-gradient(90deg, var(--blue), transparent);
   content: "";
 }
+
+.header--minimal {
+  margin-bottom: 22px;
+  padding: 0;
+  border-left: 0;
+}
+
+.header--minimal::after { display: none; }
+.header--minimal .page-nav { margin: 0; }
+.header--minimal .page-nav a {
+  color: #eff8ff;
+  font-size: .84rem;
+  font-weight: 800;
+  line-height: 1.5;
+  text-underline-offset: 4px;
+}
+.header--minimal .page-nav a:hover,
+.header--minimal .page-nav a:focus-visible { color: #fff; }
 
 .eyebrow {
   margin: 0 0 12px;

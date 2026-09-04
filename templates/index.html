@@ -53,11 +53,11 @@
   {% set access_stats = access_stats|default({"days": [], "generated_at": None, "status": "unavailable"}) %}
   {% set access_stats_status = access_stats.status|default("available" if access_stats.days else "unavailable") %}
   {% set today = days[0] if days else None %}
-  <main class="container">
-    <header class="header">
+  <main class="container{% if page_variant == "date" %} container--minimal{% endif %}">
+    <header class="header{% if page_variant == "date" %} header--minimal{% endif %}">
       {% if page_variant == "date" %}
         <h1 class="visually-hidden">{{ page_heading }}</h1>
-        <p class="page-nav"><a href="{{ asset_prefix }}">今日の八丈島便の運航目安を見る（トップページに戻る）</a></p>
+        <p class="page-nav"><a href="{{ asset_prefix }}">トップページへ｜今日の八丈島便の運航目安を見る</a></p>
       {% else %}
         <p class="eyebrow">HND / HAC</p>
         <h1>{{ page_heading }}</h1>
