@@ -47,6 +47,8 @@ def test_build_site_persists_prediction_snapshots_before_rendering(tmp_path):
     assert "旅行者向けの使い方" in guide_html
     assert "画面に出てくる天候用語" in guide_html
     assert "よくある質問" in guide_html
+    assert "例えば、基礎値80に0.9の補正を適用すると72です。" in guide_html
+    assert "スコアも上がったり下がったりします" in guide_html
     assert '<p class="page-nav"><a href="../">トップページへ｜今日の八丈島便の運航目安を見る</a></p>' in guide_html
     assert '<p class="eyebrow">GUIDE / HACHIJIMA</p>' not in guide_html
     assert '<h1 class="visually-hidden">八丈島便の欠航リスク・運航目安の見方</h1>' in guide_html
