@@ -47,6 +47,9 @@ def test_build_site_persists_prediction_snapshots_before_rendering(tmp_path):
     assert "旅行者向けの使い方" in guide_html
     assert "画面に出てくる天候用語" in guide_html
     assert "よくある質問" in guide_html
+    assert '<p class="page-nav"><a href="../">今日の八丈島便の運航目安を見る（トップページに戻る）</a></p>' in guide_html
+    assert '<p class="eyebrow">GUIDE / HACHIJIMA</p>' not in guide_html
+    assert '<h1 class="visually-hidden">八丈島便の欠航リスク・運航目安の見方</h1>' in guide_html
 
 
 def test_build_site_writes_shareable_date_pages(tmp_path):
@@ -84,6 +87,9 @@ def test_build_site_writes_shareable_date_pages(tmp_path):
     assert '<link rel="canonical" href="https://toyo1621.github.io/8jo-flight-forecast-bot/forecast/2026-08-25/">' in date_html
     assert 'href="../../static/styles.css?' in date_html
     assert 'href="../../"' in date_html
+    assert '<p class="page-nav"><a href="../../">今日の八丈島便の運航目安を見る（トップページに戻る）</a></p>' in date_html
+    assert '<p class="eyebrow">HND / HAC</p>' not in date_html
+    assert '<h1 class="visually-hidden">8/25の八丈島便 運航目安</h1>' in date_html
     assert 'href="forecast/2026-08-25/"' in (
         tmp_path / "index.html"
     ).read_text(encoding="utf-8")
