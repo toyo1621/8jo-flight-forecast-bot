@@ -94,7 +94,7 @@ body::before {
 .header--minimal .page-nav { margin: 0; }
 .header--minimal .page-nav a {
   color: #eff8ff;
-  font-size: .84rem;
+  font-size: 1rem;
   font-weight: 800;
   line-height: 1.5;
   text-underline-offset: 4px;
