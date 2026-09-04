@@ -14,3 +14,4 @@ def test_access_stats_failure_cannot_block_forecast_pages_build():
     assert "Add access stats status to summary" in workflow
     assert "issues: write" in workflow
     assert "Notify access analytics outage" in workflow
+    assert "python validate_static_site.py dist" in workflow

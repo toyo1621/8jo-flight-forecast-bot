@@ -178,6 +178,39 @@ def save_prediction_snapshots(rows):
     return len(rows)
 
 
+def fetch_published_forecast_archive():
+    """Return the final pre-valid-time public snapshot and observed outcome."""
+    config = settings()
+    client = bigquery.Client(project=config["project"], location=config["location"])
+    query = f"""
+        WITH ranked_snapshots AS (
+          SELECT
+            snapshot_id, forecast_target_date, flight_number, model,
+            calculation_status, probability, prediction_generated_at,
+            weather_valid_at,
+            ROW_NUMBER() OVER (
+              PARTITION BY forecast_target_date, flight_number, model
+              ORDER BY prediction_generated_at DESC, snapshot_id DESC
+            ) AS row_number
+          FROM `{_collection_table_path(PREDICTION_SNAPSHOT_TABLE, config)}`
+          WHERE forecast_target_date < CURRENT_DATE('Asia/Tokyo')
+            AND prediction_generated_at <= weather_valid_at
+        )
+        SELECT
+          s.snapshot_id, s.forecast_target_date, s.flight_number, s.model,
+          s.calculation_status, s.probability, s.prediction_generated_at,
+          h.status AS outcome_status, h.status_reason, h.status_reason_category,
+          h.status_reason_source, h.status_reason_observed_at
+        FROM ranked_snapshots s
+        LEFT JOIN `{table_path(config)}` h
+          ON h.date = s.forecast_target_date
+         AND h.flight_number = s.flight_number
+        WHERE s.row_number = 1
+        ORDER BY s.forecast_target_date DESC, s.flight_number, s.model
+    """
+    return [dict(row.items()) for row in client.query(query).result()]
+
+
 @lru_cache(maxsize=1)
 def fetch_history():
     return [

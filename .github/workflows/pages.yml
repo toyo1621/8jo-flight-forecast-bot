@@ -129,6 +129,9 @@ jobs:
           BIGQUERY_LOCATION: asia-northeast1
         run: python build_static.py
 
+      - name: Validate static pages and SEO metadata
+        run: python validate_static_site.py dist
+
       - name: Configure Pages
         uses: actions/configure-pages@45bfe0192ca1faeb007ade9deae92b16b8254a0d # v6
 

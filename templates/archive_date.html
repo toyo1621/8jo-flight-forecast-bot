@@ -1,0 +1,51 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="{{ day.long_date_label }}の羽田発八丈島行きANA3便について、公開時の運航参考スコア、実際の運航結果、振り返りを確認できます。">
+  <meta name="robots" content="index,follow">
+  <meta name="theme-color" content="#071c2c">
+  <link rel="canonical" href="{{ page_url }}">
+  <meta property="og:type" content="article">
+  <meta property="og:site_name" content="八丈島の飛行機運航目安">
+  <meta property="og:title" content="{{ day.long_date_label }}の八丈島便｜公開時予測と運航結果">
+  <meta property="og:description" content="公開時の運航参考スコアと実際の運航結果を3便分記録した恒久アーカイブです。">
+  <meta property="og:url" content="{{ page_url }}">
+  <title>{{ day.long_date_label }}の八丈島便｜公開時予測と運航結果</title>
+  <script type="application/ld+json">{{ structured_data|tojson }}</script>
+  <link rel="stylesheet" href="../../static/styles.css?v=20260905-1">
+</head>
+<body>
+  {% set asset_prefix = "../../" %}
+  <main class="container container--minimal archive-page">
+    <header class="header header--minimal">
+      <p class="page-nav"><a href="../../">トップページへ｜今日の八丈島便の運航目安を見る</a></p>
+      <p class="about-label">FORECAST ARCHIVE</p>
+      <h1>{{ day.long_date_label }}の公開時予測と運航結果</h1>
+      <p class="lead">羽田発・八丈島行きANA3便について、公開していた参考スコアと、その後確認できた運航結果を残しています。</p>
+    </header>
+
+    <section class="archive-note" aria-labelledby="archive-note-title">
+      <h2 id="archive-note-title">このページの見方</h2>
+      <p>公開時予測は、各便の到着予報時刻より前に公開された最後のJMA主予報スコアです。後から実際の結果に合わせて書き換えません。スコアは未校正の参考値で、運航確率ではありません。</p>
+    </section>
+
+    <div class="archive-flights">
+      {% for flight in day.flights %}
+        <article class="archive-flight">
+          <header><div><p class="flight-number">{{ flight.number }}</p><p class="flight-time">{{ flight.time }} 着</p></div><span class="archive-result{% if not flight.outcome_confirmed %} archive-result--pending{% endif %}">{{ flight.outcome or "結果未取得" }}</span></header>
+          <div class="archive-comparison">
+            <section><h2>公開時の予測</h2>{% if flight.score is not none %}<p class="archive-score"><span>{{ flight.symbol }}</span><strong>{{ flight.score }}</strong><small>/ 100</small></p>{% else %}<p class="archive-unavailable">算出不可</p>{% endif %}<p class="archive-time">公開記録 {{ flight.published_at or "時刻不明" }}</p></section>
+            <section><h2>実際の運航結果</h2><p class="archive-outcome">{{ flight.outcome or "未取得" }}</p>{% if flight.outcome_reason %}<p class="archive-reason">理由: {{ flight.outcome_reason }}</p>{% endif %}</section>
+          </div>
+          <dl class="archive-models">{% for model in flight.models %}<div><dt>{{ model.label }}</dt><dd>{% if model.score is not none %}{{ model.symbol }} {{ model.score }} / 100{% else %}算出不可{% endif %}</dd></div>{% endfor %}</dl>
+          <section class="archive-reflection"><h2>振り返り</h2><p>{{ flight.reflection }}</p></section>
+        </article>
+      {% endfor %}
+    </div>
+    <p class="archive-back"><a class="secondary-link" href="../../history/">過去の予測と結果一覧へ</a></p>
+    {% include "_site_footer.html" %}
+  </main>
+</body>
+</html>

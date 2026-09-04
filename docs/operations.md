@@ -101,6 +101,11 @@ python build_static.py
 
 Pagesの静的生成時に、公開対象のJMA・GFS・ECMWFの各値を`prediction_snapshots`へ不変保存します。各行には予測対象時刻、データ取得時刻、リード時間、provider/model、取得元endpoint、キャッシュfallback、コードSHA、設定版、算出状態を記録します。同じ`snapshot_id`は再実行しても更新せず、重複登録を抑止します。
 
+過去日ページは、予測対象時刻より前に保存された最後のスナップショットを
+「公開時の予測」として採用し、`flight_weather_logs`の運航結果を結合して再生成します。
+結果未取得は欠航として扱いません。アーカイブ取得に失敗したPages buildは失敗させ、
+既存の公開アーカイブを空の生成物で置き換えません。
+
 `provenance_status=unknown`の旧キャッシュや取得時刻不明の行は、後続の外部評価で厳密な時系列検証から除外します。これは欠測を現在の予報として扱わないための区別です。
 
 週次の`Evaluate published forecasts` workflowは、実績と結合した公開値を対象に、モデル別・便別・リード日別Brier score、10ポイント幅の信頼度ビン、ECE、運航率ベースライン、常時運航ベースライン、条件付運航の感度分析、時系列ローリング分割をJSON/Markdown artifactへ出力します。評価対象がない場合は`insufficient_data`として成功扱いにせず、レポート生成後にworkflowを失敗させます。詳細は`docs/evaluation.md`を参照してください。
