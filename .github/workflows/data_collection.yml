@@ -8,10 +8,25 @@ on:
   workflow_dispatch:
     inputs:
       cleanup_only:
-        description: 未取得・未対応ステータス行の削除だけを実行する
+        description: 未取得・未対応ステータス行の件数確認だけを実行する（既定はdry-run）
         required: false
         default: false
         type: boolean
+      cleanup_apply:
+        description: 削除を適用する（cleanup_reasonと対象範囲を確認してから使用）
+        required: false
+        default: false
+        type: boolean
+      cleanup_date:
+        description: 削除対象日をYYYY-MM-DDで限定する（空欄は未解決行全体）
+        required: false
+        default: ""
+        type: string
+      cleanup_reason:
+        description: 削除を適用する理由
+        required: false
+        default: ""
+        type: string
 
 permissions:
   contents: read
@@ -36,15 +51,17 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
         with:
-          python-version: '3.11'
+          python-version: '3.12'
           cache: 'pip' # pipのキャッシュを有効化して高速化
-          cache-dependency-path: requirements.txt
+          cache-dependency-path: |
+            requirements.txt
+            requirements.lock
 
       # 3. 依存ライブラリのインストール
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install -r requirements.txt
+          pip install -r requirements.txt -c requirements.lock
 
       - name: Authenticate to Google Cloud
         uses: google-github-actions/auth@7c6bc770dae815cd3e89ee6cdf493a5fab2cc093 # v3
@@ -65,14 +82,22 @@ jobs:
         run: |
           python data_collector.py
 
-      - name: Clean unresolved BigQuery rows
+      - name: Inspect or clean unresolved BigQuery rows
         if: ${{ github.event_name == 'workflow_dispatch' && inputs.cleanup_only == true }}
         env:
           GCP_PROJECT_ID: hachijo-flight-forecast
           BIGQUERY_DATASET: flight_forecast
           BIGQUERY_TABLE: flight_weather_logs
           BIGQUERY_LOCATION: asia-northeast1
-        run: python data_collector.py --cleanup-only
+          CLEANUP_APPLY: ${{ inputs.cleanup_apply }}
+          CLEANUP_DATE: ${{ inputs.cleanup_date }}
+          CLEANUP_REASON: ${{ inputs.cleanup_reason }}
+        run: |
+          args=(--cleanup-only)
+          if [ "$CLEANUP_APPLY" = "true" ]; then args+=(--cleanup-apply); fi
+          if [ -n "$CLEANUP_DATE" ]; then args+=(--cleanup-date "$CLEANUP_DATE"); fi
+          if [ -n "$CLEANUP_REASON" ]; then args+=(--cleanup-reason "$CLEANUP_REASON"); fi
+          python data_collector.py "${args[@]}"
 
       - name: Check BigQuery data quality
         if: always()

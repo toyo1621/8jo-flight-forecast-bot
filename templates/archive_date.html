@@ -29,6 +29,7 @@
     <section class="archive-note" aria-labelledby="archive-note-title">
       <h2 id="archive-note-title">このページの見方</h2>
       <p>公開時予測は、各便の到着予報時刻より前に公開された最後のJMA主予報スコアです。後から実際の結果に合わせて書き換えません。スコアは未校正の参考値で、運航確率ではありません。</p>
+      {% if not day.publicly_confirmed %}<p>この日付は旧保存データのため、公開確認記録はありません。厳密な予測評価の対象には含めていません。</p>{% endif %}
     </section>
 
     <div class="archive-flights">

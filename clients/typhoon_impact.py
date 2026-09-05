@@ -1,5 +1,8 @@
+from datetime import date
+
 import requests
 
+from clients.http import request_with_retries
 from typhoon_impact import normalize_typhoon_impact
 
 
@@ -27,6 +30,12 @@ def parse_typhoon_impact_response(payload, source, valid_levels):
             target = {}
         level = target.get("riskLevel")
         date_string = day.get("date")
+        try:
+            date.fromisoformat(date_string)
+        except (TypeError, ValueError):
+            continue
+        if date_string in impacts:
+            raise ValueError(f"台風影響度APIに日付の重複があります: {date_string}")
         if isinstance(date_string, str) and level in valid_levels:
             impacts[date_string] = normalize_typhoon_impact(
                 {
@@ -49,10 +58,10 @@ def parse_typhoon_impact_response(payload, source, valid_levels):
 
 
 def fetch_typhoon_impacts(endpoint, source, valid_levels, request_get=None, timeout=15):
-    response = (request_get or requests.get)(
+    response = request_with_retries(
+        request_get or requests.get,
         endpoint,
         params={"source": source},
         timeout=timeout,
     )
-    response.raise_for_status()
     return parse_typhoon_impact_response(response.json(), source, valid_levels)

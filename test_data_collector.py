@@ -197,13 +197,16 @@ def test_missing_weather_prevents_entire_batch_from_being_saved():
 def test_cleanup_only_does_not_call_external_apis(monkeypatch):
     monkeypatch.setattr("sys.argv", ["data_collector.py", "--cleanup-only"])
     with (
-        patch("data_collector.delete_unresolved_status_rows", return_value=2) as cleanup,
+        patch(
+            "data_collector.cleanup_unresolved_status_rows",
+            return_value={"audit_id": "audit-1", "matched_count": 2, "affected_count": 0},
+        ) as cleanup,
         patch("data_collector.get_flight_data_odpt") as fetch_flights,
         patch("data_collector.get_weather_data") as fetch_weather,
     ):
         main()
 
-    cleanup.assert_called_once_with()
+    cleanup.assert_called_once_with(apply=False, reason=None, target_date=None)
     fetch_flights.assert_not_called()
     fetch_weather.assert_not_called()
 
@@ -212,7 +215,6 @@ def test_collection_failure_does_not_write_bigquery(monkeypatch):
     monkeypatch.setattr("sys.argv", ["data_collector.py"])
     monkeypatch.setenv("ODPT_API_KEY", "test-key")
     with (
-        patch("data_collector.delete_unresolved_status_rows", return_value=0),
         patch(
             "data_collector.get_flight_data_odpt",
             side_effect=CollectionError("ODPT APIからのデータ取得に失敗しました。"),
@@ -240,7 +242,6 @@ def test_collection_date_argument_is_recorded_and_passed_to_odpt(monkeypatch):
         "visibility_source": "open_meteo_forecast",
     }
     with (
-        patch("data_collector.delete_unresolved_status_rows", return_value=0),
         patch(
             "data_collector.get_flight_data_odpt",
             return_value=[_actual_flight(number) for number in ("ANA1891", "ANA1893", "ANA1895")],

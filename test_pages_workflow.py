@@ -15,3 +15,12 @@ def test_access_stats_failure_cannot_block_forecast_pages_build():
     assert "issues: write" in workflow
     assert "Notify access analytics outage" in workflow
     assert "python validate_static_site.py dist" in workflow
+    assert "build-manifest.json" in workflow
+    assert "name: Upload static build for diagnostics" in workflow
+    assert "if-no-files-found: ignore" in workflow
+    assert "needs.build.outputs.artifact_id" in workflow
+    assert "publish_prediction_snapshots.py" in workflow
+    assert "Confirm the live artifact and publish snapshots" in workflow
+    assert "Verify the same SHA before building" in workflow
+    assert "python -m pytest -q" in workflow
+    assert "python -m ruff check ." in workflow

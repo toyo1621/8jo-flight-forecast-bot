@@ -56,6 +56,15 @@ def test_partition_excludes_unknown_provenance_and_future_leakage():
     assert excluded == {"unknown_provenance": 1, "prediction_after_valid_time": 1}
 
 
+def test_partition_excludes_candidate_snapshots_from_strict_evaluation():
+    eligible, excluded = partition_evaluable_predictions(
+        [_row() | {"publication_status": "candidate"}]
+    )
+
+    assert eligible == []
+    assert excluded == {"not_publicly_confirmed": 1}
+
+
 def test_brier_and_calibration_metrics_are_computed_in_probability_units():
     rows = [
         {"probability": 100.0, "outcome": 1},
@@ -95,6 +104,65 @@ def test_rolling_time_evaluation_uses_only_prior_dates_for_training():
     assert folds[1]["baseline_prior_percent"] == 50.0
 
 
+def test_rolling_baseline_deduplicates_models_by_independent_flight_outcome():
+    rows = [
+        {
+            "target_date": date(2026, 8, 20),
+            "probability": 80.0,
+            "outcome": 1,
+            "model": "jma",
+            "flight_number": "ANA1891",
+        },
+        {
+            "target_date": date(2026, 8, 20),
+            "probability": 70.0,
+            "outcome": 1,
+            "model": "gfs",
+            "flight_number": "ANA1891",
+        },
+        {
+            "target_date": date(2026, 8, 21),
+            "probability": 60.0,
+            "outcome": 0,
+            "model": "jma",
+            "flight_number": "ANA1891",
+        },
+    ]
+
+    folds = rolling_time_evaluation(rows, min_train_dates=1)
+
+    assert folds[0]["train_count"] == 1
+    assert folds[0]["train_snapshot_count"] == 2
+    assert folds[0]["baseline_prior_percent"] == 100.0
+
+
+def test_rolling_baseline_excludes_outcomes_observed_after_prediction_generation():
+    rows = [
+        {
+            "target_date": date(2026, 8, 20),
+            "probability": 80.0,
+            "outcome": 1,
+            "model": "jma",
+            "flight_number": "ANA1891",
+            "outcome_observed_at": "2026-08-23T21:00:00+09:00",
+        },
+        {
+            "target_date": date(2026, 8, 21),
+            "probability": 60.0,
+            "outcome": 0,
+            "model": "jma",
+            "flight_number": "ANA1891",
+            "prediction_generated_at": "2026-08-22T12:00:00+09:00",
+        },
+    ]
+
+    folds = rolling_time_evaluation(rows, min_train_dates=1)
+
+    assert folds[0]["train_count"] == 0
+    assert folds[0]["baseline_prior_percent"] is None
+    assert folds[0]["baseline_prior_brier_score"] is None
+
+
 def test_evaluate_rows_reports_insufficient_data_without_inventing_metrics():
     report = evaluate_rows([_row(provenance="unknown")])
 
@@ -102,6 +170,7 @@ def test_evaluate_rows_reports_insufficient_data_without_inventing_metrics():
     assert report["eligible_count"] == 0
     assert report["models"] == {}
     assert report["weather_only_count"] == 0
+    assert report["evaluation_unit"] == "published_snapshot"
     assert "評価可能な予測値がありません" in markdown_report(report)
 
 

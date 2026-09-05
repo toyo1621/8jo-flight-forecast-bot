@@ -1,4 +1,7 @@
+from datetime import datetime, timedelta, timezone
 from unittest.mock import patch
+
+import pytest
 
 from build_static import add_brand_assets, build_site
 from validate_static_site import validate_site
@@ -23,16 +26,30 @@ def test_build_site_persists_prediction_snapshots_before_rendering(tmp_path):
         "notices": [],
         "data_updated_at": "2026-08-24T00:00:00+09:00",
     }
+    rows = [{"snapshot_id": "snapshot-1", "code_version": "sha", "config_version": "cfg"}]
     with (
         patch("build_static.load_forecast_bundle", return_value=bundle),
-        patch("build_static.build_daily_forecasts", return_value=[]),
-        patch("build_static.save_prediction_snapshots", return_value=0) as save_snapshots,
+        patch(
+            "build_static.build_daily_forecasts",
+            return_value=[
+                {
+                    "date": "2026-08-24",
+                    "date_label": "8/24",
+                    "weekday": "月",
+                    "flights": [],
+                    "confidence": {"grade": None, "label": "評価不可", "lead_days": 0},
+                }
+            ],
+        ),
+        patch("build_static.build_prediction_snapshot_rows", return_value=rows),
+        patch("build_static.save_prediction_snapshots", return_value=1) as save_snapshots,
+        patch("build_static.save_prediction_publication_candidates", return_value=1),
         patch("build_static.fetch_published_forecast_archive", return_value=[]),
         patch("build_static.load_access_stats", return_value={"days": []}),
     ):
         build_site(tmp_path)
 
-    save_snapshots.assert_called_once_with([])
+    save_snapshots.assert_called_once_with(rows)
     assert (tmp_path / "index.html").exists()
     assert "Sitemap: https://toyo1621.github.io/8jo-flight-forecast-bot/sitemap.xml" in (
         tmp_path / "robots.txt"
@@ -74,6 +91,102 @@ def test_build_site_persists_prediction_snapshots_before_rendering(tmp_path):
     assert 'href="https://x.com/toyo1621"' in guide_html
     assert 'href="https://www.instagram.com/toyo1621/"' in guide_html
     assert html.index('class="contact-section"') < html.index('class="access-stats"')
+    assert (tmp_path / "build-manifest.json").exists()
+    assert 'name="forecast-artifact-id"' in html
+
+
+def test_build_site_rejects_nonempty_weather_that_produces_no_forecast_days(tmp_path):
+    bundle = {
+        "weather": {"2026-08-24T08:00": {"wind_speed": 4.0}},
+        "ensembles": {},
+        "typhoon_impacts": {},
+        "notices": [],
+    }
+    with (
+        patch("build_static.load_forecast_bundle", return_value=bundle),
+        patch("build_static.build_daily_forecasts", return_value=[]),
+        patch("build_static.save_prediction_snapshots") as save_snapshots,
+        pytest.raises(RuntimeError, match="空の成果物"),
+    ):
+        build_site(tmp_path)
+
+    save_snapshots.assert_not_called()
+
+
+def test_build_site_rejects_empty_forecast_days_even_when_archive_exists(tmp_path):
+    bundle = {"weather": {}, "ensembles": {}, "typhoon_impacts": {}, "notices": []}
+    with (
+        patch("build_static.load_forecast_bundle", return_value=bundle),
+        patch("build_static.build_daily_forecasts", return_value=[]),
+        patch("build_static.fetch_published_forecast_archive", return_value=[{"date": "2026-08-23"}]),
+        pytest.raises(RuntimeError, match="空の成果物"),
+    ):
+        build_site(tmp_path)
+
+    assert not (tmp_path / "index.html").exists()
+
+
+def test_build_site_aborts_before_writing_html_when_archive_read_fails(tmp_path):
+    bundle = {
+        "weather": {"2026-08-24T08:00": {"wind_speed": 4.0}},
+        "ensembles": {},
+        "typhoon_impacts": {},
+        "notices": [],
+    }
+    day = {"date": "2026-08-24", "flights": []}
+    rows = [{"snapshot_id": "snapshot-1", "code_version": "sha", "config_version": "cfg"}]
+    with (
+        patch("build_static.load_forecast_bundle", return_value=bundle),
+        patch("build_static.build_daily_forecasts", return_value=[day]),
+        patch("build_static.build_prediction_snapshot_rows", return_value=rows),
+        patch("build_static.save_prediction_snapshots", return_value=1),
+        patch("build_static.save_prediction_publication_candidates", return_value=1),
+        patch(
+            "build_static.fetch_published_forecast_archive",
+            side_effect=RuntimeError("BigQuery unavailable"),
+        ),
+        pytest.raises(RuntimeError, match="BigQuery unavailable"),
+    ):
+        build_site(tmp_path, current_time=datetime(2026, 8, 24, 12, tzinfo=timezone(timedelta(hours=9))))
+
+    assert not (tmp_path / "index.html").exists()
+
+
+def test_build_site_records_candidates_separately_from_snapshot_save(tmp_path):
+    bundle = {
+        "weather": {},
+        "ensembles": {},
+        "typhoon_impacts": {},
+        "notices": [],
+    }
+    rows = [{"snapshot_id": "snapshot-1", "code_version": "sha", "config_version": "cfg"}]
+    with (
+        patch("build_static.load_forecast_bundle", return_value=bundle),
+        patch(
+            "build_static.build_daily_forecasts",
+            return_value=[
+                {
+                    "date": "2026-08-24",
+                    "date_label": "8/24",
+                    "weekday": "月",
+                    "flights": [],
+                    "confidence": {"grade": None, "label": "評価不可", "lead_days": 0},
+                }
+            ],
+        ),
+        patch("build_static.build_prediction_snapshot_rows", return_value=rows),
+        patch("build_static.save_prediction_snapshots", return_value=1) as save_snapshots,
+        patch(
+            "build_static.save_prediction_publication_candidates", return_value=1
+        ) as save_candidates,
+        patch("build_static.fetch_published_forecast_archive", return_value=[]),
+        patch("build_static.load_access_stats", return_value={"days": []}),
+    ):
+        build_site(tmp_path)
+
+    save_snapshots.assert_called_once_with(rows)
+    save_candidates.assert_called_once()
+    assert save_candidates.call_args.args[0] == rows
 
 
 def test_build_site_writes_shareable_date_pages(tmp_path):
@@ -97,10 +210,13 @@ def test_build_site_writes_shareable_date_pages(tmp_path):
             "caution": "アンサンブル予報が不足しています。",
         },
     }
+    rows = [{"snapshot_id": "snapshot-1", "code_version": "sha", "config_version": "cfg"}]
     with (
         patch("build_static.load_forecast_bundle", return_value=bundle),
         patch("build_static.build_daily_forecasts", return_value=[day]),
-        patch("build_static.save_prediction_snapshots", return_value=0),
+        patch("build_static.build_prediction_snapshot_rows", return_value=rows),
+        patch("build_static.save_prediction_snapshots", return_value=1),
+        patch("build_static.save_prediction_publication_candidates", return_value=1),
         patch("build_static.fetch_published_forecast_archive", return_value=[]),
         patch("build_static.load_access_stats", return_value={"days": []}),
     ):
@@ -156,10 +272,24 @@ def test_build_site_keeps_historical_date_with_prediction_outcome_and_reflection
                     "status_reason": None,
                 }
             )
+    rows = [{"snapshot_id": "snapshot-1", "code_version": "sha", "config_version": "cfg"}]
     with (
         patch("build_static.load_forecast_bundle", return_value=bundle),
-        patch("build_static.build_daily_forecasts", return_value=[]),
-        patch("build_static.save_prediction_snapshots", return_value=0),
+        patch(
+            "build_static.build_daily_forecasts",
+            return_value=[
+                {
+                    "date": "2026-09-05",
+                    "date_label": "9/5",
+                    "weekday": "土",
+                    "flights": [],
+                    "confidence": {"grade": None, "label": "評価不可", "lead_days": 0},
+                }
+            ],
+        ),
+        patch("build_static.build_prediction_snapshot_rows", return_value=rows),
+        patch("build_static.save_prediction_snapshots", return_value=1),
+        patch("build_static.save_prediction_publication_candidates", return_value=1),
         patch(
             "build_static.fetch_published_forecast_archive", return_value=archive_rows
         ),

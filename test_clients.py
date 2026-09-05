@@ -1,4 +1,13 @@
-from clients.open_meteo import parse_deterministic_response, parse_ensemble_response
+from unittest.mock import Mock, patch
+
+import pytest
+import requests
+
+from clients.open_meteo import (
+    fetch_deterministic_forecast,
+    parse_deterministic_response,
+    parse_ensemble_response,
+)
 from clients.typhoon_impact import parse_typhoon_impact_response
 
 
@@ -58,6 +67,75 @@ def test_open_meteo_deterministic_parser_keeps_optional_missing_fields_explicit(
     assert parsed["2026-08-25T08:00"]["wind_gusts"] is None
 
 
+def test_open_meteo_parser_rejects_duplicate_times_and_invalid_numbers():
+    payload = {
+        "hourly": {
+            "time": ["2026-08-25T08:00", "2026-08-25T08:00"],
+            "wind_speed_10m": [4.0, 5.0],
+            "wind_direction_10m": [180.0, 180.0],
+            "cloud_cover_low": [20.0, 20.0],
+            "precipitation": [0.0, 0.0],
+        }
+    }
+    with pytest.raises(ValueError, match="重複時刻"):
+        parse_deterministic_response(payload)
+
+    payload["hourly"]["time"] = ["2026-08-25T08:00", "2026-08-25T09:00"]
+    payload["hourly"]["wind_speed_10m"] = [True, 5.0]
+    with pytest.raises(ValueError, match="数値範囲"):
+        parse_deterministic_response(payload)
+
+
+def test_open_meteo_request_retries_transient_http_failure_with_bound():
+    failed = Mock(status_code=503)
+    failed.raise_for_status.side_effect = requests.HTTPError(response=failed)
+    succeeded = Mock(status_code=200)
+    succeeded.json.return_value = {
+        "hourly": {
+            "time": ["2026-08-25T08:00"],
+            "wind_speed_10m": [4.0],
+            "wind_direction_10m": [180.0],
+            "cloud_cover_low": [20.0],
+            "precipitation": [0.0],
+        }
+    }
+
+    with patch("clients.http.time.sleep") as sleep:
+        result = fetch_deterministic_forecast(
+            model="jma_seamless",
+            latitude=33.1,
+            longitude=139.7,
+            endpoint="https://example.test",
+            forecast_days=1,
+            request_get=Mock(side_effect=[failed, succeeded]),
+        )
+
+    assert result["2026-08-25T08:00"]["wind_speed"] == 4.0
+    sleep.assert_called_once_with(1)
+
+
+def test_open_meteo_request_does_not_retry_non_transient_http_failure():
+    failed = Mock(status_code=400)
+    failed.raise_for_status.side_effect = requests.HTTPError(response=failed)
+    request_get = Mock(return_value=failed)
+
+    with (
+        patch("clients.http.time.sleep") as sleep,
+        pytest.raises(requests.HTTPError),
+    ):
+        fetch_deterministic_forecast(
+            model="jma_seamless",
+            latitude=33.1,
+            longitude=139.7,
+            endpoint="https://example.test",
+            forecast_days=1,
+            request_get=request_get,
+        )
+
+    request_get.assert_called_once()
+    sleep.assert_not_called()
+
+
 def test_typhoon_parser_uses_flight_target_and_preserves_factor_fixture():
     parsed = parse_typhoon_impact_response(
         {
@@ -91,3 +169,17 @@ def test_typhoon_parser_uses_flight_target_and_preserves_factor_fixture():
     assert parsed["2026-08-25"]["risk_level"] == "high"
     assert parsed["2026-08-25"]["factor_breakdown_available"] is True
     assert parsed["2026-08-25"]["factor_weights"] == {"wind": 0.5}
+
+
+def test_typhoon_parser_rejects_invalid_or_duplicate_dates():
+    payload = {
+        "source": "jma",
+        "days": [
+            {"date": "not-a-date", "targets": {"flight": {"riskLevel": "high"}}},
+            {"date": "2026-08-25", "targets": {"flight": {"riskLevel": "high"}}},
+            {"date": "2026-08-25", "targets": {"flight": {"riskLevel": "severe"}}},
+        ],
+    }
+
+    with pytest.raises(ValueError, match="日付の重複"):
+        parse_typhoon_impact_response(payload, "jma", {"low", "medium", "high", "severe"})

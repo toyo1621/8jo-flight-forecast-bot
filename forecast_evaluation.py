@@ -8,7 +8,7 @@ from statistics import mean
 
 from google.cloud import bigquery
 
-from bigquery_schema import PREDICTION_SNAPSHOT_TABLE
+from bigquery_schema import PREDICTION_PUBLICATION_TABLE, PREDICTION_SNAPSHOT_TABLE
 from bigquery_storage import _collection_table_path, settings, table_path
 from flight_metadata import (
     CANCELLATION_REASON_CATEGORIES,
@@ -72,6 +72,9 @@ def partition_evaluable_predictions(rows, population="all", conditional_operated
     eligible = []
     excluded = Counter()
     for row in rows:
+        if row.get("publication_status") not in (None, "published"):
+            excluded["not_publicly_confirmed"] += 1
+            continue
         if row.get("provenance_status") != "known":
             excluded["unknown_provenance"] += 1
             continue
@@ -255,6 +258,27 @@ def factor_ablation_evaluation(rows):
     }
 
 
+def _distinct_outcome_rows(rows):
+    distinct = {}
+    for index, row in enumerate(rows):
+        target = _parse_date(row.get("target_date", row.get("forecast_target_date")))
+        flight = row.get("flight_number")
+        key = (target, flight) if flight is not None else (target, f"row-{index}")
+        distinct.setdefault(key, row)
+    return list(distinct.values())
+
+
+def _training_rows_available_at(rows, generated_at):
+    if generated_at is None:
+        return list(rows)
+    available = []
+    for row in rows:
+        observed_at = _parse_timestamp(row.get("outcome_observed_at"))
+        if observed_at is not None and observed_at <= generated_at:
+            available.append(row)
+    return available
+
+
 def rolling_time_evaluation(rows, min_train_dates=3):
     grouped = {}
     for row in sorted(rows, key=lambda item: (item.get("target_date"), item.get("model", ""))):
@@ -267,17 +291,34 @@ def rolling_time_evaluation(rows, min_train_dates=3):
             continue
         train = [row for target in train_dates for row in grouped[target]]
         test = grouped[test_date]
-        prior = _prior_rate(train)
-        baseline = [{**row, "probability": prior} for row in test]
+        baseline = []
+        prior_rates = []
+        available_train_rows = []
+        for test_row in test:
+            generated_at = _parse_timestamp(test_row.get("prediction_generated_at"))
+            available = _training_rows_available_at(train, generated_at)
+            train_outcomes_for_row = _distinct_outcome_rows(available)
+            available_train_rows.extend(train_outcomes_for_row)
+            prior_for_row = _prior_rate(train_outcomes_for_row)
+            if prior_for_row is not None:
+                prior_rates.append(prior_for_row)
+                baseline.append({**test_row, "probability": prior_for_row})
+        train_outcomes = _distinct_outcome_rows(available_train_rows)
+        prior = mean(prior_rates) if prior_rates else None
         folds.append(
             {
                 "train_end": train_dates[-1].isoformat(),
                 "test_date": test_date.isoformat(),
-                "train_count": len(train),
+                "train_count": len(train_outcomes),
+                "train_snapshot_count": len(train),
                 "test_count": len(test),
+                "test_outcome_count": len(_distinct_outcome_rows(test)),
                 "brier_score": brier_score(test),
-                "baseline_prior_percent": round(prior, 2),
+                "baseline_prior_percent": round(prior, 2) if prior is not None else None,
                 "baseline_prior_brier_score": brier_score(baseline),
+                "baseline_observation_policy": (
+                    "outcome_observed_at<=prediction_generated_at"
+                ),
             }
         )
     return folds
@@ -371,7 +412,21 @@ def evaluate_rows(rows, generated_at=None):
     return {
         "status": "ok" if eligible else "insufficient_data",
         "generated_at": generated_at or datetime.now(UTC).isoformat(),
+        "evaluation_unit": "published_snapshot",
+        "baseline_policy": "rolling_prior_by_target_date",
         "input_count": len(rows),
+        "distinct_outcome_count": len(
+            {
+                (
+                    row.get("forecast_target_date", row.get("target_date")),
+                    row.get("flight_number"),
+                )
+                for row in rows
+                if _outcome_label(row) is not None
+                and row.get("forecast_target_date", row.get("target_date")) is not None
+                and row.get("flight_number") is not None
+            }
+        ),
         "eligible_count": len(eligible),
         "excluded_counts": excluded,
         "weather_only_excluded_counts": weather_excluded,
@@ -430,13 +485,21 @@ def fetch_prediction_outcomes(lookback_days=365):
           s.weather_retrieved_at,
           s.weather_valid_at,
           s.provenance_status,
+          p.publication_status,
           h.status AS outcome_status,
           h.status_reason_category,
           h.status_reason,
           h.status_reason_source,
           h.status_reason_observed_at,
-          h.status_reason_confidence
+          h.status_reason_confidence,
+          h.created_at AS outcome_observed_at
         FROM `{_collection_table_path(PREDICTION_SNAPSHOT_TABLE, config)}` s
+        JOIN (
+          SELECT DISTINCT snapshot_id, publication_status
+          FROM `{_collection_table_path(PREDICTION_PUBLICATION_TABLE, config)}`
+          WHERE publication_status = 'published'
+        ) p
+          ON p.snapshot_id = s.snapshot_id
         JOIN `{table_path(config)}` h
           ON h.date = s.forecast_target_date
          AND h.flight_number = s.flight_number
@@ -451,6 +514,9 @@ def markdown_report(report):
         "",
         f"- 状態: `{report['status']}`",
         f"- 入力行数: {report['input_count']}",
+        f"- 評価単位: `{report.get('evaluation_unit', 'unknown')}`",
+        f"- 独立した運航結果件数（日付・便）: {report.get('distinct_outcome_count', 0)}",
+        "- ローリング基準値は、各評価対象日より前に確定した運航結果だけから算出します。",
         f"- 評価対象行数: {report['eligible_count']}",
         "",
         "## 除外理由",
@@ -476,7 +542,7 @@ def markdown_report(report):
                     "",
                     f"- 件数: {metrics['count']}",
                     f"- Brier score: {metrics['brier_score']}",
-                    f"- 学習期間内の運航率ベースライン: {metrics['baseline_prior_percent']}% / Brier {metrics['baseline_prior_brier_score']}",
+                    f"- 評価母集団の観測運航率（記述値）: {metrics['baseline_prior_percent']}% / Brier {metrics['baseline_prior_brier_score']}",
                     f"- 常時運航ベースラインのBrier: {metrics['baseline_always_operated_brier_score']}",
                     f"- ECE: {metrics['expected_calibration_error_percent']}ポイント",
                     f"- 天候起因限定: {weather_metrics['count']}件 / Brier {weather_metrics['brier_score']} / ECE {weather_metrics['expected_calibration_error_percent']}ポイント",

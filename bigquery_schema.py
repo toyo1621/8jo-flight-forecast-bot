@@ -5,7 +5,9 @@ DEFAULT_DATASET = "flight_forecast"
 DEFAULT_TABLE = "flight_weather_logs"
 RAW_TABLE = "flight_collection_raw"
 RUNS_TABLE = "collection_runs"
+MAINTENANCE_AUDIT_TABLE = "maintenance_audit"
 PREDICTION_SNAPSHOT_TABLE = "prediction_snapshots"
+PREDICTION_PUBLICATION_TABLE = "prediction_publications"
 DEFAULT_LOCATION = "asia-northeast1"
 
 SCHEMA = (
@@ -55,9 +57,23 @@ COLLECTION_RUN_SCHEMA = (
     bigquery.SchemaField("created_at", "TIMESTAMP", mode="REQUIRED"),
 )
 
+MAINTENANCE_AUDIT_SCHEMA = (
+    bigquery.SchemaField("audit_id", "STRING", mode="REQUIRED"),
+    bigquery.SchemaField("operation", "STRING", mode="REQUIRED"),
+    bigquery.SchemaField("status", "STRING", mode="REQUIRED"),
+    bigquery.SchemaField("dry_run", "BOOLEAN", mode="REQUIRED"),
+    bigquery.SchemaField("target_scope", "STRING", mode="REQUIRED"),
+    bigquery.SchemaField("matched_count", "INTEGER"),
+    bigquery.SchemaField("affected_count", "INTEGER"),
+    bigquery.SchemaField("reason", "STRING", mode="REQUIRED"),
+    bigquery.SchemaField("actor", "STRING"),
+    bigquery.SchemaField("created_at", "TIMESTAMP", mode="REQUIRED"),
+)
+
 PREDICTION_SNAPSHOT_SCHEMA = (
     bigquery.SchemaField("snapshot_id", "STRING", mode="REQUIRED"),
     bigquery.SchemaField("run_id", "STRING", mode="REQUIRED"),
+    bigquery.SchemaField("run_attempt", "INTEGER"),
     bigquery.SchemaField("forecast_target_date", "DATE", mode="REQUIRED"),
     bigquery.SchemaField("flight_number", "STRING", mode="REQUIRED"),
     bigquery.SchemaField("model", "STRING", mode="REQUIRED"),
@@ -79,9 +95,27 @@ PREDICTION_SNAPSHOT_SCHEMA = (
     bigquery.SchemaField("config_version", "STRING", mode="REQUIRED"),
     bigquery.SchemaField("provenance_status", "STRING", mode="REQUIRED"),
     bigquery.SchemaField("weather_json", "STRING", mode="REQUIRED"),
+    bigquery.SchemaField("model_input_json", "STRING"),
+    bigquery.SchemaField("input_fingerprint", "STRING"),
+    bigquery.SchemaField("content_fingerprint", "STRING"),
+    bigquery.SchemaField("publication_tracking_enabled", "BOOLEAN"),
     bigquery.SchemaField("weather_field_sources_json", "STRING"),
     bigquery.SchemaField("typhoon_risk_level", "STRING"),
     bigquery.SchemaField("created_at", "TIMESTAMP", mode="REQUIRED"),
+)
+
+PREDICTION_PUBLICATION_SCHEMA = (
+    bigquery.SchemaField("artifact_id", "STRING", mode="REQUIRED"),
+    bigquery.SchemaField("snapshot_id", "STRING", mode="REQUIRED"),
+    bigquery.SchemaField("publication_status", "STRING", mode="REQUIRED"),
+    bigquery.SchemaField("run_id", "STRING"),
+    bigquery.SchemaField("run_attempt", "INTEGER"),
+    bigquery.SchemaField("code_version", "STRING"),
+    bigquery.SchemaField("config_version", "STRING"),
+    bigquery.SchemaField("created_at", "TIMESTAMP", mode="REQUIRED"),
+    bigquery.SchemaField("published_at", "TIMESTAMP"),
+    bigquery.SchemaField("publication_checked_at", "TIMESTAMP"),
+    bigquery.SchemaField("published_url", "STRING"),
 )
 
 
@@ -129,6 +163,14 @@ def ensure_collection_destinations(client, dataset_id, location):
         "ADD COLUMN IF NOT EXISTS source_status_json STRING"
     ).result()
 
+    audit_ref = bigquery.Table(
+        f"{client.project}.{dataset_id}.{MAINTENANCE_AUDIT_TABLE}",
+        schema=MAINTENANCE_AUDIT_SCHEMA,
+    )
+    audit_ref.time_partitioning = bigquery.TimePartitioning(field="created_at")
+    audit_ref.clustering_fields = ["operation", "status"]
+    client.create_table(audit_ref, exists_ok=True)
+
 
 def ensure_prediction_snapshot_destination(client, dataset_id, location):
     dataset_ref = bigquery.Dataset(f"{client.project}.{dataset_id}")
@@ -148,8 +190,34 @@ def ensure_prediction_snapshot_destination(client, dataset_id, location):
         "typhoon_factor FLOAT64",
         "factor_breakdown_json STRING",
         "weather_field_sources_json STRING",
+        "run_attempt INT64",
+        "model_input_json STRING",
+        "input_fingerprint STRING",
+        "content_fingerprint STRING",
+        "publication_tracking_enabled BOOL",
     ):
         client.query(
             f"ALTER TABLE `{client.project}.{dataset_id}.{PREDICTION_SNAPSHOT_TABLE}` "
+            f"ADD COLUMN IF NOT EXISTS {column}"
+        ).result()
+
+    publication_ref = bigquery.Table(
+        f"{client.project}.{dataset_id}.{PREDICTION_PUBLICATION_TABLE}",
+        schema=PREDICTION_PUBLICATION_SCHEMA,
+    )
+    publication_ref.time_partitioning = bigquery.TimePartitioning(field="created_at")
+    publication_ref.clustering_fields = ["artifact_id", "publication_status"]
+    client.create_table(publication_ref, exists_ok=True)
+    for column in (
+        "run_id STRING",
+        "run_attempt INT64",
+        "code_version STRING",
+        "config_version STRING",
+        "published_at TIMESTAMP",
+        "publication_checked_at TIMESTAMP",
+        "published_url STRING",
+    ):
+        client.query(
+            f"ALTER TABLE `{client.project}.{dataset_id}.{PREDICTION_PUBLICATION_TABLE}` "
             f"ADD COLUMN IF NOT EXISTS {column}"
         ).result()

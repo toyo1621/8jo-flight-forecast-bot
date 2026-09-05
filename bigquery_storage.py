@@ -1,6 +1,7 @@
 import json
 import math
 import os
+import time
 import uuid
 from datetime import datetime, timezone
 from functools import lru_cache
@@ -12,6 +13,9 @@ from bigquery_schema import (
     DEFAULT_LOCATION,
     DEFAULT_PROJECT,
     DEFAULT_TABLE,
+    MAINTENANCE_AUDIT_TABLE,
+    PREDICTION_PUBLICATION_SCHEMA,
+    PREDICTION_PUBLICATION_TABLE,
     PREDICTION_SNAPSHOT_SCHEMA,
     PREDICTION_SNAPSHOT_TABLE,
     RAW_TABLE,
@@ -29,6 +33,8 @@ from flight_metadata import (
     normalize_database_status,
     normalize_status,
 )
+
+HISTORY_CACHE_TTL_SECONDS = 300
 
 
 def settings():
@@ -150,6 +156,8 @@ def save_prediction_snapshots(rows):
     if not rows:
         return 0
 
+    unique_rows = list({row["snapshot_id"]: row for row in rows}.values())
+
     config = settings()
     client = bigquery.Client(project=config["project"], location=config["location"])
     ensure_prediction_snapshot_destination(client, config["dataset"], config["location"])
@@ -163,7 +171,7 @@ def save_prediction_snapshots(rows):
     column_list = ", ".join(columns)
     values = ", ".join(f"S.{column}" for column in columns)
     try:
-        client.load_table_from_json(rows, staging, job_config=job_config).result()
+        client.load_table_from_json(unique_rows, staging, job_config=job_config).result()
         client.query(
             f"""
             MERGE `{destination}` T
@@ -175,7 +183,97 @@ def save_prediction_snapshots(rows):
         ).result()
     finally:
         client.delete_table(staging, not_found_ok=True)
-    return len(rows)
+    return len(unique_rows)
+
+
+def save_prediction_publication_candidates(
+    rows, artifact_id, run_id, run_attempt=1, created_at=None
+):
+    """Record which immutable snapshots belong to a not-yet-published build."""
+    if not rows:
+        return 0
+    if not artifact_id:
+        raise ValueError("公開候補にはartifact_idが必要です。")
+
+    config = settings()
+    client = bigquery.Client(project=config["project"], location=config["location"])
+    ensure_prediction_snapshot_destination(client, config["dataset"], config["location"])
+    created_at = created_at or datetime.now(timezone.utc).isoformat()
+    publication_rows = {
+        (artifact_id, row["snapshot_id"]): {
+            "artifact_id": artifact_id,
+            "snapshot_id": row["snapshot_id"],
+            "publication_status": "candidate",
+            "run_id": run_id,
+            "run_attempt": run_attempt,
+            "code_version": row.get("code_version"),
+            "config_version": row.get("config_version"),
+            "created_at": created_at,
+            "published_at": None,
+            "publication_checked_at": None,
+            "published_url": None,
+        }
+        for row in rows
+    }
+    payload = list(publication_rows.values())
+    destination = _collection_table_path(PREDICTION_PUBLICATION_TABLE, config)
+    staging = f"{config['project']}.{config['dataset']}._prediction_publications_{uuid.uuid4().hex}"
+    job_config = bigquery.LoadJobConfig(
+        schema=PREDICTION_PUBLICATION_SCHEMA,
+        write_disposition=bigquery.WriteDisposition.WRITE_TRUNCATE,
+    )
+    columns = [field.name for field in PREDICTION_PUBLICATION_SCHEMA]
+    column_list = ", ".join(columns)
+    values = ", ".join(f"S.{column}" for column in columns)
+    try:
+        client.load_table_from_json(payload, staging, job_config=job_config).result()
+        client.query(
+            f"""
+            MERGE `{destination}` T
+            USING `{staging}` S
+            ON T.artifact_id = S.artifact_id AND T.snapshot_id = S.snapshot_id
+            WHEN MATCHED AND T.publication_status != 'published' THEN UPDATE SET
+              publication_status = 'candidate',
+              run_id = S.run_id,
+              run_attempt = S.run_attempt,
+              code_version = S.code_version,
+              config_version = S.config_version
+            WHEN NOT MATCHED THEN INSERT ({column_list})
+            VALUES ({values})
+            """
+        ).result()
+    finally:
+        client.delete_table(staging, not_found_ok=True)
+    return len(payload)
+
+
+def publish_prediction_artifact(artifact_id, public_url, checked_at=None):
+    """Mark a verified Pages artifact as published; safe to retry."""
+    if not artifact_id or not public_url:
+        raise ValueError("artifact_idとpublic_urlが必要です。")
+    config = settings()
+    client = bigquery.Client(project=config["project"], location=config["location"])
+    ensure_prediction_snapshot_destination(client, config["dataset"], config["location"])
+    checked_at = checked_at or datetime.now(timezone.utc).isoformat()
+    query = f"""
+        UPDATE `{_collection_table_path(PREDICTION_PUBLICATION_TABLE, config)}`
+        SET publication_status = 'published',
+            published_at = COALESCE(published_at, @checked_at),
+            publication_checked_at = @checked_at,
+            published_url = @public_url
+        WHERE artifact_id = @artifact_id
+          AND publication_status IN ('candidate', 'published')
+    """
+    job_config = bigquery.QueryJobConfig(
+        query_parameters=[
+            bigquery.ScalarQueryParameter("artifact_id", "STRING", artifact_id),
+            bigquery.ScalarQueryParameter("public_url", "STRING", public_url),
+            bigquery.ScalarQueryParameter("checked_at", "TIMESTAMP", checked_at),
+        ]
+    )
+    job = client.query(query, job_config=job_config)
+    job.result()
+    return job.num_dml_affected_rows or 0
 
 
 def fetch_published_forecast_archive():
@@ -183,22 +281,45 @@ def fetch_published_forecast_archive():
     config = settings()
     client = bigquery.Client(project=config["project"], location=config["location"])
     query = f"""
-        WITH ranked_snapshots AS (
+        WITH publication_state AS (
+          SELECT
+            snapshot_id,
+            MAX(IF(publication_status = 'published', 1, 0)) AS has_published,
+            MAX(IF(publication_status = 'candidate', 1, 0)) AS has_candidate
+          FROM `{_collection_table_path(PREDICTION_PUBLICATION_TABLE, config)}`
+          GROUP BY snapshot_id
+        ), ranked_snapshots AS (
           SELECT
             snapshot_id, forecast_target_date, flight_number, model,
             calculation_status, probability, prediction_generated_at,
             weather_valid_at,
+            CASE
+              WHEN COALESCE(p.has_published, 0) = 1 THEN 'published'
+              ELSE 'legacy'
+            END AS publication_status,
             ROW_NUMBER() OVER (
               PARTITION BY forecast_target_date, flight_number, model
-              ORDER BY prediction_generated_at DESC, snapshot_id DESC
+              ORDER BY
+                COALESCE(p.has_published, 0) DESC,
+                prediction_generated_at DESC,
+                snapshot_id DESC
             ) AS row_number
-          FROM `{_collection_table_path(PREDICTION_SNAPSHOT_TABLE, config)}`
-          WHERE forecast_target_date < CURRENT_DATE('Asia/Tokyo')
+          FROM `{_collection_table_path(PREDICTION_SNAPSHOT_TABLE, config)}` s
+          LEFT JOIN publication_state p USING (snapshot_id)
+            WHERE forecast_target_date < CURRENT_DATE('Asia/Tokyo')
             AND prediction_generated_at <= weather_valid_at
+            AND (
+              COALESCE(p.has_published, 0) = 1
+              OR (
+                COALESCE(p.has_candidate, 0) = 0
+                AND s.publication_tracking_enabled IS NULL
+              )
+            )
         )
         SELECT
           s.snapshot_id, s.forecast_target_date, s.flight_number, s.model,
           s.calculation_status, s.probability, s.prediction_generated_at,
+          s.publication_status,
           h.status AS outcome_status, h.status_reason, h.status_reason_category,
           h.status_reason_source, h.status_reason_observed_at
         FROM ranked_snapshots s
@@ -211,16 +332,25 @@ def fetch_published_forecast_archive():
     return [dict(row.items()) for row in client.query(query).result()]
 
 
-@lru_cache(maxsize=1)
-def fetch_history():
-    return [
-        (row["flight_number"], row["status"], row["wind_direction"], row["wind_speed"])
-        for row in fetch_detailed_history()
-    ]
+def _history_cache_ttl_seconds():
+    value = os.getenv("HISTORY_CACHE_TTL_SECONDS")
+    if value is None:
+        return HISTORY_CACHE_TTL_SECONDS
+    try:
+        return max(0, int(value))
+    except ValueError:
+        return HISTORY_CACHE_TTL_SECONDS
 
 
-@lru_cache(maxsize=1)
-def fetch_detailed_history():
+def _history_cache_epoch():
+    ttl = _history_cache_ttl_seconds()
+    if ttl == 0:
+        return time.monotonic()
+    return int(time.monotonic() // ttl)
+
+
+@lru_cache(maxsize=2)
+def _fetch_detailed_history_cached(_cache_epoch):
     config = settings()
     client = bigquery.Client(project=config["project"], location=config["location"])
     accepted_statuses = ", ".join(f"'{status}'" for status in sorted(VALID_HISTORY_STATUSES))
@@ -239,6 +369,33 @@ def fetch_detailed_history():
     for row in rows:
         row["status"] = normalize_status(row["status"])
     return rows
+
+
+def fetch_detailed_history():
+    """Load history with a bounded TTL; writes also clear it explicitly."""
+    return _fetch_detailed_history_cached(_history_cache_epoch())
+
+
+@lru_cache(maxsize=2)
+def _fetch_history_cached(cache_epoch):
+    return [
+        (row["flight_number"], row["status"], row["wind_direction"], row["wind_speed"])
+        for row in _fetch_detailed_history_cached(cache_epoch)
+    ]
+
+
+def fetch_history():
+    return _fetch_history_cached(_history_cache_epoch())
+
+
+def _clear_history_caches():
+    _fetch_history_cached.cache_clear()
+    _fetch_detailed_history_cached.cache_clear()
+
+
+# Keep the existing explicit invalidation call sites compatible with the TTL cache.
+fetch_history.cache_clear = _clear_history_caches
+fetch_detailed_history.cache_clear = _clear_history_caches
 
 
 def _normalize_item(item, timestamp):
@@ -380,19 +537,86 @@ def upsert_flight_weather_logs(items):
     return len(payload)
 
 
-def delete_unresolved_status_rows():
-    """Delete rows that cannot be interpreted as an observed flight outcome."""
+def cleanup_unresolved_status_rows(
+    apply=False, reason=None, target_date=None, actor=None
+):
+    """Manage unresolved rows with a dry-run default and append-only audit events."""
+    if apply and not reason:
+        raise ValueError("削除を適用する場合は理由が必要です。")
     config = settings()
     client = bigquery.Client(project=config["project"], location=config["location"])
+    ensure_collection_destinations(client, config["dataset"], config["location"])
     accepted_statuses = ", ".join(f"'{status}'" for status in sorted(VALID_HISTORY_STATUSES))
-    job = client.query(
+    scope = target_date or "all-unresolved-status-rows"
+    scope_filter = "AND date = @target_date" if target_date else ""
+    parameters = (
+        [bigquery.ScalarQueryParameter("target_date", "DATE", target_date)]
+        if target_date
+        else []
+    )
+    query_config = bigquery.QueryJobConfig(query_parameters=parameters)
+    count_job = client.query(
+        f"""
+        SELECT COUNT(*) AS matched_count
+        FROM `{table_path(config)}`
+        WHERE (status IS NULL OR status NOT IN ({accepted_statuses})) {scope_filter}
+        """,
+        job_config=query_config,
+    )
+    count_rows = list(count_job.result())
+    matched_count = int(count_rows[0]["matched_count"]) if count_rows else 0
+    audit_id = uuid.uuid4().hex
+    now = datetime.now(timezone.utc).isoformat()
+    audit_row = {
+        "audit_id": audit_id,
+        "operation": "cleanup_unresolved_status_rows",
+        "status": "dry_run" if not apply else "requested",
+        "dry_run": not apply,
+        "target_scope": scope,
+        "matched_count": matched_count,
+        "affected_count": 0,
+        "reason": reason or "dry-run: no deletion requested",
+        "actor": actor or os.getenv("GITHUB_ACTOR") or os.getenv("USER"),
+        "created_at": now,
+    }
+    _insert_collection_rows(
+        client,
+        _collection_table_path(MAINTENANCE_AUDIT_TABLE, config),
+        [audit_row],
+    )
+    if not apply:
+        return {"audit_id": audit_id, "matched_count": matched_count, "affected_count": 0}
+
+    delete_job = client.query(
         f"""
         DELETE FROM `{table_path(config)}`
-        WHERE status IS NULL OR status NOT IN ({accepted_statuses})
-        """
+        WHERE (status IS NULL OR status NOT IN ({accepted_statuses})) {scope_filter}
+        """,
+        job_config=query_config,
     )
-    job.result()
+    try:
+        delete_job.result()
+    except Exception:
+        failed = dict(audit_row)
+        failed["status"] = "failed"
+        failed["created_at"] = datetime.now(timezone.utc).isoformat()
+        _insert_collection_rows(
+            client,
+            _collection_table_path(MAINTENANCE_AUDIT_TABLE, config),
+            [failed],
+        )
+        raise
+    affected_count = delete_job.num_dml_affected_rows or 0
+    completed = dict(audit_row)
+    completed["status"] = "completed"
+    completed["affected_count"] = affected_count
+    completed["created_at"] = datetime.now(timezone.utc).isoformat()
+    _insert_collection_rows(
+        client,
+        _collection_table_path(MAINTENANCE_AUDIT_TABLE, config),
+        [completed],
+    )
     fetch_history.cache_clear()
     fetch_detailed_history.cache_clear()
-    return job.num_dml_affected_rows or 0
+    return {"audit_id": audit_id, "matched_count": matched_count, "affected_count": affected_count}
 

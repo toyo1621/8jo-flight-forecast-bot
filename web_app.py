@@ -183,37 +183,50 @@ def _prediction_weather(weather):
     }
 
 
-def calculate_ensemble_evaluation(ensemble_members, baseline_weather=None, flight_number=None):
+def calculate_ensemble_evaluation(
+    ensemble_members, baseline_weather=None, flight_number=None, history=None
+):
     return evaluate_ensemble_members(
         ensemble_members,
         baseline_weather=baseline_weather,
         flight_number=flight_number,
-        predictor=predict_flight_probability,
+        predictor=(
+            lambda **weather: predict_flight_probability(**weather, history=history)
+            if history is not None
+            else predict_flight_probability(**weather)
+        ),
         prediction_fields=PREDICTION_WEATHER_FIELDS,
     )
 
 
-def calculate_confidence(ensemble_members, baseline_weather=None, flight_number=None):
+def calculate_confidence(ensemble_members, baseline_weather=None, flight_number=None, history=None):
     return calculate_ensemble_evaluation(
         ensemble_members,
         baseline_weather=baseline_weather,
         flight_number=flight_number,
+        history=history,
     ).confidence
 
 
-def calculate_model_reference_probabilities(ensemble_members, baseline_weather=None, flight_number=None):
+def calculate_model_reference_probabilities(
+    ensemble_members, baseline_weather=None, flight_number=None, history=None
+):
     return calculate_ensemble_evaluation(
         ensemble_members,
         baseline_weather=baseline_weather,
         flight_number=flight_number,
+        history=history,
     ).model_probabilities
 
 
-def calculate_model_reference_risks(ensemble_members, baseline_weather=None, flight_number=None):
+def calculate_model_reference_risks(
+    ensemble_members, baseline_weather=None, flight_number=None, history=None
+):
     return calculate_ensemble_evaluation(
         ensemble_members,
         baseline_weather=baseline_weather,
         flight_number=flight_number,
+        history=history,
     ).model_risks
 
 
@@ -396,6 +409,7 @@ def load_forecast_bundle(logger=None):
     cached = load_cached_forecast_bundle()
     fresh_cached = cached if is_cached_forecast_fresh(cached, source="weather") else None
     notices = []
+    source_updated_at = {}
 
     def cached_source(source):
         if cached and is_cached_forecast_fresh(cached, source=source):
@@ -404,6 +418,7 @@ def load_forecast_bundle(logger=None):
 
     try:
         weather = fetch_forecast()
+        source_updated_at["weather"] = datetime.now(JST).isoformat()
     except (requests.RequestException, ValueError) as exc:
         if fresh_cached:
             _log_or_print(logger, "Main forecast unavailable; using cached forecast", exc)
@@ -446,7 +461,6 @@ def load_forecast_bundle(logger=None):
             "該当項目は欠測として計算しています。"
         )
 
-    source_updated_at = {}
     source_fallbacks = {
         "weather": False,
         "ensembles": False,
@@ -454,6 +468,7 @@ def load_forecast_bundle(logger=None):
     }
     try:
         ensembles = fetch_ensemble_forecast()
+        source_updated_at["ensembles"] = datetime.now(JST).isoformat()
     except (requests.RequestException, ValueError) as exc:
         _log_or_print(logger, "Ensemble forecast could not be loaded", exc)
         ensembles = cached_source("ensembles")
@@ -466,6 +481,7 @@ def load_forecast_bundle(logger=None):
 
     try:
         typhoon_impacts = fetch_typhoon_impacts()
+        source_updated_at["typhoon_impacts"] = datetime.now(JST).isoformat()
     except (requests.RequestException, ValueError) as exc:
         _log_or_print(logger, "Typhoon impact scores could not be loaded", exc)
         typhoon_impacts = cached_source("typhoon_impacts")
@@ -478,12 +494,16 @@ def load_forecast_bundle(logger=None):
 
     _append_typhoon_coverage_notice(notices, weather, typhoon_impacts)
     _append_typhoon_factor_notice(notices, typhoon_impacts)
-    saved = save_forecast_bundle(
-        weather,
-        ensembles=ensembles,
-        typhoon_impacts=typhoon_impacts,
-        source_updated_at=source_updated_at,
-    )
+    try:
+        saved = save_forecast_bundle(
+            weather,
+            ensembles=ensembles,
+            typhoon_impacts=typhoon_impacts,
+            source_updated_at=source_updated_at,
+        )
+    except OSError as exc:
+        _log_or_print(logger, "Forecast cache could not be written", exc)
+        saved = {"source_updated_at": source_updated_at}
     data_updated_at = (
         forecast_source_timestamp(saved, "weather") if isinstance(saved, dict) else None
     ) or datetime.now(JST).isoformat()
@@ -510,19 +530,44 @@ def build_daily_forecasts(
     reference_date=None,
     current_time=None,
     typhoon_impacts_by_date=None,
+    history=None,
 ):
     ensembles_by_time = ensembles_by_time or {}
     typhoon_impacts_by_date = typhoon_impacts_by_date or {}
     current_time = current_time or datetime.now(JST)
     reference_date = reference_date or current_time.date()
-    dates = sorted({timestamp[:10] for timestamp in weather_by_time})
+    weather_dates = sorted({timestamp[:10] for timestamp in weather_by_time})
+    if not weather_dates:
+        return []
+    first_date = datetime.strptime(weather_dates[0], "%Y-%m-%d").replace(tzinfo=JST).date()
+    last_date = datetime.strptime(weather_dates[-1], "%Y-%m-%d").replace(tzinfo=JST).date()
+    dates = [
+        (first_date + timedelta(days=offset)).isoformat()
+        for offset in range((last_date - first_date).days + 1)
+    ]
     days = []
     for date_string in dates:
         date = datetime.strptime(date_string, "%Y-%m-%d").replace(tzinfo=JST)
         typhoon_impact = typhoon_impacts_by_date.get(date_string)
         flights = []
         for flight in FLIGHTS:
-            if date.date() == current_time.date() and _flight_display_expired(date_string, flight["time"], current_time):
+            if date.date() == current_time.date() and _flight_display_expired(
+                date_string, flight["time"], current_time
+            ):
+                flights.append(
+                    decorate_flight_for_display(
+                        {
+                            **flight,
+                            "number": flight_display_name(flight["number"]),
+                            "raw_number": flight["number"],
+                            "probability": None,
+                            "calculation_status": "expired",
+                            "calculation_unavailable_reason": "便の表示時刻を過ぎています。",
+                            "warning_msg": "便の表示時刻を過ぎています。",
+                            "similar_history": [],
+                        }
+                    )
+                )
                 continue
             timestamp = f"{date_string}T{flight['forecast_hour']:02d}:00"
             weather = weather_by_time.get(timestamp)
@@ -531,15 +576,33 @@ def build_daily_forecasts(
                 or weather.get("wind_direction") is None
                 or weather.get("wind_speed") is None
             ):
+                flights.append(
+                    decorate_flight_for_display(
+                        {
+                            **flight,
+                            "number": flight_display_name(flight["number"]),
+                            "raw_number": flight["number"],
+                            "probability": None,
+                            "calculation_status": "weather_missing",
+                            "calculation_unavailable_reason": (
+                                "必須気象データが欠測のため算出できません。"
+                            ),
+                            "warning_msg": "必須気象データが欠測しています。",
+                            "similar_history": [],
+                        }
+                    )
+                )
                 continue
             result = predict_flight_probability(
                 **_prediction_weather(weather),
                 flight_number=flight["number"],
+                history=history,
             )
             ensemble_evaluation = calculate_ensemble_evaluation(
                 ensembles_by_time.get(timestamp, []),
                 weather,
                 flight_number=flight["number"],
+                history=history,
             )
             confidence = ensemble_evaluation.confidence
             result = _with_typhoon_impact(result, typhoon_impact)
@@ -553,6 +616,24 @@ def build_daily_forecasts(
                 model: _with_typhoon_risk_summary(risk, typhoon_impact)
                 for model, risk in model_risks.items()
             }
+            model_statuses = {
+                "jma_seamless": result.get("calculation_status")
+                or ("available" if result.get("probability") is not None else "unavailable"),
+            }
+            model_statuses.update(
+                {
+                    model: summary.get("status")
+                    for model, summary in confidence.get("models", {}).items()
+                }
+            )
+            member_inputs = [
+                {
+                    "model": evaluation.model,
+                    "member_id": evaluation.member_id,
+                    "weather": evaluation.weather,
+                }
+                for evaluation in ensemble_evaluation.members
+            ]
             flights.append(
                 decorate_flight_for_display(
                     {
@@ -561,7 +642,9 @@ def build_daily_forecasts(
                         **result,
                         "number": flight_display_name(flight["number"]),
                         "raw_number": flight["number"],
-                        "similar_history": find_similar_flights(flight["number"], weather),
+                        "similar_history": find_similar_flights(
+                            flight["number"], weather, history=history
+                        ),
                         "gfs_probability": model_probabilities.get("gfs_seamless"),
                         "gfs_risk": model_risks.get("gfs_seamless"),
                         "ecmwf_probability": model_probabilities.get("ecmwf_ifs025"),
@@ -569,15 +652,17 @@ def build_daily_forecasts(
                         "jma_probability": result.get("probability"),
                         "jma_risk": deterministic_risk_summary(result),
                         "confidence": confidence,
+                        "_model_calculation_statuses": model_statuses,
+                        "_ensemble_member_inputs": member_inputs,
                         "wind_direction_label": wind_direction_label(weather["wind_direction"]),
                     }
                 )
             )
         if flights:
             confidence_values = [
-                flight["confidence"]
+                flight.get("confidence")
                 for flight in flights
-                if flight["confidence"] and flight["confidence"].get("grade")
+                if flight.get("confidence") and flight["confidence"].get("grade")
             ]
             if confidence_values:
                 day_confidence = max(
@@ -598,13 +683,20 @@ def build_daily_forecasts(
                     "weekday": "月火水木金土日"[date.weekday()],
                     "flights": flights,
                     "confidence": day_confidence,
+                    "available_flight_count": sum(
+                        flight.get("calculation_status") == "available" for flight in flights
+                    ),
+                    "unavailable_flight_count": sum(
+                        flight.get("calculation_status") != "available" for flight in flights
+                    ),
                 }
             )
     return days
 
 
-def create_app():
+def create_app(now_fn=None):
     app = Flask(__name__)
+    now_fn = now_fn or (lambda: datetime.now(JST))
 
     @app.get("/health")
     def health():
@@ -614,13 +706,20 @@ def create_app():
     def index():
         error = None
         days = []
+        today_day = None
         updated_at = None
         try:
+            current_time = now_fn()
             bundle = load_forecast_bundle(app.logger)
             days = build_daily_forecasts(
                 bundle["weather"],
                 bundle["ensembles"],
+                current_time=current_time,
                 typhoon_impacts_by_date=bundle["typhoon_impacts"],
+            )
+            today_day = next(
+                (day for day in days if day.get("date") == current_time.date().isoformat()),
+                None,
             )
             notices = bundle["notices"]
             updated_at = format_forecast_timestamp(bundle.get("data_updated_at"))
@@ -632,6 +731,7 @@ def create_app():
         return render_template(
             "index.html",
             days=days,
+            today_day=today_day if not error else None,
             error=error,
             updated_at=updated_at or "取得できません",
             notices=notices,

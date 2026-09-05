@@ -1,3 +1,4 @@
+import json
 import re
 from datetime import date, datetime, timedelta, timezone
 from unittest.mock import Mock, patch
@@ -5,7 +6,11 @@ from unittest.mock import Mock, patch
 from flask import render_template
 
 from app_config import LOW_PROBABILITY_THRESHOLD
-from forecast_cache import is_cached_forecast_fresh, save_forecast_bundle
+from forecast_cache import (
+    is_cached_forecast_fresh,
+    load_cached_forecast_bundle,
+    save_forecast_bundle,
+)
 from forecast_engine import (
     MAX_PROBABILITY,
     find_similar_flights,
@@ -24,6 +29,7 @@ from web_app import (
     calculate_confidence,
     calculate_model_reference_probabilities,
     calculate_model_reference_risks,
+    create_app,
     deterministic_risk_summary,
     fallback_confidence,
     fetch_forecast,
@@ -197,6 +203,19 @@ def test_main_forecast_keeps_jma_when_supplement_is_unavailable():
     assert weather["_weather_field_sources"]["visibility"] == "missing"
 
 
+def test_forecast_cache_write_failure_does_not_discard_live_forecast():
+    with (
+        patch("web_app.fetch_forecast", return_value=SAMPLE_WEATHER),
+        patch("web_app.fetch_ensemble_forecast", return_value={}),
+        patch("web_app.fetch_typhoon_impacts", return_value={}),
+        patch("web_app.save_forecast_bundle", side_effect=OSError("read-only cache")),
+    ):
+        bundle = load_forecast_bundle(lambda message: None)
+
+    assert bundle["weather"] == SAMPLE_WEATHER
+    assert bundle["source"] == "live"
+
+
 def test_typhoon_impacts_use_jma_flight_risk_levels():
     response = Mock()
     response.json.return_value = {
@@ -302,7 +321,7 @@ def test_primary_supplement_reports_fields_that_remain_missing():
     }
 
 
-def test_daily_forecast_skips_main_weather_without_required_values():
+def test_daily_forecast_keeps_target_flights_when_required_weather_is_missing():
     weather = {
         "2026-06-20T08:00": {
             **SAMPLE_WEATHER["2026-06-20T08:00"],
@@ -316,7 +335,33 @@ def test_daily_forecast_skips_main_weather_without_required_values():
         current_time=datetime(2026, 6, 19, 12, 0, tzinfo=JST),
     )
 
-    assert days == []
+    assert len(days) == 1
+    assert len(days[0]["flights"]) == 3
+    assert days[0]["flights"][0]["calculation_status"] == "weather_missing"
+    assert days[0]["flights"][0]["probability"] is None
+
+
+def test_daily_forecast_keeps_a_missing_intermediate_date_as_unavailable():
+    weather = {
+        "2026-06-20T08:00": SAMPLE_WEATHER["2026-06-20T08:00"],
+        "2026-06-22T08:00": SAMPLE_WEATHER["2026-06-20T08:00"],
+    }
+
+    with (
+        patch(
+            "web_app.predict_flight_probability",
+            return_value={"probability": 88.0, "calculation_status": "available"},
+        ),
+        patch("web_app.find_similar_flights", return_value=[]),
+    ):
+        days = build_daily_forecasts(
+            weather,
+            current_time=datetime(2026, 6, 19, 12, 0, tzinfo=JST),
+        )
+
+    assert [day["date"] for day in days] == ["2026-06-20", "2026-06-21", "2026-06-22"]
+    assert days[1]["unavailable_flight_count"] == 3
+    assert all(flight["calculation_status"] == "weather_missing" for flight in days[1]["flights"])
 
 
 def test_typhoon_risk_uses_external_impact_multipliers():
@@ -474,7 +519,7 @@ def test_missing_typhoon_impact_is_not_assumed_low():
     assert "台風接近リスク" not in days[0]["flights"][0]["warning_msg"]
 
 
-def test_today_flight_disappears_after_arrival_plus_30_minutes():
+def test_today_flight_is_explicitly_marked_after_arrival_plus_30_minutes():
     weather = {
         f"2026-06-20T{hour:02d}:00": SAMPLE_WEATHER["2026-06-20T08:00"]
         for hour in (8, 13, 17)
@@ -487,7 +532,13 @@ def test_today_flight_disappears_after_arrival_plus_30_minutes():
     ):
         days = build_daily_forecasts(weather, current_time=current_time)
 
-    assert [flight["raw_number"] for flight in days[0]["flights"]] == ["ANA1893", "ANA1895"]
+    assert [flight["raw_number"] for flight in days[0]["flights"]] == [
+        "ANA1891",
+        "ANA1893",
+        "ANA1895",
+    ]
+    assert days[0]["flights"][0]["calculation_status"] == "expired"
+    assert days[0]["flights"][1]["calculation_status"] == "available"
 
 
 def test_today_flight_remains_at_exactly_arrival_plus_30_minutes():
@@ -524,6 +575,43 @@ def test_find_similar_flights_filters_same_flight_and_orders_by_weather():
     assert [row["date"] for row in result] == ["2026-01-01", "2026-01-02"]
     assert result[0]["date_label"] == "2026/01/01"
     assert result[0]["flight_display_name"] == "ANA1891(1便)"
+
+
+def test_forecast_domain_functions_accept_injected_history_without_bigquery():
+    history = [("ANA1891", "運航", 180.0, 5.0)] * 5
+    with patch("forecast_engine.load_history", side_effect=AssertionError("BigQuery called")):
+        result = predict_flight_probability(
+            180.0,
+            5.0,
+            8.0,
+            20.0,
+            15.0,
+            flight_number="ANA1891",
+            history=history,
+        )
+
+    assert result["calculation_status"] == "available"
+    assert result["probability"] == 97.0
+
+
+def test_similar_flight_search_accepts_injected_history_without_bigquery():
+    history = [
+        {
+            "date": "2026-01-01",
+            "flight_number": "ANA1891",
+            "status": "運航",
+            "wind_direction": 180.0,
+            "wind_speed": 5.0,
+        }
+    ]
+    with patch("forecast_engine.load_detailed_history", side_effect=AssertionError("BigQuery called")):
+        result = find_similar_flights(
+            "ANA1891",
+            {"wind_direction": 180.0, "wind_speed": 5.0},
+            history=history,
+        )
+
+    assert result[0]["date"] == "2026-01-01"
 
 
 def test_find_similar_flights_prefers_visibility_when_scores_are_equal():
@@ -609,6 +697,7 @@ def test_probability_history_is_filtered_by_flight_number():
     assert first["probability"] == 60.0
     assert second["probability"] == 0.0
     assert first["history_flight_number"] == "ANA1891"
+    assert first["history_fingerprint"] != second["history_fingerprint"]
 
 
 def test_low_cloud_and_gust_adjustments_each_use_09():
@@ -730,7 +819,7 @@ def test_calculate_confidence_ignores_unavailable_member_predictions():
 
     assert confidence["grade"] is None
     assert confidence["source"] == "unavailable"
-    assert confidence["models"]["gfs_seamless"]["status"] == "insufficient_members"
+    assert confidence["models"]["gfs_seamless"]["status"] == "insufficient_history"
 
 
 def test_model_reference_probabilities_use_each_models_median():
@@ -931,6 +1020,35 @@ def test_flag_icon_assets_exist():
     assert (BASE_DIR / "static" / "flags" / "jp.svg").exists()
 
 
+def test_forecast_cache_write_is_atomic_and_rejects_future_timestamp(tmp_path):
+    cache_file = tmp_path / "nested" / "forecast.json"
+    save_forecast_bundle(
+        {"2026-06-20T08:00": SAMPLE_WEATHER["2026-06-20T08:00"]},
+        cache_file=cache_file,
+        source_updated_at={"weather": "2026-06-20T00:00:00+09:00"},
+    )
+    assert cache_file.exists()
+    assert not list(cache_file.parent.glob(".forecast.json.*"))
+
+    payload = json.loads(cache_file.read_text(encoding="utf-8"))
+    payload["source_updated_at"]["weather"] = "2099-01-01T00:00:00+09:00"
+    cache_file.write_text(json.dumps(payload), encoding="utf-8")
+    assert is_cached_forecast_fresh(payload) is False
+
+
+def test_forecast_cache_rejects_invalid_inner_weather_values(tmp_path):
+    cache_file = tmp_path / "forecast.json"
+    save_forecast_bundle(
+        {"2026-06-20T08:00": SAMPLE_WEATHER["2026-06-20T08:00"]},
+        cache_file=cache_file,
+    )
+    payload = json.loads(cache_file.read_text(encoding="utf-8"))
+    payload["weather"]["2026-06-20T08:00"]["wind_speed"] = "not-a-number"
+    cache_file.write_text(json.dumps(payload), encoding="utf-8")
+
+    assert load_cached_forecast_bundle(cache_file) is None
+
+
 def test_decorate_flight_for_display_builds_model_rows():
     flight = decorate_flight_for_display(
         {
@@ -1055,15 +1173,11 @@ def test_load_forecast_bundle_reuses_cached_optional_sources():
     assert bundle["typhoon_impacts"] == cached["typhoon_impacts"]
     assert "アンサンブル予報は前回取得データ" in bundle["notices"][0]
     assert "台風影響度は前回取得データ" in bundle["notices"][1]
-    save.assert_called_once_with(
-        SAMPLE_WEATHER,
-        ensembles=cached["ensembles"],
-        typhoon_impacts=cached["typhoon_impacts"],
-        source_updated_at={
-            "ensembles": cached["cached_at"],
-            "typhoon_impacts": cached["cached_at"],
-        },
-    )
+    save.assert_called_once()
+    saved_sources = save.call_args.kwargs["source_updated_at"]
+    assert saved_sources["ensembles"] == cached["cached_at"]
+    assert saved_sources["typhoon_impacts"] == cached["cached_at"]
+    assert "weather" in saved_sources
 
 
 def test_load_forecast_bundle_does_not_reuse_stale_cached_optional_sources():
@@ -1088,12 +1202,8 @@ def test_load_forecast_bundle_does_not_reuse_stale_cached_optional_sources():
     assert bundle["typhoon_impacts"] == {}
     assert "アンサンブル予報を取得できませんでした。" in bundle["notices"][0]
     assert "台風影響度を取得できなかったため" in bundle["notices"][1]
-    save.assert_called_once_with(
-        SAMPLE_WEATHER,
-        ensembles={},
-        typhoon_impacts={},
-        source_updated_at={},
-    )
+    save.assert_called_once()
+    assert set(save.call_args.kwargs["source_updated_at"]) == {"weather"}
 
 
 def test_optional_cache_source_cannot_be_refreshed_indefinitely():
@@ -1134,7 +1244,7 @@ def test_save_forecast_bundle_preserves_cached_source_timestamp(tmp_path):
     )
 
     assert payload["source_updated_at"]["ensembles"] == old_timestamp
-    assert payload["source_updated_at"]["weather"] == payload["cached_at"]
+    assert "weather" not in payload["source_updated_at"]
 
 
 def test_load_forecast_bundle_rejects_stale_main_cache():
@@ -1219,7 +1329,8 @@ def test_index_renders_forecast():
     body = response.get_data(as_text=True)
     assert "八丈島便 運航の目安" in body
     assert 'class="today-summary"' in body
-    assert "今日の運航目安" in body
+    assert "今日の運航目安" not in body
+    assert "運航目安を取得できません" in body
     assert "ANA公式の運航状況" in body
     assert 'href="https://www.ana.co.jp/fs/dom/jp/"' in body
     assert "運航参考スコア" in body
@@ -1342,6 +1453,29 @@ def test_index_handles_weather_api_error():
     assert "現在、予報を取得できません" in response.get_data(as_text=True)
 
 
+def test_index_uses_injected_jst_clock_for_today_selection():
+    day = {"date": "2026-06-20"}
+    bundle = {
+        "weather": {},
+        "ensembles": {},
+        "typhoon_impacts": {},
+        "notices": [],
+        "data_updated_at": "2026-06-20T00:00:00+09:00",
+    }
+    current_time = datetime(2026, 6, 20, 12, 0, tzinfo=JST)
+    test_app = create_app(now_fn=lambda: current_time)
+    with (
+        patch("web_app.load_forecast_bundle", return_value=bundle),
+        patch("web_app.build_daily_forecasts", return_value=[day]) as build_days,
+        patch("web_app.render_template", return_value="ok") as render,
+    ):
+        response = test_app.test_client().get("/")
+
+    assert response.status_code == 200
+    assert build_days.call_args.kwargs["current_time"] == current_time
+    assert render.call_args.kwargs["today_day"] == day
+
+
 def test_health():
     response = app.test_client().get("/health")
 
@@ -1358,7 +1492,7 @@ def test_workflows_run_tests_and_data_quality_reports():
 
     assert "python -m pytest -q" in ci
     assert "python -m ruff check ." in ci
-    assert "python -m pip_audit -r requirements.txt" in ci
+    assert "python -m pip_audit -r requirements.lock" in ci
     assert "github/codeql-action/analyze@" in codeql
     assert "python data_quality.py --format markdown" in pages
     assert "python data_quality.py --format markdown" in collection

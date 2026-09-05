@@ -13,6 +13,11 @@
   <meta name="google-site-verification" content="uqqq0NUofXd_HvVElpSmwF8uGZWy70xdrY71bj7hq6U">
   <meta name="description" content="{{ page_description }}">
   <meta name="robots" content="index,follow">
+  <meta name="forecast-artifact-id" content="{{ artifact_id|default('unknown', true) }}">
+  <meta name="forecast-generated-at" content="{{ forecast_generated_at|default('', true) }}">
+  <meta name="forecast-code-version" content="{{ forecast_code_version|default('', true) }}">
+  <meta name="forecast-config-version" content="{{ forecast_config_version|default('', true) }}">
+  <meta name="forecast-snapshot-count" content="{{ forecast_snapshot_count|default(0, true) }}">
   <meta name="theme-color" content="#071c2c">
   <link rel="canonical" href="{{ page_url }}">
   <meta property="og:type" content="website">
@@ -53,7 +58,7 @@
   {% set low_threshold = low_probability_threshold|default(60)|round|int %}
   {% set access_stats = access_stats|default({"days": [], "generated_at": None, "status": "unavailable"}) %}
   {% set access_stats_status = access_stats.status|default("available" if access_stats.days else "unavailable") %}
-  {% set today = days[0] if days else None %}
+  {% set today = today_day|default(None, true) %}
   <main class="container{% if page_variant == "date" %} container--minimal{% endif %}">
     <header class="header{% if page_variant == "date" %} header--minimal{% endif %}">
       {% if page_variant == "date" %}
@@ -192,7 +197,7 @@
                   {% else %}
                     <span class="probability-unavailable" role="status">算出不可</span>
                   {% endif %}
-                  <small>JMA主予報 / 過去実績×リスクによる参考スコア</small>
+                  <small>{% if flight.calculation_status == "available" %}JMA主予報 / 過去実績×リスクによる参考スコア{% else %}{{ flight.calculation_unavailable_reason|default("算出できない状態です。", true) }}{% endif %}</small>
                 </p>
                 <div class="model-probabilities" aria-label="モデル別の運航参考スコア">
                   {% for model in flight.model_probabilities %}
@@ -218,13 +223,13 @@
                   <h4>予報気象情報</h4>
                   <p class="model-source">主予報: 気象庁(JMA) GSM・MSMモデル (Open-Meteo経由)</p>
                   <dl class="weather-grid">
-                    <div><dt>風向</dt><dd>{{ flight.wind_direction_label }} {{ flight.wind_direction|round|int }}°</dd></div>
-                    <div><dt>風速</dt><dd>{{ flight.wind_speed }} m/s</dd></div>
-                    <div><dt>最大瞬間風速</dt><dd>{{ flight.wind_gusts }} m/s</dd></div>
-                    <div><dt>低層雲量</dt><dd>{{ flight.cloud_cover_low|round|int }}%</dd></div>
-                    <div><dt>視程</dt><dd>{{ flight.visibility }} km</dd></div>
-                    <div><dt>降水量</dt><dd>{% if flight.precipitation is not none %}{{ flight.precipitation }} mm/h{% else %}欠測{% endif %}</dd></div>
-                    <div><dt>気圧</dt><dd>{% if flight.pressure_msl is not none %}{{ flight.pressure_msl }} hPa{% else %}欠測{% endif %}</dd></div>
+                    <div><dt>風向</dt><dd>{% if flight.wind_direction is defined and flight.wind_direction is not none %}{{ flight.wind_direction_label }} {{ flight.wind_direction|round|int }}°{% else %}欠測{% endif %}</dd></div>
+                    <div><dt>風速</dt><dd>{% if flight.wind_speed is defined and flight.wind_speed is not none %}{{ flight.wind_speed }} m/s{% else %}欠測{% endif %}</dd></div>
+                    <div><dt>最大瞬間風速</dt><dd>{% if flight.wind_gusts is defined and flight.wind_gusts is not none %}{{ flight.wind_gusts }} m/s{% else %}欠測{% endif %}</dd></div>
+                    <div><dt>低層雲量</dt><dd>{% if flight.cloud_cover_low is defined and flight.cloud_cover_low is not none %}{{ flight.cloud_cover_low|round|int }}%{% else %}欠測{% endif %}</dd></div>
+                    <div><dt>視程</dt><dd>{% if flight.visibility is defined and flight.visibility is not none %}{{ flight.visibility }} km{% else %}欠測{% endif %}</dd></div>
+                    <div><dt>降水量</dt><dd>{% if flight.precipitation is defined and flight.precipitation is not none %}{{ flight.precipitation }} mm/h{% else %}欠測{% endif %}</dd></div>
+                    <div><dt>気圧</dt><dd>{% if flight.pressure_msl is defined and flight.pressure_msl is not none %}{{ flight.pressure_msl }} hPa{% else %}欠測{% endif %}</dd></div>
                     <div><dt>主予報(JMA)での統計参考値（運航参考スコア）</dt><dd>{% if flight.calculation_status == "available" %}<span class="probability-inline-symbol">{{ flight.probability_symbol }}</span>{{ flight.probability }} / 100{% else %}算出不可{% endif %}</dd></div>
                     <div><dt>過去実績の集計対象</dt><dd>{{ flight.number }} / {{ flight.data_count }}件</dd></div>
                     {% for model in flight.model_probabilities %}
