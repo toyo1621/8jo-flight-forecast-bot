@@ -42,6 +42,10 @@ def test_build_site_persists_prediction_snapshots_before_rendering(tmp_path):
     ).read_text(encoding="utf-8")
     html = (tmp_path / "index.html").read_text(encoding="utf-8")
     assert 'rel="canonical"' in html
+    assert (
+        '<meta name="google-site-verification" '
+        'content="uqqq0NUofXd_HvVElpSmwF8uGZWy70xdrY71bj7hq6U">'
+    ) in html
     assert '"@type": "WebApplication"' in html
     assert (tmp_path / "guide" / "index.html").exists()
     assert (tmp_path / "history" / "index.html").exists()
