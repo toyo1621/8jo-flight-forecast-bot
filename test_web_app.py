@@ -622,16 +622,43 @@ def test_low_cloud_and_gust_adjustments_each_use_09():
     assert result["weather_factor"] == 0.81
 
 
-def test_severe_visibility_low_cloud_and_gust_adjustments_are_stronger():
+def test_visibility_low_cloud_and_gust_adjustments_are_tiered():
     history = [("通常", 210.0, 5.0)] * 10
     with patch("forecast_engine.load_history", return_value=history):
-        low_visibility = predict_flight_probability(210.0, 5.0, 8.0, 20.0, 2.0)
+        extreme_visibility = predict_flight_probability(210.0, 5.0, 8.0, 20.0, 0.9)
+        severe_visibility = predict_flight_probability(210.0, 5.0, 8.0, 20.0, 1.0)
+        moderate_visibility = predict_flight_probability(210.0, 5.0, 8.0, 20.0, 3.0)
+        clear_visibility = predict_flight_probability(210.0, 5.0, 8.0, 20.0, 5.0)
         severe_low_cloud = predict_flight_probability(210.0, 5.0, 8.0, 96.0, 15.0)
         severe_gust = predict_flight_probability(210.0, 5.0, 20.3, 20.0, 15.0)
 
-    assert low_visibility["probability"] == 45.0
+    assert extreme_visibility["probability"] == 50.0
+    assert severe_visibility["probability"] == 70.0
+    assert moderate_visibility["probability"] == 80.0
+    assert clear_visibility["probability"] == 97.0
     assert severe_low_cloud["probability"] == 75.0
     assert severe_gust["probability"] == 55.0
+
+
+def test_adjusted_visibility_factor_keeps_heavy_rain_and_gust_penalties():
+    history = [("通常", 98.0, 6.77)] * 10
+    with patch("forecast_engine.load_history", return_value=history):
+        result = predict_flight_probability(
+            98.0,
+            6.77,
+            16.5,
+            20.0,
+            2.1,
+            precipitation=9.1,
+        )
+
+    assert result["weather_factors"] == {
+        "visibility": 0.7,
+        "precipitation": 0.7,
+        "gust": 0.9,
+    }
+    assert result["weather_factor"] == 0.441
+    assert result["probability"] == 44.1
 
 
 def test_precipitation_from_two_mm_adds_rain_risk():
