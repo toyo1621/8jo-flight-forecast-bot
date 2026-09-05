@@ -9,7 +9,9 @@ def test_add_brand_assets_recognizes_current_site_title():
 
     branded = add_brand_assets(html)
 
-    assert 'href="static/favicon.svg?' in branded
+    assert 'href="static/favicon-32.png?' in branded
+    assert 'href="static/favicon-16.png?' in branded
+    assert 'href="static/apple-touch-icon.png?' in branded
     assert "<title>八丈島の飛行機運航目安｜羽田便の天気・過去実績</title>" in branded
 
 

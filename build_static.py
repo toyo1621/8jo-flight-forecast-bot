@@ -18,7 +18,7 @@ from web_app import (
 )
 
 DIST_DIR = BASE_DIR / "dist"
-FAVICON_VERSION = "20260713-2"
+FAVICON_VERSION = "20260905-1"
 SITE_URL = "https://toyo1621.github.io/8jo-flight-forecast-bot/"
 GUIDE_URL = f"{SITE_URL}guide/"
 HISTORY_URL = f"{SITE_URL}history/"
@@ -60,14 +60,15 @@ def write_search_assets(output_dir, page_urls=None):
 
 
 def add_brand_assets(html, asset_prefix=""):
-    favicon_path = f"{asset_prefix}static/favicon.svg"
+    favicon_path = f"{asset_prefix}static/favicon-32.png"
     if favicon_path not in html:
         html = html.replace(
             "</title>",
             (
                 "</title>\n"
-                f"  <link rel=\"icon\" type=\"image/svg+xml\" href=\"{asset_prefix}static/favicon.svg?v={FAVICON_VERSION}\">\n"
-                f"  <link rel=\"apple-touch-icon\" href=\"{asset_prefix}static/logo.svg?v={FAVICON_VERSION}\">\n"
+                f"  <link rel=\"icon\" type=\"image/png\" sizes=\"32x32\" href=\"{asset_prefix}static/favicon-32.png?v={FAVICON_VERSION}\">\n"
+                f"  <link rel=\"icon\" type=\"image/png\" sizes=\"16x16\" href=\"{asset_prefix}static/favicon-16.png?v={FAVICON_VERSION}\">\n"
+                f"  <link rel=\"apple-touch-icon\" sizes=\"180x180\" href=\"{asset_prefix}static/apple-touch-icon.png?v={FAVICON_VERSION}\">\n"
                 f"  <link rel=\"stylesheet\" href=\"{asset_prefix}static/favicon-brand.css?v={FAVICON_VERSION}\">"
             ),
             1,
@@ -77,7 +78,7 @@ def add_brand_assets(html, asset_prefix=""):
             "    <footer>\n",
             (
                 "    <footer>\n"
-                f"      <img class=\"footer-logo\" src=\"{asset_prefix}static/logo.svg?v={FAVICON_VERSION}\" "
+                f"      <img class=\"footer-logo\" src=\"{asset_prefix}static/logo.svg?v=20260713-2\" "
                 "alt=\"\" aria-hidden=\"true\">\n"
             ),
             1,
