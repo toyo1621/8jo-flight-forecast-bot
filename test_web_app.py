@@ -840,7 +840,7 @@ def test_flight_card_shows_model_reference_probabilities_with_threshold_styles()
     assert "model-probability--{{ model.tone }}" in template
     assert "モデル別リスク" in template
     assert "model-risk--{{ model.risk_tone }}" in template
-    assert "JMA主予報 / 未校正の参考スコア" in template
+    assert "JMA主予報 / 過去実績×リスク係数による参考スコア" in template
     assert "詳しく見る(運航実績・気象情報)" in template
     assert ".model-probability--ok" in stylesheet
     assert ".model-probability--low" in stylesheet
