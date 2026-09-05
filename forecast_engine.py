@@ -1,4 +1,6 @@
 from app_config import (
+    EXTREME_VISIBILITY_PROBABILITY_MULTIPLIER,
+    EXTREME_VISIBILITY_RISK_KM,
     FALLBACK_MATCH_ANGLE_DEGREES,
     FALLBACK_MATCH_WIND_SPEED_MS,
     GUST_RISK_MS,
@@ -202,7 +204,9 @@ def predict_flight_probability(
     
     # 2. 霧・低層雲量による減算補正
     if visibility is not None and visibility < VISIBILITY_RISK_KM:
-        if visibility < SEVERE_VISIBILITY_RISK_KM:
+        if visibility < EXTREME_VISIBILITY_RISK_KM:
+            factor = EXTREME_VISIBILITY_PROBABILITY_MULTIPLIER
+        elif visibility < SEVERE_VISIBILITY_RISK_KM:
             factor = SEVERE_VISIBILITY_PROBABILITY_MULTIPLIER
         else:
             factor = VISIBILITY_PROBABILITY_MULTIPLIER
