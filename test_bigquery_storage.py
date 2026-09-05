@@ -77,6 +77,20 @@ def test_save_prediction_snapshots_is_idempotent_by_snapshot_id():
     client.delete_table.assert_called_once()
 
 
+def test_archive_query_uses_last_preflight_snapshot_and_keeps_missing_outcomes():
+    client = Mock(project="hachijo-flight-forecast")
+    client.query.return_value.result.return_value = []
+
+    with patch("bigquery_storage.bigquery.Client", return_value=client):
+        assert bigquery_storage.fetch_published_forecast_archive() == []
+
+    query = client.query.call_args.args[0]
+    assert "prediction_generated_at <= weather_valid_at" in query
+    assert "ORDER BY prediction_generated_at DESC" in query
+    assert "LEFT JOIN" in query
+    assert "CURRENT_DATE('Asia/Tokyo')" in query
+
+
 def test_normalize_item_uses_database_status_and_visibility_source():
     result = bigquery_storage._normalize_item(
         {

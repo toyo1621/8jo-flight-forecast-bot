@@ -1,0 +1,26 @@
+<footer>
+  <img class="footer-logo" src="{{ asset_prefix }}static/logo.svg?v=20260713-2" alt="" aria-hidden="true">
+  <nav class="footer-nav" aria-label="サイト情報">
+    <a href="{{ asset_prefix }}">トップ</a>
+    <a href="{{ asset_prefix }}history/">過去の予測と結果</a>
+    <a href="{{ asset_prefix }}guide/">見方・計算方法</a>
+    <a href="{{ asset_prefix }}about/">このサイトについて</a>
+    <a href="{{ asset_prefix }}privacy/">プライバシー</a>
+  </nav>
+  <p>表示は未校正の統計参考スコアで、将来の運航確率や航空会社の運航判断ではありません。最新情報は<a href="https://www.ana.co.jp/fs/dom/jp/" target="_blank" rel="noopener noreferrer">ANA公式の運航状況</a>でご確認ください。</p>
+  <section class="contact-section" aria-labelledby="contact-title">
+    <h2 id="contact-title">お問い合わせ</h2>
+    <p>ご意見や不具合は、フォームのほか、開発者の<a href="https://x.com/toyo1621" target="_blank" rel="noopener noreferrer">X</a>・<a href="https://www.instagram.com/toyo1621/" target="_blank" rel="noopener noreferrer">Instagram</a>へのDMでも受け付けています。</p>
+    <a class="secondary-link" href="https://forms.gle/7m2JsHjdi2dNe4Rk6" target="_blank" rel="noopener noreferrer">お問い合わせフォーム（Googleフォーム）を開く</a>
+  </section>
+  {% if access_stats and access_stats.days %}
+    <section class="access-stats" aria-labelledby="access-stats-title">
+      <h2 id="access-stats-title">過去7日間のアクセス数</h2>
+      <ul class="access-stats-grid">
+        {% for item in access_stats.days %}
+          <li class="access-stat"><time datetime="{{ item.date }}">{{ item.label }}</time><strong>{% if item.pageviews is not none %}{{ "{:,}".format(item.pageviews) }}{% else %}—{% endif %}</strong><span>{% if item.pageviews is not none %}ページビュー{% else %}未計測{% endif %}</span></li>
+        {% endfor %}
+      </ul>
+    </section>
+  {% endif %}
+</footer>

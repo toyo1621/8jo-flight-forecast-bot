@@ -1,0 +1,15 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="八丈島便について、公開時の運航参考スコア、実際の運航結果、振り返りを日付ごとに保存したアーカイブです。">
+  <meta name="robots" content="index,follow"><link rel="canonical" href="{{ page_url }}">
+  <title>過去の予測と運航結果｜八丈島便の運航目安</title>
+  <script type="application/ld+json">{{ structured_data|tojson }}</script>
+  <link rel="stylesheet" href="../static/styles.css?v=20260905-1">
+</head>
+<body>{% set asset_prefix = "../" %}<main class="container container--minimal archive-page">
+  <header class="header header--minimal"><p class="page-nav"><a href="../">トップページへ｜今日の八丈島便の運航目安を見る</a></p><p class="about-label">HISTORY</p><h1>過去の予測と運航結果</h1><p class="lead">公開時の参考スコアを実際の結果に合わせて書き換えず、日付ごとに残しています。</p></header>
+  {% if archive_days %}<ol class="archive-index">{% for day in archive_days %}<li><a href="../forecast/{{ day.date }}/"><time datetime="{{ day.date }}">{{ day.long_date_label }} ({{ day.weekday }})</time><span>{% if day.confirmed_count %}結果確認 {{ day.confirmed_count }}/3便・運航 {{ day.operated_count }}便{% else %}結果未取得{% endif %}</span></a></li>{% endfor %}</ol>{% else %}<p class="archive-note">公開時予測を保存した過去日はまだありません。</p>{% endif %}
+  {% include "_site_footer.html" %}
+</main></body></html>

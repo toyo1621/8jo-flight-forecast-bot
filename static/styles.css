@@ -431,6 +431,46 @@ footer {
 .contact-section p a { color: #dff5ff; text-underline-offset: 2px; }
 .contact-section .secondary-link { min-height: 32px; padding: 5px 10px; font-size: .68rem; }
 
+.footer-nav { display: flex; flex-wrap: wrap; gap: 6px 16px; margin: 14px 0; }
+.footer-nav a { color: #dff5ff; font-weight: 750; text-underline-offset: 3px; }
+
+.archive-page .header { max-width: 900px; }
+.archive-page .header h1,
+.guide-page .header h1 { margin: 8px 0 12px; color: #effaff; font-size: clamp(1.8rem, 4vw, 3rem); }
+.archive-page .header .lead,
+.guide-page .header .lead { margin: 0; color: #fff; font-size: .9rem; line-height: 1.8; }
+.archive-note { margin-bottom: 24px; padding: 18px 20px; border-left: 3px solid var(--cyan); background: rgba(9, 35, 55, .72); }
+.archive-note h2 { margin: 0 0 7px; font-size: 1rem; }
+.archive-note p { margin: 0; color: #fff; font-size: .78rem; line-height: 1.75; }
+.archive-flights { display: grid; gap: 16px; }
+.archive-flight { padding: 22px; border: 1px solid var(--line); border-radius: 8px; background: var(--panel); }
+.archive-flight > header { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding-bottom: 14px; border-bottom: 1px solid var(--line); }
+.archive-flight > header > div { display: flex; align-items: baseline; gap: 12px; }
+.archive-result { padding: 5px 9px; border-radius: 5px; color: var(--cyan); background: rgba(85, 240, 211, .09); font-size: .75rem; font-weight: 800; }
+.archive-result--pending { color: #fff; background: rgba(255, 255, 255, .06); }
+.archive-comparison { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1px; margin-top: 16px; overflow: hidden; border: 1px solid var(--line); border-radius: 7px; background: var(--line); }
+.archive-comparison section { padding: 18px; background: var(--panel-strong); }
+.archive-comparison h2, .archive-reflection h2 { margin: 0 0 10px; color: #dff5ff; font-size: .75rem; }
+.archive-score { display: flex; align-items: baseline; gap: 6px; margin: 0; color: var(--blue); }
+.archive-score span { font-size: 1.3rem; font-weight: 900; }
+.archive-score strong { font-size: 2.4rem; line-height: 1; }
+.archive-score small, .archive-time, .archive-reason { color: #fff; font-size: .66rem; }
+.archive-time { margin: 8px 0 0; }
+.archive-outcome, .archive-unavailable { margin: 0; color: #effaff; font-size: 1.35rem; font-weight: 850; }
+.archive-reason { margin: 8px 0 0; }
+.archive-models { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin: 14px 0 0; }
+.archive-models div { display: flex; justify-content: space-between; gap: 8px; padding: 9px 11px; border: 1px solid var(--line); border-radius: 6px; }
+.archive-models dt { color: #fff; font-size: .72rem; font-weight: 800; }
+.archive-models dd { margin: 0; color: var(--blue); font-size: .72rem; font-weight: 800; }
+.archive-reflection { margin-top: 14px; padding: 13px 15px; border-left: 2px solid var(--blue); background: rgba(90, 199, 255, .06); }
+.archive-reflection p { margin: 0; color: #fff; font-size: .76rem; line-height: 1.7; }
+.archive-back { margin: 22px 0 0; }
+.archive-index { display: grid; gap: 8px; margin: 0; padding: 0; list-style: none; }
+.archive-index a { display: flex; align-items: center; justify-content: space-between; gap: 18px; padding: 14px 16px; border: 1px solid var(--line); border-radius: 7px; color: #effaff; background: var(--panel); text-decoration: none; }
+.archive-index a:hover, .archive-index a:focus-visible { border-color: var(--blue); }
+.archive-index time { font-size: .86rem; font-weight: 800; }
+.archive-index span { color: #fff; font-size: .7rem; text-align: right; }
+
 .access-stats {
   margin-top: 18px;
   padding-top: 14px;
@@ -535,6 +575,10 @@ footer {
   .dialog-header, .dialog-section { padding-right: 17px; padding-left: 17px; }
   .flight-dialog { width: calc(100% - 16px); max-height: 90vh; }
   .access-stats-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+  .archive-comparison { grid-template-columns: 1fr; }
+  .archive-models { grid-template-columns: 1fr; }
+  .archive-index a { align-items: flex-start; flex-direction: column; gap: 5px; }
+  .archive-index span { text-align: left; }
 }
 
 @media (prefers-reduced-motion: reduce) {

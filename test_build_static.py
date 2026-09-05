@@ -1,6 +1,7 @@
 from unittest.mock import patch
 
 from build_static import add_brand_assets, build_site
+from validate_static_site import validate_site
 
 
 def test_add_brand_assets_recognizes_current_site_title():
@@ -24,6 +25,7 @@ def test_build_site_persists_prediction_snapshots_before_rendering(tmp_path):
         patch("build_static.load_forecast_bundle", return_value=bundle),
         patch("build_static.build_daily_forecasts", return_value=[]),
         patch("build_static.save_prediction_snapshots", return_value=0) as save_snapshots,
+        patch("build_static.fetch_published_forecast_archive", return_value=[]),
         patch("build_static.load_access_stats", return_value={"days": []}),
     ):
         build_site(tmp_path)
@@ -40,6 +42,10 @@ def test_build_site_persists_prediction_snapshots_before_rendering(tmp_path):
     assert 'rel="canonical"' in html
     assert '"@type": "WebApplication"' in html
     assert (tmp_path / "guide" / "index.html").exists()
+    assert (tmp_path / "history" / "index.html").exists()
+    assert (tmp_path / "about" / "index.html").exists()
+    assert (tmp_path / "privacy" / "index.html").exists()
+    assert (tmp_path / "404.html").exists()
     guide_html = (tmp_path / "guide" / "index.html").read_text(encoding="utf-8")
     assert "https://toyo1621.github.io/8jo-flight-forecast-bot/guide/" in (
         tmp_path / "sitemap.xml"
@@ -89,6 +95,7 @@ def test_build_site_writes_shareable_date_pages(tmp_path):
         patch("build_static.load_forecast_bundle", return_value=bundle),
         patch("build_static.build_daily_forecasts", return_value=[day]),
         patch("build_static.save_prediction_snapshots", return_value=0),
+        patch("build_static.fetch_published_forecast_archive", return_value=[]),
         patch("build_static.load_access_stats", return_value={"days": []}),
     ):
         build_site(tmp_path)
@@ -113,3 +120,56 @@ def test_build_site_writes_shareable_date_pages(tmp_path):
     assert "https://toyo1621.github.io/8jo-flight-forecast-bot/forecast/2026-08-25/" in (
         tmp_path / "sitemap.xml"
     ).read_text(encoding="utf-8")
+
+
+def test_build_site_keeps_historical_date_with_prediction_outcome_and_reflection(tmp_path):
+    bundle = {
+        "weather": {},
+        "ensembles": {},
+        "typhoon_impacts": {},
+        "notices": [],
+        "data_updated_at": "2026-09-05T00:00:00+09:00",
+    }
+    archive_rows = []
+    for flight_number in ("ANA1891", "ANA1893", "ANA1895"):
+        for model, score in (
+            ("jma_seamless", 82),
+            ("gfs_seamless", 76),
+            ("ecmwf_ifs025", 79),
+        ):
+            archive_rows.append(
+                {
+                    "snapshot_id": f"{flight_number}-{model}",
+                    "forecast_target_date": "2026-09-04",
+                    "flight_number": flight_number,
+                    "model": model,
+                    "calculation_status": "available",
+                    "probability": score,
+                    "prediction_generated_at": "2026-09-04T05:00:00+09:00",
+                    "outcome_status": "運航",
+                    "status_reason": None,
+                }
+            )
+    with (
+        patch("build_static.load_forecast_bundle", return_value=bundle),
+        patch("build_static.build_daily_forecasts", return_value=[]),
+        patch("build_static.save_prediction_snapshots", return_value=0),
+        patch(
+            "build_static.fetch_published_forecast_archive", return_value=archive_rows
+        ),
+        patch("build_static.load_access_stats", return_value={"days": []}),
+    ):
+        build_site(tmp_path)
+
+    page = tmp_path / "forecast" / "2026-09-04" / "index.html"
+    html = page.read_text(encoding="utf-8")
+    assert page.exists()
+    assert html.count('class="archive-flight"') == 3
+    assert "公開時の予測" in html
+    assert "実際の運航結果" in html
+    assert "振り返り" in html
+    assert "参考スコアは高めで、実際も運航しました。" in html
+    assert "forecast/2026-09-04/" in (
+        tmp_path / "history" / "index.html"
+    ).read_text(encoding="utf-8")
+    assert validate_site(tmp_path) == []
