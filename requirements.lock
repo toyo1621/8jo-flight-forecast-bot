@@ -10,7 +10,7 @@ boolean.py==5.0
 certifi==2026.7.22
 cffi==2.0.0
 charset-normalizer==3.5.1
-click==8.1.8
+click==8.3.3
 cryptography==50.0.1
 cyclonedx-python-lib==11.12.0
 defusedxml==0.7.1
@@ -46,10 +46,10 @@ pyasn1==0.6.4
 pyasn1_modules==0.4.2
 pycparser==2.23
 pyparsing==3.3.2
-pytest==8.4.2
+pytest==9.0.3
 python-dateutil==2.9.0.post0
-python-dotenv==1.2.1
-requests==2.32.5
+python-dotenv==1.2.2
+requests==2.33.0
 rich==15.0.0
 ruff==0.16.6
 six==1.17.0
@@ -57,4 +57,4 @@ sortedcontainers==2.4.0
 tomli==2.4.1
 tomli_w==1.2.0
 typing_extensions==4.16.0
-urllib3==2.6.3
+urllib3==2.7.0
