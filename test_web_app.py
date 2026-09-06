@@ -541,6 +541,20 @@ def test_today_flight_is_explicitly_marked_after_arrival_plus_30_minutes():
     assert days[0]["flights"][1]["calculation_status"] == "available"
 
 
+def test_ended_flights_render_as_ended_in_summary_cards_and_details():
+    days = build_daily_forecasts(
+        SAMPLE_WEATHER, current_time=datetime(2026, 6, 20, 22, 0, tzinfo=JST)
+    )
+    with app.app_context():
+        body = render_template(
+            "index.html", days=days, today_day=days[0], error=None,
+            updated_at="2026/06/20 22:00",
+        )
+    assert "本日の全便は予測の表示対象時刻を過ぎました" in body
+    assert body.count("予測表示終了") >= 9
+    assert "算出不可" not in body
+
+
 def test_today_flight_remains_at_exactly_arrival_plus_30_minutes():
     current_time = datetime(2026, 6, 20, 9, 0, tzinfo=JST)
 
