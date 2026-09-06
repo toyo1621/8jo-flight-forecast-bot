@@ -77,6 +77,28 @@ def test_save_prediction_snapshots_is_idempotent_by_snapshot_id():
     client.delete_table.assert_called_once()
 
 
+def test_history_cache_expires_without_waiting_for_a_write():
+    client = Mock(project="hachijo-flight-forecast")
+    client.query.return_value.result.side_effect = [
+        [{"flight_number": "ANA1891", "status": "運航", "wind_direction": 180.0, "wind_speed": 5.0}],
+        [{"flight_number": "ANA1891", "status": "欠航", "wind_direction": 180.0, "wind_speed": 5.0}],
+    ]
+
+    with (
+        patch("bigquery_storage.bigquery.Client", return_value=client),
+        patch.dict("os.environ", {"HISTORY_CACHE_TTL_SECONDS": "60"}),
+        patch("bigquery_storage.time.monotonic", side_effect=[0.0, 30.0, 61.0]),
+    ):
+        bigquery_storage.fetch_detailed_history.cache_clear()
+        first = bigquery_storage.fetch_detailed_history()
+        second = bigquery_storage.fetch_detailed_history()
+        third = bigquery_storage.fetch_detailed_history()
+
+    assert first == second
+    assert third[0]["status"] == "欠航"
+    assert client.query.call_count == 2
+
+
 def test_archive_query_uses_last_preflight_snapshot_and_keeps_missing_outcomes():
     client = Mock(project="hachijo-flight-forecast")
     client.query.return_value.result.return_value = []
@@ -86,9 +108,88 @@ def test_archive_query_uses_last_preflight_snapshot_and_keeps_missing_outcomes()
 
     query = client.query.call_args.args[0]
     assert "prediction_generated_at <= weather_valid_at" in query
-    assert "ORDER BY prediction_generated_at DESC" in query
+    assert "COALESCE(p.has_published, 0) DESC" in query
+    assert "publication_status = 'candidate'" in query
+    assert "publication_tracking_enabled IS NULL" in query
     assert "LEFT JOIN" in query
     assert "CURRENT_DATE('Asia/Tokyo')" in query
+
+
+def test_publication_candidates_are_idempotent_and_keyed_by_artifact_and_snapshot():
+    client = Mock(project="hachijo-flight-forecast")
+    client.load_table_from_json.return_value.result.return_value = None
+    client.query.return_value.result.return_value = None
+    rows = [
+        {
+            "snapshot_id": "snapshot-1",
+            "code_version": "sha",
+            "config_version": "config",
+        },
+        {
+            "snapshot_id": "snapshot-1",
+            "code_version": "sha",
+            "config_version": "config",
+        },
+    ]
+
+    with (
+        patch("bigquery_storage.bigquery.Client", return_value=client),
+        patch("bigquery_storage.ensure_prediction_snapshot_destination"),
+    ):
+        assert (
+            bigquery_storage.save_prediction_publication_candidates(
+                rows, "artifact-1", "run-1", run_attempt=2
+            )
+            == 1
+        )
+
+    merge_sql = client.query.call_args.args[0]
+    assert "T.artifact_id = S.artifact_id AND T.snapshot_id = S.snapshot_id" in merge_sql
+    assert "T.publication_status != 'published'" in merge_sql
+    client.delete_table.assert_called_once()
+
+
+def test_publish_prediction_artifact_is_retryable_and_only_updates_candidates():
+    client = Mock(project="hachijo-flight-forecast")
+    client.query.return_value.num_dml_affected_rows = 2
+    client.query.return_value.result.return_value = None
+
+    with (
+        patch("bigquery_storage.bigquery.Client", return_value=client),
+        patch("bigquery_storage.ensure_prediction_snapshot_destination"),
+    ):
+        assert (
+            bigquery_storage.publish_prediction_artifact(
+                "artifact-1", "https://example.test/", checked_at="2026-08-25T00:00:00+00:00"
+            )
+            == 2
+        )
+
+    query = client.query.call_args.args[0]
+    assert "publication_status IN ('candidate', 'published')" in query
+    parameters = client.query.call_args.kwargs["job_config"].query_parameters
+    assert {parameter.name: parameter.value for parameter in parameters}["artifact_id"] == "artifact-1"
+
+
+def test_cleanup_unresolved_status_rows_defaults_to_audited_dry_run():
+    client = Mock(project="hachijo-flight-forecast")
+    count_job = Mock()
+    count_job.result.return_value = [{"matched_count": 2}]
+    client.query.return_value = count_job
+    client.insert_rows_json.return_value = []
+
+    with (
+        patch("bigquery_storage.bigquery.Client", return_value=client),
+        patch("bigquery_storage.ensure_collection_destinations"),
+    ):
+        result = bigquery_storage.cleanup_unresolved_status_rows()
+
+    assert result["matched_count"] == 2
+    assert result["affected_count"] == 0
+    assert client.query.call_count == 1
+    audit_row = client.insert_rows_json.call_args.args[1][0]
+    assert audit_row["status"] == "dry_run"
+    assert audit_row["dry_run"] is True
 
 
 def test_normalize_item_uses_database_status_and_visibility_source():

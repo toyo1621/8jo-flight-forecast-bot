@@ -5,7 +5,6 @@ import pytest
 
 from migrate_sqlite_to_bigquery import SCHEMA, normalize_row, read_sqlite_rows
 
-
 BASE_SCHEMA = """CREATE TABLE flight_weather_logs (
     date TEXT, flight_number TEXT, scheduled_time TEXT,
     status TEXT, wind_direction REAL, wind_speed REAL,

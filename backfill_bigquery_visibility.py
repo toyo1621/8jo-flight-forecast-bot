@@ -8,7 +8,6 @@ from google.cloud import bigquery
 from app_config import FLIGHTS, HACHIJO_AIRPORT_LATITUDE, HACHIJO_AIRPORT_LONGITUDE
 from bigquery_storage import settings, table_path
 
-
 HISTORICAL_FORECAST_URL = "https://historical-forecast-api.open-meteo.com/v1/forecast"
 SOURCE = "open_meteo_historical_forecast"
 FORECAST_HOUR_BY_FLIGHT = {flight["number"]: flight["forecast_hour"] for flight in FLIGHTS}

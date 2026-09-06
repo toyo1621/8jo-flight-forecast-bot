@@ -1,3 +1,4 @@
+import json
 import shutil
 from datetime import datetime
 from xml.sax.saxutils import escape
@@ -5,11 +6,19 @@ from xml.sax.saxutils import escape
 from flask import render_template
 
 from access_stats import load_access_stats
-from app_config import LOW_PROBABILITY_THRESHOLD
-from bigquery_storage import fetch_published_forecast_archive, save_prediction_snapshots
+from app_config import FORECAST_CONFIG_VERSION, JST, LOW_PROBABILITY_THRESHOLD
+from bigquery_storage import (
+    fetch_published_forecast_archive,
+    save_prediction_publication_candidates,
+    save_prediction_snapshots,
+)
 from forecast_archive import build_archive_days
 from forecast_cache import format_forecast_timestamp
-from prediction_provenance import build_prediction_snapshot_rows
+from prediction_provenance import (
+    build_artifact_id,
+    build_prediction_snapshot_rows,
+    runtime_prediction_identity,
+)
 from web_app import (
     BASE_DIR,
     app,
@@ -86,21 +95,56 @@ def add_brand_assets(html, asset_prefix=""):
     return html
 
 
-def build_site(output_dir=DIST_DIR):
+def build_site(output_dir=DIST_DIR, current_time=None):
+    current_time = current_time or datetime.now(JST)
     bundle = load_forecast_bundle(print)
     days = build_daily_forecasts(
         bundle["weather"],
         bundle["ensembles"],
+        current_time=current_time,
         typhoon_impacts_by_date=bundle["typhoon_impacts"],
     )
-    snapshot_count = save_prediction_snapshots(
-        build_prediction_snapshot_rows(days, bundle)
+    if not days:
+        raise RuntimeError("予報日が0件です。空の成果物を公開しません。")
+
+    generated_at = current_time.isoformat()
+    identity = runtime_prediction_identity()
+    config_version = bundle.get("config_version") or FORECAST_CONFIG_VERSION
+    snapshot_rows = build_prediction_snapshot_rows(
+        days,
+        bundle,
+        generated_at=generated_at,
+        run_id=identity["run_id"],
+        run_attempt=identity["run_attempt"],
+    )
+    if not snapshot_rows:
+        raise RuntimeError("予報スナップショットが0件です。空の成果物を公開しません。")
+    artifact_id = build_artifact_id(
+        identity["run_id"],
+        identity["run_attempt"],
+        generated_at,
+        identity["code_version"],
+        config_version,
+        snapshot_ids=[row["snapshot_id"] for row in snapshot_rows],
+    )
+    snapshot_count = save_prediction_snapshots(snapshot_rows)
+    candidate_count = save_prediction_publication_candidates(
+        snapshot_rows,
+        artifact_id=artifact_id,
+        run_id=identity["run_id"],
+        run_attempt=identity["run_attempt"],
+        created_at=generated_at,
     )
     print(f"BigQueryに予測スナップショットを {snapshot_count} 件保存しました。")
+    print(f"公開候補を {candidate_count} 件記録しました: {artifact_id}")
     archive_days = build_archive_days(fetch_published_forecast_archive())
     print(f"BigQueryから過去日の公開スナップショットを {len(archive_days)} 日分取得しました。")
     access_stats = load_access_stats()
     updated_at = format_forecast_timestamp(bundle.get("data_updated_at")) or "取得時刻不明"
+    today_day = next(
+        (day for day in days if day.get("date") == current_time.date().isoformat()),
+        None,
+    )
     date_pages = [
         (
             output_dir / "forecast" / day["date"] / "index.html",
@@ -150,6 +194,12 @@ def build_site(output_dir=DIST_DIR):
             page_heading="八丈島便 運航の目安",
             page_variant="home",
             asset_prefix="",
+            today_day=today_day,
+            artifact_id=artifact_id,
+            forecast_generated_at=generated_at,
+            forecast_code_version=identity["code_version"],
+            forecast_config_version=config_version,
+            forecast_snapshot_count=snapshot_count,
         )
         guide_html = render_template(
             "guide.html",
@@ -245,6 +295,12 @@ def build_site(output_dir=DIST_DIR):
                         page_heading=f"{day['date_label']}の八丈島便 運航目安",
                         page_variant="date",
                         asset_prefix="../../",
+                        today_day=day,
+                        artifact_id=artifact_id,
+                        forecast_generated_at=generated_at,
+                        forecast_code_version=identity["code_version"],
+                        forecast_config_version=config_version,
+                        forecast_snapshot_count=snapshot_count,
                     ),
                     asset_prefix="../../",
                 ),
@@ -308,6 +364,24 @@ def build_site(output_dir=DIST_DIR):
         page_path.parent.mkdir(parents=True, exist_ok=True)
         page_path.write_text(page_html, encoding="utf-8")
     shutil.copytree(BASE_DIR / "static", output_dir / "static", dirs_exist_ok=True)
+    manifest = {
+        "artifact_id": artifact_id,
+        "generated_at": generated_at,
+        "run_id": identity["run_id"],
+        "run_attempt": identity["run_attempt"],
+        "code_version": identity["code_version"],
+        "config_version": config_version,
+        "snapshot_count": snapshot_count,
+        "candidate_count": candidate_count,
+        "snapshot_ids": sorted({row["snapshot_id"] for row in snapshot_rows}),
+        "forecast_day_count": len(days),
+        "current_date_page_count": len(rendered_date_pages),
+        "archive_page_count": len(rendered_archive_pages),
+    }
+    (output_dir / "build-manifest.json").write_text(
+        json.dumps(manifest, ensure_ascii=False, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
     print(
         f"Built {output_dir / 'index.html'} with {len(days)} forecast days, "
         f"{len(rendered_date_pages)} current date pages, "

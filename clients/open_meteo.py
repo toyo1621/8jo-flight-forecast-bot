@@ -1,4 +1,57 @@
+import math
+from datetime import datetime
+
 import requests
+
+from clients.http import request_with_retries
+
+
+def _validate_times(times):
+    if not isinstance(times, list) or not times:
+        raise ValueError("気象データの時刻配列が正しくありません。")
+    parsed = []
+    for value in times:
+        if not isinstance(value, str):
+            raise TypeError("気象データの時刻型が正しくありません。")
+        try:
+            parsed.append(datetime.fromisoformat(value))
+        except ValueError as exc:
+            raise ValueError("気象データの時刻形式が正しくありません。") from exc
+    if len(set(parsed)) != len(parsed):
+        raise ValueError("気象データに重複時刻があります。")
+
+
+def _valid_number(value, minimum=None, maximum=None):
+    if value is None:
+        return True
+    if isinstance(value, bool):
+        return False
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        return False
+    if not math.isfinite(number):
+        return False
+    return not (
+        (minimum is not None and number < minimum)
+        or (maximum is not None and number > maximum)
+    )
+
+
+def _validate_weather_value(key, value):
+    ranges = {
+        "wind_speed_10m": (0, None),
+        "wind_direction_10m": (0, 360),
+        "wind_gusts_10m": (0, None),
+        "cloud_cover_low": (0, 100),
+        "visibility": (0, None),
+        "precipitation": (0, None),
+        "pressure_msl": (0, None),
+        "surface_pressure": (0, None),
+    }
+    minimum, maximum = ranges.get(key, (None, None))
+    if not _valid_number(value, minimum, maximum):
+        raise ValueError(f"気象データの数値範囲が正しくありません: {key}")
 
 
 def select_evenly(values, limit):
@@ -32,7 +85,8 @@ def parse_deterministic_response(payload):
         "cloud_cover_low",
         "precipitation",
     }
-    if not isinstance(times, list) or not times or any(
+    _validate_times(times)
+    if any(
         not isinstance(hourly.get(key), list) or len(hourly[key]) != len(times)
         for key in required
     ):
@@ -40,6 +94,8 @@ def parse_deterministic_response(payload):
 
     weather_by_time = {}
     for index, timestamp in enumerate(times):
+        for key in required | {"wind_gusts_10m", "visibility", "pressure_msl", "surface_pressure"}:
+            _validate_weather_value(key, _optional_hourly_value(hourly, key, index))
         weather_by_time[timestamp] = {
             "wind_speed": hourly["wind_speed_10m"][index],
             "wind_direction": hourly["wind_direction_10m"][index],
@@ -73,8 +129,7 @@ def fetch_deterministic_forecast(
     if model:
         params["models"] = model
     request_get = request_get or requests.get
-    response = request_get(endpoint, params=params, timeout=timeout)
-    response.raise_for_status()
+    response = request_with_retries(request_get, endpoint, params, timeout)
     return parse_deterministic_response(response.json())
 
 
@@ -97,7 +152,8 @@ def parse_ensemble_response(payload, model, variables, max_members=None):
         if key == member_key or key.startswith(f"{member_key}_member")
     ]
     suffixes = select_evenly(suffixes, max_members)
-    if not isinstance(times, list) or not times or not suffixes:
+    _validate_times(times)
+    if not suffixes:
         raise ValueError("アンサンブル予報の構造が正しくありません。")
 
     ensembles_by_time = {}
@@ -112,6 +168,11 @@ def parse_ensemble_response(payload, model, variables, max_members=None):
                 continue
             values = [hourly[key][index] for key in keys]
             if any(value is None for value in values):
+                continue
+            try:
+                for variable, value in zip(variables, values):
+                    _validate_weather_value(variable, value)
+            except ValueError:
                 continue
             weather = {
                 variable.removesuffix("_10m"): value
@@ -137,7 +198,8 @@ def fetch_ensemble_model(
     request_get=None,
     timeout=20,
 ):
-    response = (request_get or requests.get)(
+    response = request_with_retries(
+        request_get or requests.get,
         endpoint,
         params={
             "latitude": latitude,
@@ -150,5 +212,4 @@ def fetch_ensemble_model(
         },
         timeout=timeout,
     )
-    response.raise_for_status()
     return parse_ensemble_response(response.json(), model, variables, max_members)

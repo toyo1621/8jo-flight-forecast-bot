@@ -31,7 +31,7 @@
 - PC・スマートフォン対応のシンプルなWeb UI
 - GitHub Pagesで公開し、6時間ごとに自動更新
 - Open-Meteo障害時のエラー表示と信頼度の暫定評価
-- 当日便は八丈島への到着予定時刻から30分後を過ぎると自動的に非表示
+- 当日の対象3便は、表示対象時刻を過ぎた場合も「終了」として残し、欠測便も「算出不可」と理由付きで表示
 - Cloudflare Web Analytics障害時も予報公開を継続し、アクセス数は前回値を`stale`または`unavailable`として表示
 - CI、データ品質チェック、Dependabot、Issueテンプレートによる運用保守
 
@@ -60,7 +60,9 @@ GitHub Actionsが次の処理を行います。
 
 日次収集では、ODPT・気象APIのraw応答を秘匿情報除去後にBigQueryへ保存し、収集runの成功・失敗と欠損日を記録します。失敗時は本表へ不完全な行を保存せず、raw保存済みrunを`python data_collector.py --replay-run-id <run_id>`で再生できます。
 
-Pagesの静的生成時には、公開したJMA・GFS・ECMWFの各統計参考値と予測時点のデータ来歴をBigQueryの`prediction_snapshots`へ保存します。取得時刻が分からない旧データは`unknown`として、後続の時系列評価で現在の予報と混ぜません。
+Pagesの静的生成時には、JMA・GFS・ECMWFの各統計参考値と予測時点のデータ来歴を、内容ハッシュで重複排除した不変レコードとしてBigQueryの`prediction_snapshots`へ保存します。HTML生成前の行は`prediction_publications`で`candidate`として記録し、公開URLのHTTP応答とartifact IDを確認できた行だけを`published`へ更新します。取得時刻が分からない旧データは`unknown`として、後続の時系列評価で現在の予報と混ぜません。
+
+公開成果物には`build-manifest.json`を含め、artifact ID、コードSHA、設定版、生成時刻、snapshot ID一覧を確認できます。公開確認の記録が一時的に失敗した場合は、同じartifact IDに対して`python publish_prediction_snapshots.py --artifact-id <id> --public-url <url>`を再実行します。
 
 週次Actionsで実績と結合した公開値を時系列分割で検証し、モデル別・便別・リード日別のBrier score・信頼度曲線・ベースライン比較をartifactとして保存します。評価データ不足は精度0や推測値に置き換えず、`insufficient_data`として報告します。評価の定義は[`docs/evaluation.md`](docs/evaluation.md)にまとめています。
 
@@ -156,7 +158,7 @@ Open-MeteoのGFS・ECMWFアンサンブル予報をモデル別に扱い、複�
 - 統計参考値の左には記号を表示します。95%以上は`◎`、75%以上は`〇`、35%以上は`△`、35%未満は`×`です。
 - 詳細画面は`詳しく見る(運航実績・気象情報)`から開きます。
 - 「南風注意」「強風注意」「突風注意」「低層雲の影響注意」などの警告表示と、カードの色は別々に判定します。
-- 当日便は八丈島への到着予定時刻から30分を過ぎると一覧から非表示になります。
+- 当日の便は到着予定時刻から30分を過ぎると「終了」として表示し、次の便や別日の予測を「今日」と誤表示しません。
 - 詳細画面の類似過去実績は同じ便だけを対象にし、強風・突風・低層雲・低視程など、主予報で悪化している条件を重く評価して10件選びます。欠測項目がある過去データにはペナルティを付けます。
 
 ## 気象業務法への配慮

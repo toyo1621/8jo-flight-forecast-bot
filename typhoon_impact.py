@@ -1,3 +1,5 @@
+import math
+
 VALID_TYPHOON_RISK_LEVELS = frozenset({"low", "medium", "high", "severe"})
 
 
@@ -8,7 +10,11 @@ def _clean_mapping(value):
         str(key): item
         for key, item in value.items()
         if isinstance(key, (str, int, float))
-        and (item is None or isinstance(item, (str, int, float, bool)))
+        and (
+            item is None
+            or isinstance(item, (str, int, bool))
+            or (isinstance(item, float) and math.isfinite(item))
+        )
     }
 
 

@@ -1,8 +1,19 @@
 # 運用Runbook
 
+## 依存関係
+
+CI、Pages公開、日次収集、週次評価は`requirements.lock`をconstraintsとして
+同じ解決結果を使います。依存を更新する場合は、対応するPython版でlockを再生成し、
+`pytest`、`ruff check .`、`pip-audit -r requirements.lock`を実行してから変更します。
+
+公開状態用のBigQueryスキーマを先に確認する場合は、認証済み環境で
+`python migrate_prediction_publications.py`を実行します。これはdry-runが既定で、
+本番へ適用する場合だけ明示的に`--apply`を付けます。この作業は本番データの削除や
+既存スナップショットの上書きを行いません。
+
 ## 定常監視
 
-- `Deploy forecast site to Pages`: 6時間ごとの生成・公開とData Quality Reportが成功していること
+- `Deploy forecast site to Pages`: 同じSHAのpytest/ruff、生成・検証・公開確認、Data Quality Reportが成功していること
 - `Daily Flight & Weather Data Collection`: 毎日21:00 JSTの3便収集が成功していること
 - `CodeQL`と`CI`: mainとPull Requestの検査が成功していること
 - [公開サイト](https://toyo1621.github.io/8jo-flight-forecast-bot/): 予報データ取得時刻、11日分の表示、詳細ダイアログを確認すること
@@ -30,6 +41,10 @@ Data Quality Reportの`error`はPagesと日次収集を失敗させます。エ�
 
 JMA主予報の取得に失敗した場合、7時間以内のキャッシュがあればその取得時刻と注意文を表示します。期限切れキャッシュしかない場合は新しいPagesを公開しません。最大瞬間風速・視程の補完だけが失敗した場合はJMA主予報を維持し、該当項目を欠測として通知します。アンサンブルだけが失敗した場合は、主予報を維持し、有効なキャッシュ利用または欠測を表示します。
 
+長寿命のFlaskプロセスで使う過去実績キャッシュは既定300秒で期限切れになり、外部のBigQuery更新を反映します。必要な運用環境では`HISTORY_CACHE_TTL_SECONDS`で短縮・延長でき、収集書き込み後も明示的にキャッシュを消去します。
+
+予報日が0件になった静的ビルドは、BigQueryに候補を保存した後でもHTMLを書き出さず失敗します。Pagesのdeploy jobは起動しないため、前回公開を維持します。予報日が一部欠けた場合は、入力範囲内の中間日を便ごとの`weather_missing`として表示し、欠航や正常運航へ変換しません。
+
 ## 台風影響度の欠測・因子内訳
 
 - API全体が失敗した場合: 7時間以内のキャッシュを使用し、なければ補正なしと通知します。
@@ -49,7 +64,7 @@ JMA主予報の取得に失敗した場合、7時間以内のキャッシュが�
 python data_collector.py --replay-run-id <run_id>
 ```
 
-日次workflowは直近14日分の`collection_runs`を確認し、3便の成功記録がない日をStep Summaryとartifactへ出します。最終成功日、連続欠損日数、最新runも表示します。欠損日がある場合はworkflowを失敗させ、run_idを特定してraw再生または原因修正を行います。欠損検知が失敗した場合は、既存の未解決Issueへ追記するか新規Issueを作成します。
+日次workflowは直近14日分の`collection_runs`を確認し、run_idとattempt単位でstarted/succeeded/failedを時刻順に集約します。同時に`flight_weather_logs`の指定日ごとの実便数を読み取り、`run_failed`、`started_without_completion`、`data_incomplete`、`data_missing`、`success_record_missing`、`not_recorded`、`not_recorded_before_monitoring`、`not_due`を混同しません。最終成功日、連続欠損日数、最新runも表示します。欠損日がある場合はworkflowを失敗させ、run_idを特定してraw再生または原因修正を行います。監視導入日を設定する場合は`COLLECTION_MONITOR_START_DATE=YYYY-MM-DD`を使います。欠損検知が失敗した場合は、既存の未解決Issueへ追記するか新規Issueを作成します。
 
 収集を過去日に再実行する場合は、`python data_collector.py --date YYYY-MM-DD`を使います。収集runにはODPT・気象ソースごとの状態、開始・完了時刻、raw保存件数が残ります。
 
@@ -62,7 +77,7 @@ python data_collector.py --replay-run-id <run_id>
 - 実行時刻が最終便の結果確定後か
 - Workload Identity FederationとBigQuery書き込み権限
 
-既存の未取得・未対応ステータス行だけを掃除する場合は、`Daily Flight & Weather Data Collection`を`cleanup_only=true`で手動実行します。これは外部APIを呼びません。
+既存の未取得・未対応ステータス行を確認する場合は、`Daily Flight & Weather Data Collection`を`cleanup_only=true`で手動実行します。既定はdry-runで、対象件数・対象範囲・理由・audit_idを`maintenance_audit`へ記録します。削除を適用する場合だけ、対象日または全体の範囲を確認したうえで`cleanup_apply=true`と理由を指定します。通常の日次収集では削除しません。
 
 ## BigQuery認証障害
 
@@ -99,16 +114,19 @@ python build_static.py
 
 ## 予測スナップショット
 
-Pagesの静的生成時に、公開対象のJMA・GFS・ECMWFの各値を`prediction_snapshots`へ不変保存します。各行には予測対象時刻、データ取得時刻、リード時間、provider/model、取得元endpoint、キャッシュfallback、コードSHA、設定版、算出状態を記録します。同じ`snapshot_id`は再実行しても更新せず、重複登録を抑止します。
+Pagesの静的生成時に、JMA・GFS・ECMWFの各値を`prediction_snapshots`へ不変保存し、公開候補と公開確認を`prediction_publications`へ保存します。各スナップショットには予測生成時刻、取得元別の取得時刻、予報有効時刻、リード時間、provider/model、取得元endpoint、キャッシュfallback、コードSHA、設定版、算出状態、モデル固有入力を記録します。同じ計算内容の`snapshot_id`は入力・結果の内容ハッシュで再送時に重複登録を抑止し、取得時刻だけの違いでは別行にしません。公開候補はPagesのライブHTMLに同じartifact IDが存在するまで`candidate`のままです。
+
+Pages deploy後に`publish_prediction_snapshots.py`がHTTP 200とartifact IDを確認し、対応する候補だけを`published`へ更新します。この更新が失敗しても公開済みHTMLを未確認の予測として評価せず、同じartifact IDでスクリプトを再実行できます。生成・検証・デプロイが失敗した候補は公開履歴と厳密評価に採用しません。
 
 過去日ページは、予測対象時刻より前に保存された最後のスナップショットを
 「公開時の予測」として採用し、`flight_weather_logs`の運航結果を結合して再生成します。
 結果未取得は欠航として扱いません。アーカイブ取得に失敗したPages buildは失敗させ、
 既存の公開アーカイブを空の生成物で置き換えません。
 
-`provenance_status=unknown`の旧キャッシュや取得時刻不明の行は、後続の外部評価で厳密な時系列検証から除外します。これは欠測を現在の予報として扱わないための区別です。
+`provenance_status=unknown`の旧キャッシュ、取得時刻不明の行、`candidate`の未公開行は、後続の外部評価で厳密な時系列検証から除外します。これは欠測や公開未確認を現在の予報として扱わないための区別です。旧行は勝手に`published`へ変更せず、アーカイブ表示では`legacy`として扱います。
+新パイプラインが保存した行は公開追跡マーカーを持つため、候補記録や公開確認が欠けた場合もlegacyへ暗黙変換されません。公開確認のない旧行だけが、既存URL維持のため明示的な`legacy`表示になります。
 
-週次の`Evaluate published forecasts` workflowは、実績と結合した公開値を対象に、モデル別・便別・リード日別Brier score、10ポイント幅の信頼度ビン、ECE、運航率ベースライン、常時運航ベースライン、条件付運航の感度分析、時系列ローリング分割をJSON/Markdown artifactへ出力します。評価対象がない場合は`insufficient_data`として成功扱いにせず、レポート生成後にworkflowを失敗させます。詳細は`docs/evaluation.md`を参照してください。
+週次の`Evaluate published forecasts` workflowは、実績と結合した公開値を対象に、モデル別・便別・リード日別Brier score、10ポイント幅の信頼度ビン、ECE、運航率ベースライン、常時運航ベースライン、条件付運航の感度分析、時系列ローリング分割をJSON/Markdown artifactへ出力します。ローリング基準値には、各予測の生成時刻より後に収集された運航結果を使いません。評価対象がない場合は`insufficient_data`として成功扱いにせず、レポート生成後にworkflowを失敗させます。詳細は`docs/evaluation.md`を参照してください。
 
 ## データ修正の原則
 

@@ -1,3 +1,6 @@
+import hashlib
+import json
+
 from app_config import (
     EXTREME_VISIBILITY_PROBABILITY_MULTIPLIER,
     EXTREME_VISIBILITY_RISK_KM,
@@ -38,6 +41,16 @@ def load_history():
 
 def load_detailed_history():
     return fetch_detailed_history()
+
+
+def _history_fingerprint(history):
+    payload = json.dumps(
+        sorted(history, key=lambda row: tuple(str(value) for value in row)),
+        ensure_ascii=False,
+        separators=(",", ":"),
+        default=str,
+    )
+    return hashlib.sha256(payload.encode("utf-8")).hexdigest()
 
 
 def _weather_similarity_score(row, weather):
@@ -82,9 +95,10 @@ def _weather_similarity_score(row, weather):
     return score + missing_penalty + mismatch_penalty
 
 
-def find_similar_flights(flight_number, weather, limit=10):
+def find_similar_flights(flight_number, weather, limit=10, history=None):
     candidates = []
-    for row in load_detailed_history():
+    history_rows = load_detailed_history() if history is None else history
+    for row in history_rows:
         if row["flight_number"] != flight_number:
             continue
         score = _weather_similarity_score(row, weather)
@@ -109,6 +123,7 @@ def predict_flight_probability(
     visibility,
     precipitation=None,
     flight_number=None,
+    history=None,
 ):
     """
     入力された気象条件から、八丈島便の運航確率を予測する。
@@ -124,8 +139,9 @@ def predict_flight_probability(
     Returns:
         dict: 予測結果。履歴不足時は`probability`を`None`にする。
     """
-    history = []
-    for row in load_history():
+    history_rows = []
+    source_history = load_history() if history is None else history
+    for row in source_history:
         if len(row) == 4:
             historical_flight, status, historical_direction, historical_speed = row
         else:
@@ -136,10 +152,11 @@ def predict_flight_probability(
             continue
         if flight_number is not None and historical_flight != flight_number:
             continue
-        history.append((normalized_status, historical_direction, historical_speed))
-    if len(history) < MIN_MATCHING_HISTORY_ROWS:
+        history_rows.append((normalized_status, historical_direction, historical_speed))
+    history_fingerprint = _history_fingerprint(history_rows)
+    if len(history_rows) < MIN_MATCHING_HISTORY_ROWS:
         scope = f"{flight_number}の" if flight_number else ""
-        reason_code = "no_history" if not history else "below_minimum_history"
+        reason_code = "no_history" if not history_rows else "below_minimum_history"
         return {
             "probability": None,
             "base_probability": None,
@@ -148,10 +165,11 @@ def predict_flight_probability(
             "calculation_status": "insufficient_history",
             "reason_code": reason_code,
             "alert_required": False,
-            "warning_msg": f"{scope}過去実績が{len(history)}件のため、統計参考値を算出できません。",
-            "data_count": len(history),
+            "warning_msg": f"{scope}過去実績が{len(history_rows)}件のため、統計参考値を算出できません。",
+            "data_count": len(history_rows),
             "step_used": 0,
             "history_flight_number": flight_number,
+            "history_fingerprint": history_fingerprint,
         }
         
     matching_rows = []
@@ -159,7 +177,7 @@ def predict_flight_probability(
 
     def matches(angle_limit, speed_limit):
         result = []
-        for status, historical_direction, historical_speed in history:
+        for status, historical_direction, historical_speed in history_rows:
             angle_diff = abs(historical_direction - wind_direction)
             angle_diff = min(angle_diff, 360 - angle_diff)
             if angle_diff <= angle_limit and abs(historical_speed - wind_speed) <= speed_limit:
@@ -172,7 +190,7 @@ def predict_flight_probability(
         matching_rows = matches(FALLBACK_MATCH_ANGLE_DEGREES, FALLBACK_MATCH_WIND_SPEED_MS)
     if len(matching_rows) < MIN_MATCHING_HISTORY_ROWS:
         step_used = 3
-        matching_rows = [(status,) for status, _, _ in history]
+        matching_rows = [(status,) for status, _, _ in history_rows]
         
     # ベース確率の算出
     if not matching_rows:
@@ -276,5 +294,6 @@ def predict_flight_probability(
         "data_count": len(matching_rows),
         "step_used": step_used,
         "history_flight_number": flight_number,
+        "history_fingerprint": history_fingerprint,
     }
 

@@ -74,6 +74,7 @@ def build_archive_days(rows):
             outcome_row = outcomes.get((date_string, number), {})
             outcome = normalize_status(outcome_row.get("outcome_status"))
             primary_score = _score(primary.get("probability")) if primary else None
+            publication_status = (primary or {}).get("publication_status", "legacy")
             models = []
             for model_name, label in MODEL_LABELS.items():
                 model_row = model_rows.get(model_name)
@@ -95,6 +96,8 @@ def build_archive_days(rows):
                     "published_at": _format_timestamp(
                         primary.get("prediction_generated_at") if primary else None
                     ),
+                    "publication_status": publication_status,
+                    "publicly_confirmed": publication_status == "published",
                     "models": models,
                     "outcome": outcome,
                     "outcome_reason": outcome_row.get("status_reason"),
@@ -113,6 +116,9 @@ def build_archive_days(rows):
                 "flights": flights,
                 "confirmed_count": confirmed,
                 "operated_count": operated,
+                "publicly_confirmed": all(
+                    flight["publicly_confirmed"] for flight in flights
+                ),
                 "last_modified": max(
                     (
                         row.get("prediction_generated_at")

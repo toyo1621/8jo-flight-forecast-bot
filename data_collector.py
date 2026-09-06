@@ -10,7 +10,7 @@ from dotenv import load_dotenv
 
 from app_config import FLIGHTS, HACHIJO_AIRPORT_LATITUDE, HACHIJO_AIRPORT_LONGITUDE, JST
 from bigquery_storage import (
-    delete_unresolved_status_rows,
+    cleanup_unresolved_status_rows,
     load_raw_collection_payloads,
     record_collection_run,
     save_raw_collection_payload,
@@ -368,8 +368,15 @@ def main():
     parser.add_argument(
         "--cleanup-only",
         action="store_true",
-        help="BigQuery上の未取得・未対応ステータス行を削除して終了する",
+        help="未取得・未対応ステータス行の件数を確認し、監査記録を残して終了する",
     )
+    parser.add_argument(
+        "--cleanup-apply",
+        action="store_true",
+        help="--cleanup-onlyと併用して未取得・未対応ステータス行の削除を適用する",
+    )
+    parser.add_argument("--cleanup-date", help="削除対象を指定日の行に限定する（YYYY-MM-DD）")
+    parser.add_argument("--cleanup-reason", help="削除を適用する理由。--cleanup-apply時は必須")
     parser.add_argument(
         "--replay-run-id",
         help="BigQueryのraw保存から指定run_idの日次データを再生して本表へ反映する",
@@ -381,6 +388,12 @@ def main():
     )
     args = parser.parse_args()
 
+    if args.cleanup_apply and not args.cleanup_only:
+        parser.error("--cleanup-applyは--cleanup-onlyと併用してください。")
+    if args.cleanup_date and not args.cleanup_only:
+        parser.error("--cleanup-dateは--cleanup-onlyと併用してください。")
+    if args.cleanup_reason and not args.cleanup_only:
+        parser.error("--cleanup-reasonは--cleanup-onlyと併用してください。")
     if sum(bool(value) for value in (args.demo, args.cleanup_only, args.replay_run_id, args.target_date)) > 1:
         parser.error("--demo、--cleanup-only、--replay-run-id、--dateは同時に指定できません。")
 
@@ -389,10 +402,23 @@ def main():
             datetime.strptime(args.target_date, "%Y-%m-%d").replace(tzinfo=JST)
         except ValueError:
             parser.error("--dateはYYYY-MM-DD形式で指定してください。")
+    if args.cleanup_date:
+        try:
+            datetime.strptime(args.cleanup_date, "%Y-%m-%d").replace(tzinfo=JST)
+        except ValueError:
+            parser.error("--cleanup-dateはYYYY-MM-DD形式で指定してください。")
 
     if args.cleanup_only:
-        removed = delete_unresolved_status_rows()
-        print(f"BigQueryから未取得・未対応ステータス {removed} 件を削除しました。")
+        result = cleanup_unresolved_status_rows(
+            apply=args.cleanup_apply,
+            reason=args.cleanup_reason,
+            target_date=args.cleanup_date,
+        )
+        label = "削除" if args.cleanup_apply else "削除予定"
+        print(
+            f"未取得・未対応ステータス: {result['matched_count']}件 / "
+            f"{label}: {result['affected_count']}件 / audit_id: {result['audit_id']}"
+        )
         return
 
     if args.replay_run_id:
@@ -453,9 +479,6 @@ def main():
             source_status=source_status,
         )
         tracking_started = True
-        removed = delete_unresolved_status_rows()
-        if removed:
-            print(f"BigQueryから未取得ステータス {removed} 件を削除しました。")
         flights = merge_with_daily_schedule(
             target_date,
             get_flight_data_odpt(

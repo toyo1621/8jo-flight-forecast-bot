@@ -19,6 +19,8 @@ concurrency:
 
 jobs:
   build:
+    outputs:
+      artifact_id: ${{ steps.build_manifest.outputs.artifact_id }}
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
@@ -30,10 +32,18 @@ jobs:
         with:
           python-version: "3.12"
           cache: pip
-          cache-dependency-path: requirements.txt
+          cache-dependency-path: |
+            requirements-dev.txt
+            requirements.lock
 
       - name: Install dependencies
-        run: pip install -r requirements.txt
+        run: pip install -r requirements-dev.txt -c requirements.lock
+
+      - name: Verify the same SHA before building
+        run: python -m pytest -q
+
+      - name: Lint the same SHA before building
+        run: python -m ruff check .
 
       - name: Restore forecast API cache
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
@@ -132,6 +142,26 @@ jobs:
       - name: Validate static pages and SEO metadata
         run: python validate_static_site.py dist
 
+      - name: Read build artifact identity
+        id: build_manifest
+        run: echo "artifact_id=$(python -c 'import json; print(json.load(open("dist/build-manifest.json"))["artifact_id"])')" >> "$GITHUB_OUTPUT"
+
+      - name: Upload build manifest
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: pages-build-manifest
+          path: dist/build-manifest.json
+          if-no-files-found: ignore
+
+      - name: Upload static build for diagnostics
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: pages-static-build
+          path: dist
+          if-no-files-found: ignore
+
       - name: Configure Pages
         uses: actions/configure-pages@45bfe0192ca1faeb007ade9deae92b16b8254a0d # v6
 
@@ -151,4 +181,35 @@ jobs:
       - name: Deploy to GitHub Pages
         id: deployment
         uses: actions/deploy-pages@cd2ce8fcbc39b97be8ca5fce6e763baed58fa128 # v5
+
+      - name: Checkout the deployed source
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+        with:
+          ref: ${{ github.sha }}
+
+      - name: Set up Python for publication confirmation
+        uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: |
+            requirements.txt
+            requirements.lock
+
+      - name: Install publication dependencies
+        run: pip install -r requirements.txt -c requirements.lock
+
+      - name: Authenticate to Google Cloud for publication confirmation
+        uses: google-github-actions/auth@7c6bc770dae815cd3e89ee6cdf493a5fab2cc093 # v3
+        with:
+          workload_identity_provider: ${{ vars.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ vars.GCP_SERVICE_ACCOUNT }}
+
+      - name: Confirm the live artifact and publish snapshots
+        env:
+          GCP_PROJECT_ID: hachijo-flight-forecast
+          BIGQUERY_DATASET: flight_forecast
+          BIGQUERY_TABLE: flight_weather_logs
+          BIGQUERY_LOCATION: asia-northeast1
+        run: python publish_prediction_snapshots.py --artifact-id "${{ needs.build.outputs.artifact_id }}" --public-url "${{ steps.deployment.outputs.page_url }}"
 

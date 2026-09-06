@@ -1,3 +1,5 @@
+from collections import Counter
+
 from app_config import CONFIDENCE_GRADES
 
 EXPECTED_MEMBER_COUNTS = {
@@ -64,6 +66,11 @@ def _variable_coverage(members, baseline_weather, prediction_fields):
 def _model_summary_from_results(model, members, results, baseline_weather, prediction_fields):
     expected_count = EXPECTED_MEMBER_COUNTS.get(model, len(members))
     variable_coverage = _variable_coverage(members, baseline_weather, prediction_fields)
+    calculation_statuses = Counter(
+        result.get("calculation_status", "available")
+        for result in results
+        if result.get("calculation_status", "available") != "available"
+    )
     probabilities = []
     for result in results:
         if result.get("calculation_status", "available") != "available":
@@ -73,9 +80,12 @@ def _model_summary_from_results(model, members, results, baseline_weather, predi
             probabilities.append(float(probability))
     probabilities.sort()
     valid_count = len(probabilities)
+    status = "unavailable" if not members else "insufficient_members"
+    if len(calculation_statuses) == 1 and valid_count == 0:
+        status = next(iter(calculation_statuses))
     summary = {
         "label": MODEL_LABELS.get(model, model),
-        "status": "unavailable" if not members else "insufficient_members",
+        "status": status,
         "member_count": len(members),
         "valid_member_count": valid_count,
         "missing_member_count": max(0, len(members) - valid_count),
