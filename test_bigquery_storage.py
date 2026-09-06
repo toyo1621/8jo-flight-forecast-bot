@@ -112,7 +112,7 @@ def test_archive_query_uses_last_preflight_snapshot_and_keeps_missing_outcomes()
     assert "publication_status = 'candidate'" in query
     assert "publication_tracking_enabled IS NULL" in query
     assert "LEFT JOIN" in query
-    assert "CURRENT_DATE('Asia/Tokyo')" in query
+    assert "forecast_target_date <= CURRENT_DATE('Asia/Tokyo')" in query
 
 
 def test_publication_candidates_are_idempotent_and_keyed_by_artifact_and_snapshot():

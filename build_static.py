@@ -19,6 +19,7 @@ from prediction_provenance import (
     build_prediction_snapshot_rows,
     runtime_prediction_identity,
 )
+from presentation import active_forecast_days
 from web_app import (
     BASE_DIR,
     app,
@@ -145,6 +146,14 @@ def build_site(output_dir=DIST_DIR, current_time=None):
         (day for day in days if day.get("date") == current_time.date().isoformat()),
         None,
     )
+    display_days = active_forecast_days(days)
+    completed_dates = {
+        day["date"] for day in days
+        if day["flights"] and all(
+            f.get("calculation_status") == "expired" for f in day["flights"]
+        )
+    }
+    archived_dates = {day["date"] for day in archive_days}
     date_pages = [
         (
             output_dir / "forecast" / day["date"] / "index.html",
@@ -152,8 +161,9 @@ def build_site(output_dir=DIST_DIR, current_time=None):
             day,
         )
         for day in days
+        if day["date"] not in completed_dates & archived_dates
     ]
-    current_dates = {day["date"] for day in days}
+    current_dates = {day["date"] for _, _, day in date_pages}
     historical_days = [day for day in archive_days if day["date"] not in current_dates]
     archive_date_pages = [
         (
@@ -181,7 +191,7 @@ def build_site(output_dir=DIST_DIR, current_time=None):
     with app.app_context():
         html = render_template(
             "index.html",
-            days=days,
+            days=display_days,
             error=None,
             updated_at=updated_at,
             notices=bundle["notices"],

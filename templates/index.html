@@ -59,6 +59,9 @@
   {% set access_stats = access_stats|default({"days": [], "generated_at": None, "status": "unavailable"}) %}
   {% set access_stats_status = access_stats.status|default("available" if access_stats.days else "unavailable") %}
   {% set today = today_day|default(None, true) %}
+  {% if today and page_variant != "date" %}
+    {% set today = dict(today, flights=today.flights|rejectattr('calculation_status', 'equalto', 'expired')|list) %}
+  {% endif %}
   <main class="container{% if page_variant == "date" %} container--minimal{% endif %}">
     <header class="header{% if page_variant == "date" %} header--minimal{% endif %}">
       {% if page_variant == "date" %}
@@ -118,7 +121,7 @@
           </div>
           <p class="today-summary-note">表示は未校正の運航参考スコアです。最終的な運航状況は公式情報を確認してください。</p>
         {% else %}
-          <p class="today-empty">表示対象の便がありません。公式の運航情報をご確認ください。</p>
+          <p class="today-empty">本日の予測表示は終了しました。<a href="{{ asset_prefix }}history/">過去の予測と結果を見る</a></p>
         {% endif %}
         <nav class="today-actions" aria-label="公式情報と詳しい見方">
           <a class="official-link" href="https://www.ana.co.jp/fs/dom/jp/" target="_blank" rel="noopener noreferrer">ANA公式の運航状況</a>
@@ -296,7 +299,7 @@
           <li>日本周辺の短期予報を重視してJMAを主予報とし、GFS・ECMWFも残してモデルごとの見方の違いを比較できるようにしています。</li>
           <li>台風接近リスクは、<a href="https://8jo-typhoon-ensemble.toyo1621.workers.dev/?source=jma" rel="noreferrer">八丈島・東京方面 台風影響目安</a>の飛行機向け影響度を使います。注意度lowは補正なし、medium・high・severeをリスク小・中・大として、運航率に0.9・0.8・0.7を掛けます。</li>
           <li>便カードと詳細画面の比較欄にはGFS・ECMWF・JMAを併記します。JMA欄は主予報と同じ値です。</li>
-          <li>運航参考スコア{{ low_threshold }}未満の便はオレンジで表示し、当日便は到着予定時刻の30分後を過ぎると「予測表示終了」と表示します。実際の運航結果を示すものではありません。</li>
+          <li>運航参考スコア{{ low_threshold }}未満の便はオレンジで表示し、当日便は到着予定時刻の30分後を過ぎるとトップページから非表示にします。結果は「過去の予測と結果」で確認できます。</li>
         </ol>
         <p>GitHub Actionsで6時間ごとに再計算し、静的サイトとして公開しています。</p>
       </article>

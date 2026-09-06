@@ -7,6 +7,42 @@ from build_static import add_brand_assets, build_site
 from validate_static_site import validate_site
 
 
+def test_completed_today_routes_to_saved_prediction_and_result(tmp_path):
+    from web_app import build_daily_forecasts
+
+    now = datetime(2026, 9, 6, 22, tzinfo=timezone(timedelta(hours=9)))
+    days = build_daily_forecasts({"2026-09-06T08:00": {}}, current_time=now)
+    archive_rows = [{
+        "forecast_target_date": "2026-09-06", "flight_number": number,
+        "model": "jma_seamless", "probability": 75,
+        "publication_status": "published", "calculation_status": "available",
+        "prediction_generated_at": "2026-09-06T06:00:00+09:00",
+        "outcome_status": "運航" if number == "ANA1891" else None,
+    } for number in ("ANA1891", "ANA1893", "ANA1895")]
+    with (
+        patch("build_static.load_forecast_bundle", return_value={
+            "weather": {}, "ensembles": {}, "typhoon_impacts": {}, "notices": [],
+        }),
+        patch("build_static.build_daily_forecasts", return_value=days),
+        patch("build_static.build_prediction_snapshot_rows", return_value=[{"snapshot_id": "s"}]),
+        patch("build_static.save_prediction_snapshots", return_value=1),
+        patch("build_static.save_prediction_publication_candidates", return_value=1),
+        patch("build_static.fetch_published_forecast_archive", return_value=archive_rows),
+        patch("build_static.load_access_stats", return_value={"days": []}),
+    ):
+        build_site(tmp_path, current_time=now)
+    home = (tmp_path / "index.html").read_text()
+    result = (tmp_path / "forecast/2026-09-06/index.html").read_text()
+    history = (tmp_path / "history/index.html").read_text()
+    assert 'id="date-2026-09-06"' not in home
+    assert "予測表示終了" not in home
+    assert "実際の運航結果" in result
+    assert "公開時の予測" in result
+    assert "結果未取得" in result
+    assert "運航" in result
+    assert "forecast/2026-09-06/" in history
+
+
 def test_add_brand_assets_recognizes_current_site_title():
     html = "<head>\n  <title>八丈島の飛行機運航目安｜羽田便の天気・過去実績</title>\n</head>"
 
