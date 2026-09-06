@@ -94,6 +94,9 @@
           <time datetime="{{ today.date }}">{{ today.date_label }} ({{ today.weekday }})</time>
         </div>
         {% if today.flights %}
+          {% if today.flights|rejectattr('calculation_status', 'equalto', 'expired')|list|length == 0 %}
+            <p class="today-empty">本日の全便は予測の表示対象時刻を過ぎました。実際の運航結果は公式の運航状況をご確認ください。</p>
+          {% endif %}
           <div class="today-flight-list">
             {% for flight in today.flights %}
               <a class="today-flight" href="#flight-{{ today.date }}-{{ flight.raw_number }}">
@@ -106,7 +109,7 @@
                     <span class="probability-symbol">{{ flight.probability_symbol }}</span>
                     <strong>{{ flight.probability }}</strong><span class="score-unit"> / 100</span>
                   {% else %}
-                    <strong>算出不可</strong>
+                    <strong>{{ '予測表示終了' if flight.calculation_status == 'expired' else '算出不可' }}</strong>
                   {% endif %}
                 </span>
                 <span class="today-flight-action">詳細を見る</span>
@@ -195,7 +198,7 @@
                   {% if flight.calculation_status == "available" %}
                     <span class="probability-symbol">{{ flight.probability_symbol }}</span><strong>{{ flight.probability }}</strong><span class="probability-unit"> / 100</span>
                   {% else %}
-                    <span class="probability-unavailable" role="status">算出不可</span>
+                    <span class="probability-unavailable" role="status">{{ '予測表示終了' if flight.calculation_status == 'expired' else '算出不可' }}</span>
                   {% endif %}
                   <small>{% if flight.calculation_status == "available" %}JMA主予報 / 過去実績×リスクによる参考スコア{% else %}{{ flight.calculation_unavailable_reason|default("算出できない状態です。", true) }}{% endif %}</small>
                 </p>
@@ -230,7 +233,7 @@
                     <div><dt>視程</dt><dd>{% if flight.visibility is defined and flight.visibility is not none %}{{ flight.visibility }} km{% else %}欠測{% endif %}</dd></div>
                     <div><dt>降水量</dt><dd>{% if flight.precipitation is defined and flight.precipitation is not none %}{{ flight.precipitation }} mm/h{% else %}欠測{% endif %}</dd></div>
                     <div><dt>気圧</dt><dd>{% if flight.pressure_msl is defined and flight.pressure_msl is not none %}{{ flight.pressure_msl }} hPa{% else %}欠測{% endif %}</dd></div>
-                    <div><dt>主予報(JMA)での統計参考値（運航参考スコア）</dt><dd>{% if flight.calculation_status == "available" %}<span class="probability-inline-symbol">{{ flight.probability_symbol }}</span>{{ flight.probability }} / 100{% else %}算出不可{% endif %}</dd></div>
+                    <div><dt>主予報(JMA)での統計参考値（運航参考スコア）</dt><dd>{% if flight.calculation_status == "available" %}<span class="probability-inline-symbol">{{ flight.probability_symbol }}</span>{{ flight.probability }} / 100{% else %}{{ '予測表示終了' if flight.calculation_status == 'expired' else '算出不可' }}{% endif %}</dd></div>
                     <div><dt>過去実績の集計対象</dt><dd>{{ flight.number }} / {{ flight.data_count }}件</dd></div>
                     {% for model in flight.model_probabilities %}
                       <div><dt>{{ model.label }}予報での統計参考値（運航参考スコア）</dt><dd><span class="probability-inline-symbol">{{ model.symbol }}</span>{{ model.probability }} / 100</dd></div>
@@ -293,7 +296,7 @@
           <li>日本周辺の短期予報を重視してJMAを主予報とし、GFS・ECMWFも残してモデルごとの見方の違いを比較できるようにしています。</li>
           <li>台風接近リスクは、<a href="https://8jo-typhoon-ensemble.toyo1621.workers.dev/?source=jma" rel="noreferrer">八丈島・東京方面 台風影響目安</a>の飛行機向け影響度を使います。注意度lowは補正なし、medium・high・severeをリスク小・中・大として、運航率に0.9・0.8・0.7を掛けます。</li>
           <li>便カードと詳細画面の比較欄にはGFS・ECMWF・JMAを併記します。JMA欄は主予報と同じ値です。</li>
-          <li>運航参考スコア{{ low_threshold }}未満の便はオレンジで表示し、当日便は到着予定時刻の30分後を過ぎると非表示にします。</li>
+          <li>運航参考スコア{{ low_threshold }}未満の便はオレンジで表示し、当日便は到着予定時刻の30分後を過ぎると「予測表示終了」と表示します。実際の運航結果を示すものではありません。</li>
         </ol>
         <p>GitHub Actionsで6時間ごとに再計算し、静的サイトとして公開しています。</p>
       </article>
