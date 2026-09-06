@@ -45,3 +45,11 @@ def decorate_flight_for_display(flight):
             }
         )
     return decorated
+def active_forecast_days(days):
+    """Filter display-ended flights without changing the saved calculation."""
+    result = []
+    for day in days:
+        flights = [f for f in day["flights"] if f.get("calculation_status") != "expired"]
+        if flights or not day["flights"]:
+            result.append({**day, "flights": flights})
+    return result

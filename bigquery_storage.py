@@ -306,7 +306,7 @@ def fetch_published_forecast_archive():
             ) AS row_number
           FROM `{_collection_table_path(PREDICTION_SNAPSHOT_TABLE, config)}` s
           LEFT JOIN publication_state p USING (snapshot_id)
-            WHERE forecast_target_date < CURRENT_DATE('Asia/Tokyo')
+            WHERE forecast_target_date <= CURRENT_DATE('Asia/Tokyo')
             AND prediction_generated_at <= weather_valid_at
             AND (
               COALESCE(p.has_published, 0) = 1

@@ -16,7 +16,7 @@ from forecast_engine import (
     find_similar_flights,
     predict_flight_probability,
 )
-from presentation import decorate_flight_for_display
+from presentation import active_forecast_days, decorate_flight_for_display
 from web_app import (
     BASE_DIR,
     FORECAST_DAYS,
@@ -541,18 +541,33 @@ def test_today_flight_is_explicitly_marked_after_arrival_plus_30_minutes():
     assert days[0]["flights"][1]["calculation_status"] == "available"
 
 
-def test_ended_flights_render_as_ended_in_summary_cards_and_details():
+def test_ended_flights_are_hidden_on_home_but_retained_in_source():
     days = build_daily_forecasts(
         SAMPLE_WEATHER, current_time=datetime(2026, 6, 20, 22, 0, tzinfo=JST)
     )
     with app.app_context():
         body = render_template(
-            "index.html", days=days, today_day=days[0], error=None,
+            "index.html", days=active_forecast_days(days), today_day=days[0], error=None,
             updated_at="2026/06/20 22:00",
         )
-    assert "本日の全便は予測の表示対象時刻を過ぎました" in body
-    assert body.count("予測表示終了") >= 9
+    assert "本日の予測表示は終了しました" in body
+    assert 'id="flight-2026-06-20-ANA1891"' not in body
+    assert 'href="#date-2026-06-20"' not in body
+    assert len(days[0]["flights"]) == 3
+    assert "予測表示終了" not in body
     assert "算出不可" not in body
+
+
+def test_active_forecasts_keep_missing_and_future_flights():
+    days = [{"date": "2026-09-06", "flights": [
+        {"calculation_status": "expired"},
+        {"calculation_status": "weather_missing"},
+        {"calculation_status": "available"},
+    ]}]
+    assert [f["calculation_status"] for f in active_forecast_days(days)[0]["flights"]] == [
+        "weather_missing", "available",
+    ]
+    assert len(days[0]["flights"]) == 3
 
 
 def test_today_flight_remains_at_exactly_arrival_plus_30_minutes():
@@ -1468,7 +1483,7 @@ def test_index_handles_weather_api_error():
 
 
 def test_index_uses_injected_jst_clock_for_today_selection():
-    day = {"date": "2026-06-20"}
+    day = {"date": "2026-06-20", "flights": []}
     bundle = {
         "weather": {},
         "ensembles": {},

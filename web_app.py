@@ -43,7 +43,7 @@ from forecast_cache import (
     save_forecast_bundle,
 )
 from forecast_engine import find_similar_flights, predict_flight_probability
-from presentation import decorate_flight_for_display
+from presentation import active_forecast_days, decorate_flight_for_display
 from typhoon_impact import has_factor_breakdown, typhoon_risk_level
 
 BASE_DIR = Path(__file__).resolve().parent
@@ -730,7 +730,7 @@ def create_app(now_fn=None):
 
         return render_template(
             "index.html",
-            days=days,
+            days=active_forecast_days(days),
             today_day=today_day if not error else None,
             error=error,
             updated_at=updated_at or "取得できません",
