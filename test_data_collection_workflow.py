@@ -19,7 +19,10 @@ def test_collection_is_distributed_and_tested_before_writes():
     assert workflow.index('python -m pytest -q') < workflow.index('- name: Run data collector')
     assert '--date "$TARGET_DATE"' in workflow
     assert '--replay-run-id "$REPLAY_RUN_ID"' in workflow
-    assert 'actions: write' not in workflow
+    assert 'actions: write' not in workflow.split('  republish:')[0]
+    assert "needs.collect-data.outputs.collected == 'success'" in workflow
+    assert "github.ref == 'refs/heads/main'" in workflow
+    assert 'gh workflow run pages.yml --ref main' in workflow
 
 
 def test_pages_independently_observes_collection_without_stopping_forecast():

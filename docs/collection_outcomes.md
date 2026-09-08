@@ -68,9 +68,11 @@ python migrate_collection_outcomes.py --protect-owner-report --apply
 レポートには日付・便ごとの結果/気象、管理者訂正との競合、26時間以上の未実行を含めます。
 収集側の既存Issue通知を使用し、Pages側は独立実行のwarning・Summary・artifactを残します。
 
-Pagesは引き続き既存の6時間ごとの生成で更新します。収集後の即時再公開は
-`actions: write`権限追加が安全審査で保留されたため未実装です。
-承認されるまでは必要時に管理者がPagesを手動実行してください。
+Pagesは既存の6時間ごとの生成に加え、収集成功後に再生成します。
+承認済みの`actions: write`は独立したrepublish jobに限定し、収集jobへは与えません。
+main上の収集成功時だけ既存Pages workflowを起動します。監視が過去日の不足を検出しても、
+今回保存した結果は再公開します。掃除のみ・収集失敗・feature branchでは起動しません。
+Pagesのテスト・Lint・データ品質・静的検証・公開確認はすべて既存経路を通します。
 Pagesの監視失敗は予報公開を止めません。公開自体の品質ゲートは維持します。
 GitHub全体が停止すると内部監視も停止します。管理者は毎朝Actionsの最新実行日時を確認し、
 26時間以上空いていれば手動調査します。独立した外部heartbeatは今回追加していません。

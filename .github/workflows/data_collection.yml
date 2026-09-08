@@ -48,6 +48,8 @@ concurrency:
 
 jobs:
   collect-data:
+    outputs:
+      collected: ${{ steps.collect.outcome }}
     runs-on: ubuntu-latest
     timeout-minutes: 20
 
@@ -86,6 +88,7 @@ jobs:
       # 5. データ収集スクリプトの実行
       # GitHub Secrets に登録した ODPT_API_KEY を環境変数に渡します
       - name: Run data collector
+        id: collect
         if: ${{ github.event_name != 'workflow_dispatch' || inputs.cleanup_only != true }}
         env:
           ODPT_API_KEY: ${{ secrets.ODPT_API_KEY }}
@@ -189,4 +192,18 @@ jobs:
           name: collection-coverage-report
           path: collection_coverage_report.md
           if-no-files-found: ignore
+
+  republish:
+    needs: collect-data
+    if: ${{ always() && needs.collect-data.outputs.collected == 'success' && github.ref == 'refs/heads/main' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    permissions:
+      actions: write
+    steps:
+      - name: Republish outcomes through existing Pages quality gates
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: gh workflow run pages.yml --ref main
 
