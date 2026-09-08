@@ -24,6 +24,10 @@ from app_config import (
     SEVERE_VISIBILITY_PROBABILITY_MULTIPLIER,
     SEVERE_VISIBILITY_RISK_KM,
     SOUTHERLY_CAUTION_WIND_MS,
+    SOUTHERLY_HIGH_WIND_MS,
+    SOUTHERLY_MEDIUM_WIND_MS,
+    SOUTHERLY_MULTIPLIERS,
+    SOUTHERLY_UPGRADE_MAX_DEGREES,
     SOUTHERLY_WIND_MAX_DEGREES,
     SOUTHERLY_WIND_MIN_DEGREES,
     STRONG_WIND_RISK_MS,
@@ -212,12 +216,19 @@ def predict_flight_probability(
     weather_factors = {}
     warnings = []
     alert_required = False
+    wind_factors = {}
 
     if (
         SOUTHERLY_WIND_MIN_DEGREES <= wind_direction <= SOUTHERLY_WIND_MAX_DEGREES
         and wind_speed >= SOUTHERLY_CAUTION_WIND_MS
     ):
-        warnings.append("南風注意")
+        level = 2 if wind_speed >= SOUTHERLY_HIGH_WIND_MS else (
+            1 if wind_speed >= SOUTHERLY_MEDIUM_WIND_MS else 0
+        )
+        if wind_direction <= SOUTHERLY_UPGRADE_MAX_DEGREES:
+            level += 1
+        wind_factors["southerly"] = SOUTHERLY_MULTIPLIERS[level]
+        warnings.append(f"南風リスク{('小', '中', '大', '特大')[level]}")
         alert_required = True
     
     # 2. 霧・低層雲量による減算補正
@@ -260,21 +271,25 @@ def predict_flight_probability(
             factor = SEVERE_GUST_PROBABILITY_MULTIPLIER
         else:
             factor = WIND_PROBABILITY_MULTIPLIER
-        prob *= factor
-        weather_factor *= factor
-        weather_factors["gust"] = factor
+        wind_factors["gust"] = factor
         is_windy = True
         warnings.append(f"突風注意 (予報突風: {wind_gusts} m/s)")
     elif wind_speed is not None and wind_speed >= STRONG_WIND_RISK_MS:
         factor = WIND_PROBABILITY_MULTIPLIER
-        prob *= factor
-        weather_factor *= factor
-        weather_factors["wind"] = factor
+        wind_factors["wind"] = factor
         is_windy = True
         warnings.append(f"強風注意 (予報風速: {wind_speed} m/s)")
         
     if is_windy:
         alert_required = True
+
+    # Wind hazards overlap: apply only the strongest reduction once.
+    if wind_factors:
+        key = min(wind_factors, key=wind_factors.get)
+        factor = wind_factors[key]
+        prob *= factor
+        weather_factor *= factor
+        weather_factors[key] = factor
         
     # 4. 上限キャップと下限の設定
     final_prob = min(prob, MAX_PROBABILITY)

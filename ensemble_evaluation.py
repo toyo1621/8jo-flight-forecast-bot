@@ -5,7 +5,10 @@ from statistics import median
 from ensemble_quality import build_member_weather, summarize_ensemble_results
 
 RISK_LABELS = (
-    "南風注意",
+    "南風リスク特大",
+    "南風リスク大",
+    "南風リスク中",
+    "南風リスク小",
     "視程不良リスク",
     "降水注意",
     "低層雲の影響注意",

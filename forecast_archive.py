@@ -102,7 +102,16 @@ def build_archive_days(rows):
                     "outcome": outcome,
                     "outcome_reason": outcome_row.get("status_reason"),
                     "outcome_confirmed": outcome in OPERATED_STATUSES | NON_OPERATED_STATUSES,
-                    "reflection": _reflection(primary_score, outcome),
+                    "reflection": (
+                        "運営者の確認によると、南風の影響で欠航となりました。"
+                        "南風が強い状況でしたが、参考スコアは高い値となっていました。"
+                        "参考にしてくださった皆さまには、申し訳ありません。"
+                        "今回の事例を踏まえ、南風の強さと風向に応じたリスク補正を追加しました。"
+                        "当時の公開スコアは変更せず保存しています。"
+                        if date_string == "2026-09-08" and number == "ANA1895"
+                        and outcome in NON_OPERATED_STATUSES
+                        else _reflection(primary_score, outcome)
+                    ),
                 }
             )
         confirmed = sum(flight["outcome_confirmed"] for flight in flights)
