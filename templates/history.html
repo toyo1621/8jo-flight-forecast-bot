@@ -10,6 +10,25 @@
 </head>
 <body>{% set asset_prefix = "../" %}<main class="container container--minimal archive-page">
   <header class="header header--minimal"><p class="page-nav"><a href="../">トップページへ｜今日の八丈島便の運航目安を見る</a></p><p class="about-label">HISTORY</p><h1>過去の予測と運航結果</h1><p class="lead">公開時の参考スコアを実際の結果に合わせて書き換えず、日付ごとに残しています。</p></header>
-  {% if archive_days %}<ol class="archive-index">{% for day in archive_days %}<li><a href="../forecast/{{ day.date }}/"><time datetime="{{ day.date }}">{{ day.long_date_label }} ({{ day.weekday }})</time><span>{% if day.confirmed_count %}結果確認 {{ day.confirmed_count }}/3便・運航 {{ day.operated_count }}便{% else %}結果未取得{% endif %}</span></a></li>{% endfor %}</ol>{% else %}<p class="archive-note">公開時予測を保存した過去日はまだありません。</p>{% endif %}
+  {% if archive_days %}
+  <section class="history-controls" aria-label="履歴の絞り込み">
+    <label>対象月<select id="history-month"><option value="">すべての月</option>{% for month in archive_days|map(attribute='month')|unique %}<option value="{{ month }}">{{ month }}</option>{% endfor %}</select></label>
+    <label>運航結果<select id="history-result"><option value="">すべて</option><option value="disrupted">欠航・引き返しあり</option><option value="missing">結果未取得あり</option></select></label>
+  </section>
+  <p id="history-total" role="status" aria-live="polite">{{ archive_days|length }}日間・結果確認済み{{ archive_days|sum(attribute='confirmed_count') }}便：運航{{ archive_days|sum(attribute='operated_count') }}便・欠航{{ archive_days|sum(attribute='cancelled_count') }}便・引き返し{{ archive_days|sum(attribute='returned_count') }}便（結果未取得{{ archive_days|sum(attribute='missing_count') }}便）</p>
+  <ol class="history-days">
+  {% for day in archive_days %}
+    <li data-month="{{ day.date[:7] }}" data-confirmed="{{ day.confirmed_count }}" data-operated="{{ day.operated_count }}" data-cancelled="{{ day.cancelled_count }}" data-returned="{{ day.returned_count }}" data-missing="{{ day.missing_count }}">
+      <header><h2><a href="../forecast/{{ day.date }}/"><time datetime="{{ day.date }}">{{ day.long_date_label }} ({{ day.weekday }})</time></a></h2>
+      <p class="outcome-{{ day.result_class }}">運航{{ day.operated_count }}便・欠航{{ day.cancelled_count }}便{% if day.returned_count %}・引き返し{{ day.returned_count }}便{% endif %}{% if day.missing_count %}・結果未取得{{ day.missing_count }}便{% endif %}</p></header>
+      <table class="history-comparison"><caption class="visually-hidden">{{ day.long_date_label }}の便別比較</caption><thead><tr><th scope="col">便</th><th scope="col">公開時スコア</th><th scope="col">運航結果</th></tr></thead><tbody>
+      {% for flight in day.flights %}<tr><th scope="row">{{ loop.index }}便 <small>{{ flight.number }}</small></th><td>{% if flight.score is not none %}{{ flight.score }} / 100{% else %}算出不可{% endif %}</td><td class="outcome-{{ flight.outcome_class }}">{{ flight.outcome_label }}</td></tr>{% endfor %}
+      </tbody></table>
+      {% if not day.publicly_confirmed %}<p class="history-legacy">旧保存データ・公開確認記録なし</p>{% endif %}
+      <a class="history-detail-link" href="../forecast/{{ day.date }}/">天気・予測・振り返りを見る →</a>
+    </li>
+  {% endfor %}</ol><p id="history-empty" hidden>条件に一致する日付はありません。</p>
+  <script src="../static/history.js" defer></script>
+  {% else %}<p class="archive-note">公開時予測を保存した過去日はまだありません。</p>{% endif %}
   {% include "_site_footer.html" %}
 </main></body></html>
