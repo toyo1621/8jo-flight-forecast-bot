@@ -620,7 +620,7 @@ def test_forecast_domain_functions_accept_injected_history_without_bigquery():
         )
 
     assert result["calculation_status"] == "available"
-    assert result["probability"] == 97.0
+    assert result["probability"] == 80.0
 
 
 def test_similar_flight_search_accepts_injected_history_without_bigquery():
@@ -688,7 +688,7 @@ def test_low_cloud_warning_uses_precise_wording():
     with patch("forecast_engine.load_history", return_value=[("通常", 180.0, 5.0)] * 5):
         result = predict_flight_probability(180.0, 5.0, 8.0, 100.0, 15.0)
 
-    assert result["warning_msg"] == "南風注意、低層雲の影響注意 (低層雲量 100.0%)"
+    assert result["warning_msg"] == "南風リスク中、低層雲の影響注意 (低層雲量 100.0%)"
 
 
 def test_probability_without_history_is_unavailable():
@@ -723,21 +723,21 @@ def test_probability_history_is_filtered_by_flight_number():
         first = predict_flight_probability(180.0, 5.0, 8.0, 20.0, 15.0, flight_number="ANA1891")
         second = predict_flight_probability(180.0, 5.0, 8.0, 20.0, 15.0, flight_number="ANA1893")
 
-    assert first["probability"] == 60.0
+    assert first["probability"] == 48.0
     assert second["probability"] == 0.0
     assert first["history_flight_number"] == "ANA1891"
     assert first["history_fingerprint"] != second["history_fingerprint"]
 
 
-def test_low_cloud_and_gust_adjustments_each_use_09():
+def test_low_cloud_and_strongest_wind_adjustments():
     history = [("通常", 210.0, 18.0)] * 3 + [("欠航", 210.0, 18.0)] * 6
     with patch("forecast_engine.load_history", return_value=history):
         result = predict_flight_probability(210.0, 18.09, 18.5, 85.0, 12.2)
 
     assert result["data_count"] == 9
-    assert result["probability"] == 27.0
-    assert result["weather_factors"] == {"low_cloud": 0.9, "gust": 0.9}
-    assert result["weather_factor"] == 0.81
+    assert result["probability"] == 21.0
+    assert result["weather_factors"] == {"low_cloud": 0.9, "southerly": 0.7}
+    assert result["weather_factor"] == 0.63
 
 
 def test_visibility_low_cloud_and_gust_adjustments_are_tiered():
@@ -750,11 +750,11 @@ def test_visibility_low_cloud_and_gust_adjustments_are_tiered():
         severe_low_cloud = predict_flight_probability(210.0, 5.0, 8.0, 96.0, 15.0)
         severe_gust = predict_flight_probability(210.0, 5.0, 20.3, 20.0, 15.0)
 
-    assert extreme_visibility["probability"] == 50.0
-    assert severe_visibility["probability"] == 70.0
-    assert moderate_visibility["probability"] == 80.0
-    assert clear_visibility["probability"] == 97.0
-    assert severe_low_cloud["probability"] == 75.0
+    assert extreme_visibility["probability"] == 45.0
+    assert severe_visibility["probability"] == 63.0
+    assert moderate_visibility["probability"] == 72.0
+    assert clear_visibility["probability"] == 90.0
+    assert severe_low_cloud["probability"] == 67.5
     assert severe_gust["probability"] == 55.0
 
 
@@ -785,8 +785,8 @@ def test_precipitation_from_two_mm_adds_rain_risk():
         dry = predict_flight_probability(180.0, 5.0, 8.0, 20.0, 15.0, precipitation=1.9)
         rainy = predict_flight_probability(180.0, 5.0, 8.0, 20.0, 15.0, precipitation=2.0)
 
-    assert dry["probability"] == 97.0
-    assert rainy["probability"] == 85.0
+    assert dry["probability"] == 80.0
+    assert rainy["probability"] == 68.0
     assert "降水注意" in rainy["warning_msg"]
 
 
@@ -795,24 +795,25 @@ def test_southerly_wind_warning_includes_boundary_values():
         lower = predict_flight_probability(120.0, 5.0, 10.0, 20.0, 15.0)
         upper = predict_flight_probability(240.0, 5.0, 10.0, 20.0, 15.0)
 
-    assert "南風注意" in lower["warning_msg"]
-    assert "南風注意" in upper["warning_msg"]
+    assert "南風リスク中" in lower["warning_msg"]
+    assert "南風リスク小" in upper["warning_msg"]
     assert lower["alert_required"] is True
 
 
 def test_southerly_wind_warning_requires_direction_and_speed():
     with patch("forecast_engine.load_history", return_value=[("通常", 180.0, 9.0)] * 5):
-        weak = predict_flight_probability(180.0, 4.99, 10.0, 20.0, 15.0)
+        weak = predict_flight_probability(180.0, 3.99, 10.0, 20.0, 15.0)
         outside = predict_flight_probability(241.0, 9.0, 10.0, 20.0, 15.0)
 
-    assert "南風注意" not in weak["warning_msg"]
-    assert "南風注意" not in outside["warning_msg"]
+    assert "南風リスク" not in weak["warning_msg"]
+    assert "南風リスク" not in outside["warning_msg"]
 
 
 def test_september_eighth_final_flight_southerly_warning():
     with patch("forecast_engine.load_history", return_value=[("通常", 185.0, 6.02)] * 5):
         result = predict_flight_probability(185.0, 6.02, 13.0, 30.0, 13.0)
-    assert "南風注意" in result["warning_msg"]
+    assert "南風リスク中" in result["warning_msg"]
+    assert result["weather_factor"] == 0.8
     assert result["alert_required"] is True
 
 
