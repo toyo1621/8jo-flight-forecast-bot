@@ -9,12 +9,12 @@
 ## データフロー
 
 1. `data_collector.py`がODPTの当日運航結果とOpen-Meteoの気象値を取得します。
-2. 対象3便と必須気象値がすべて揃った場合だけ、BigQueryの`hachijo-flight-forecast.flight_forecast.flight_weather_logs`へMERGEします。
+2. 日付・確定状態を検証できた便からBigQueryへMERGEします。未確定はrawに保持し、気象の欠測で確定結果を捨てません。
 3. `build_static.py`がOpen-Meteo経由のJMA主予報、GFS・ECMWFアンサンブル、外部の台風影響度を取得します。
 4. `forecast_engine.py`と`web_app.py`が便ごとの統計参考値、天候信頼度、モデル別参考値、類似実績を計算します。
 5. `templates/index.html`を`dist/`へレンダリングし、GitHub Pagesへデプロイします。
 
-Pagesは`main`へのpush、手動実行、6時間ごとのスケジュールで更新します。運航実績収集は毎日21:00 JSTです。
+Pagesは`main`へのpush、手動実行、6時間ごとのスケジュール、およびmain上の収集成功後に更新します。収集はJST 09:23・14:23・18:23・21:23です。actions:writeは独立した再公開jobのみに限定します。
 
 ## 保存先
 
@@ -26,9 +26,10 @@ Pagesは`main`へのpush、手動実行、6時間ごとのスケジュールで�
 
 ## データ収集の不変条件
 
-- ODPTの取得失敗、JSON不正、対象便不足、重複、空・未対応ステータスでは保存しません。
-- Open-Meteoの取得失敗、応答不正、必須気象値の欠測では保存しません。
-- 対象3便がすべて揃うまで、1行も保存しません。
+- ODPT取得失敗や日付不明・未確定状態を実績へ変換しません。
+- 便ごとに保存し、重複競合のある便は保留します。他便は保存できます。
+- 気象取得失敗は別記録にし、確定した運航結果は保存します。
+- 管理者訂正はoutcome_lockedで保護し、古いAPI応答で確定結果を戻しません。
 - 取得失敗を`欠航`や0点へ変換しないでください。
 - BigQuery MERGEでは、入力が`NULL`の気象値で既存の正常値を上書きしません。
 - 同一ステータスの既知欠航理由を、`NULL`や`未確認`で上書きしません。
@@ -102,7 +103,7 @@ Pagesは`main`へのpush、手動実行、6時間ごとのスケジュールで�
 
 - 条件付きで運航: `運航(条件付)`
 - 引き返し: `条件付き→引返欠航`
-- 遅延・旧表記の`通常`は保存時に`運航`へ正規化します。
+- 旧表記の正規化と外部APIの確定判定は別です。ODPTの遅延・到着予定を運航実績としません。
 - BigQueryのレコード識別子は`date + flight_number`です。
 - ステータス集合と正規化は`flight_metadata.py`を正とし、別ファイルへ複製しないでください。
 
@@ -124,7 +125,7 @@ Pagesは`main`へのpush、手動実行、6時間ごとのスケジュールで�
 | `.github/workflows/ci.yml` | テストと`pip-audit` |
 | `.github/workflows/codeql.yml` | CodeQL検査 |
 | `.github/workflows/pages.yml` | 6時間ごとのPages生成・公開 |
-| `.github/workflows/data_collection.yml` | 21:00 JSTの日次収集と手動掃除 |
+| `.github/workflows/data_collection.yml` | 1日4回の収集と明示的な手動管理 |
 
 ## ローカル検証
 

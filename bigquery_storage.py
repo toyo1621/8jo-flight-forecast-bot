@@ -14,6 +14,7 @@ from bigquery_schema import (
     DEFAULT_PROJECT,
     DEFAULT_TABLE,
     MAINTENANCE_AUDIT_TABLE,
+    OUTCOME_COLUMNS,
     PREDICTION_PUBLICATION_SCHEMA,
     PREDICTION_PUBLICATION_TABLE,
     PREDICTION_SNAPSHOT_SCHEMA,
@@ -25,6 +26,7 @@ from bigquery_schema import (
     ensure_destination,
     ensure_prediction_snapshot_destination,
 )
+from collection_outcomes import timestamp as outcome_timestamp
 from flight_metadata import (
     VALID_HISTORY_STATUSES,
     VALID_STORED_STATUSES,
@@ -141,7 +143,7 @@ def load_raw_collection_payloads(run_id):
     config = settings()
     client = bigquery.Client(project=config["project"], location=config["location"])
     query = f"""
-        SELECT source, target_date, payload_json, attempt
+        SELECT source, target_date, payload_json, attempt, fetched_at
         FROM `{_collection_table_path(RAW_TABLE, config)}`
         WHERE run_id = @run_id
         ORDER BY fetched_at, source
@@ -399,6 +401,10 @@ fetch_detailed_history.cache_clear = _clear_history_caches
 
 
 def _normalize_item(item, timestamp):
+    if item.get('outcome_state') not in (None, 'confirmed'):
+        raise ValueError('Only confirmed outcomes may enter flight history')
+    if item.get('outcome_state') == 'confirmed' and not outcome_timestamp(item.get('outcome_observed_at')):
+        raise ValueError('Confirmed outcome requires an aware source timestamp')
     scheduled_time = item.get("scheduled_time")
     if scheduled_time and scheduled_time.count(":") == 1:
         scheduled_time = f"{scheduled_time}:00"
@@ -445,24 +451,39 @@ def _normalize_item(item, timestamp):
         "status_reason_confidence": confidence,
         "created_at": timestamp,
         "migrated_at": timestamp,
+        **{name: item.get(name) for name, _ in OUTCOME_COLUMNS},
     }
 
 
 def build_upsert_sql(destination, staging):
+    weather_fields = ('wind_direction', 'wind_speed', 'wind_gusts', 'cloud_cover_low', 'visibility')
+    weather_updates = ',\n'.join(
+        f"{field} = CASE WHEN S.outcome_observed_at = T.outcome_observed_at "
+        f"THEN COALESCE(T.{field}, S.{field}) ELSE COALESCE(S.{field}, T.{field}) END"
+        for field in weather_fields
+    )
     return f"""
         MERGE `{destination}` T
         USING `{staging}` S
         ON T.date = S.date AND T.flight_number = S.flight_number
-        WHEN MATCHED THEN UPDATE SET
+        WHEN MATCHED AND NOT COALESCE(T.outcome_locked, FALSE)
+          AND ((S.outcome_state = 'confirmed' AND S.outcome_observed_at IS NOT NULL
+                AND (T.outcome_observed_at IS NULL OR S.outcome_observed_at > T.outcome_observed_at
+                     OR (S.outcome_observed_at = T.outcome_observed_at AND S.status = T.status
+                         AND ((T.wind_direction IS NULL AND S.wind_direction IS NOT NULL)
+                           OR (T.wind_speed IS NULL AND S.wind_speed IS NOT NULL)
+                           OR (T.wind_gusts IS NULL AND S.wind_gusts IS NOT NULL)
+                           OR (T.cloud_cover_low IS NULL AND S.cloud_cover_low IS NOT NULL)
+                           OR (T.visibility IS NULL AND S.visibility IS NOT NULL)))))
+               OR (S.outcome_state IS NULL AND T.outcome_state IS NULL))
+        THEN UPDATE SET
+          {', '.join(f'{name} = S.{name}' for name, _ in OUTCOME_COLUMNS)},
           flight_display_name = COALESCE(S.flight_display_name, T.flight_display_name),
           scheduled_time = COALESCE(S.scheduled_time, T.scheduled_time),
           status = S.status,
-          wind_direction = COALESCE(S.wind_direction, T.wind_direction),
-          wind_speed = COALESCE(S.wind_speed, T.wind_speed),
-          wind_gusts = COALESCE(S.wind_gusts, T.wind_gusts),
-          cloud_cover_low = COALESCE(S.cloud_cover_low, T.cloud_cover_low),
-          visibility = COALESCE(S.visibility, T.visibility),
+          {weather_updates},
           visibility_source = CASE
+            WHEN S.outcome_observed_at = T.outcome_observed_at AND T.visibility IS NOT NULL THEN T.visibility_source
             WHEN S.visibility IS NULL THEN T.visibility_source
             ELSE COALESCE(S.visibility_source, T.visibility_source)
           END,
@@ -502,13 +523,36 @@ def build_upsert_sql(destination, staging):
           (date, flight_number, flight_display_name, scheduled_time, status, wind_direction,
            wind_speed, wind_gusts, cloud_cover_low, visibility, visibility_source, status_reason,
            status_reason_category, status_reason_source, status_reason_observed_at,
-           status_reason_confidence, created_at, migrated_at)
+           status_reason_confidence, created_at, migrated_at,
+           {', '.join(name for name, _ in OUTCOME_COLUMNS)})
         VALUES
           (S.date, S.flight_number, S.flight_display_name, S.scheduled_time, S.status,
            S.wind_direction, S.wind_speed, S.wind_gusts, S.cloud_cover_low, S.visibility,
            S.visibility_source, S.status_reason, S.status_reason_category,
            S.status_reason_source, S.status_reason_observed_at, S.status_reason_confidence,
-           S.created_at, S.migrated_at)
+           S.created_at, S.migrated_at,
+           {', '.join('S.' + name for name, _ in OUTCOME_COLUMNS)})
+    """
+
+
+def build_outcome_conflict_sql(destination, staging):
+    audit = destination.rsplit('.', 1)[0] + '.' + MAINTENANCE_AUDIT_TABLE
+    return f"""
+      MERGE `{audit}` A USING (
+        SELECT TO_HEX(SHA256(CONCAT(CAST(S.date AS STRING), S.flight_number,
+          COALESCE(S.outcome_raw_run_id, ''), COALESCE(S.outcome_raw_status, ''),
+          COALESCE(CAST(S.outcome_observed_at AS STRING), ''), T.status, S.status))) AS audit_id,
+          CONCAT(CAST(S.date AS STRING), '/', S.flight_number) AS target_scope,
+          TO_JSON_STRING(STRUCT(T.status AS protected_status, S.status AS incoming_status,
+            S.outcome_raw_run_id AS raw_run_id, S.outcome_observed_at AS observed_at)) AS reason
+        FROM `{staging}` S JOIN `{destination}` T USING(date, flight_number)
+        WHERE T.outcome_locked = TRUE AND T.status IS DISTINCT FROM S.status
+      ) S ON A.audit_id = S.audit_id
+      WHEN NOT MATCHED THEN INSERT
+        (audit_id, operation, status, dry_run, target_scope, matched_count,
+         affected_count, reason, actor, created_at)
+      VALUES(S.audit_id, 'outcome_conflict', 'blocked', FALSE, S.target_scope,
+         1, 0, S.reason, 'collector', CURRENT_TIMESTAMP())
     """
 
 
@@ -519,6 +563,7 @@ def upsert_flight_weather_logs(items):
     config = settings()
     client = bigquery.Client(project=config["project"], location=config["location"])
     ensure_destination(client, config["dataset"], config["table"], config["location"])
+    ensure_collection_destinations(client, config["dataset"], config["location"])
     destination = table_path(config)
     staging = f"{config['project']}.{config['dataset']}._daily_{uuid.uuid4().hex}"
     timestamp = datetime.now(timezone.utc).isoformat()
@@ -529,12 +574,14 @@ def upsert_flight_weather_logs(items):
     )
     try:
         client.load_table_from_json(payload, staging, job_config=job_config).result()
-        client.query(build_upsert_sql(destination, staging)).result()
+        client.query(build_outcome_conflict_sql(destination, staging)).result()
+        merge_job = client.query(build_upsert_sql(destination, staging))
+        merge_job.result()
     finally:
         client.delete_table(staging, not_found_ok=True)
     fetch_history.cache_clear()
     fetch_detailed_history.cache_clear()
-    return len(payload)
+    return merge_job.num_dml_affected_rows or 0
 
 
 def cleanup_unresolved_status_rows(

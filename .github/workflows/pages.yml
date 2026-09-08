@@ -75,6 +75,29 @@ jobs:
           BIGQUERY_LOCATION: asia-northeast1
         run: python data_quality.py --format markdown --output data_quality_report.md --fail-on error
 
+      - name: Independently check collection heartbeat and outcomes
+        id: collection_health
+        continue-on-error: true
+        run: python collection_monitor.py --days 14 --output collection_health.md --fail-on-missing
+
+      - name: Report collection health without blocking forecast publication
+        if: always()
+        env:
+          HEALTH: ${{ steps.collection_health.outcome }}
+        run: |
+          if [ -f collection_health.md ]; then cat collection_health.md >> "$GITHUB_STEP_SUMMARY"; fi
+          if [ "$HEALTH" != "success" ]; then
+            echo '::warning::Collection health check failed; inspect collection_health.md and the daily collection issue.'
+          fi
+
+      - name: Upload collection heartbeat report
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: pages-collection-health
+          path: collection_health.md
+          if-no-files-found: warn
+
       - name: Add data quality report to summary
         if: always()
         run: |

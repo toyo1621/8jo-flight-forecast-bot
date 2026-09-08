@@ -1,9 +1,10 @@
 import argparse
 import json
+import math
 import os
 import time
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 import requests
 from dotenv import load_dotenv
@@ -16,6 +17,7 @@ from bigquery_storage import (
     save_raw_collection_payload,
     upsert_flight_weather_logs,
 )
+from collection_outcomes import FINAL_STATUSES, classify, resolve_date, timestamp
 from flight_metadata import VALID_STORED_STATUSES
 
 load_dotenv()
@@ -38,16 +40,7 @@ FLIGHTS_SCHEDULE = tuple(
 )
 SCHEDULE_BY_NUMBER = {flight["flight_number"]: flight for flight in FLIGHTS_SCHEDULE}
 
-STATUS_MAPPING = {
-    "odpt.FlightStatus:Normal": "運航",
-    "odpt.FlightStatus:Cancelled": "欠航",
-    "odpt.FlightStatus:Delayed": "運航",
-    "odpt.FlightStatus:Diverted": "条件付き→引返欠航",
-    "odpt.FlightStatus:Returned": "条件付き→引返欠航",
-    "odpt.FlightStatus:Conditional": "運航(条件付)",
-    "odpt.FlightStatus:Arrived": "運航",
-    "odpt.FlightStatus:EstimatedArrival": "運航",
-}
+STATUS_MAPPING = FINAL_STATUSES
 STORED_STATUSES = VALID_STORED_STATUSES
 
 
@@ -108,6 +101,10 @@ def _parse_weather_payload(payload, date_str, target_hour, visibility_source="op
     missing = [field for field, value in weather.items() if value is None]
     if missing:
         raise CollectionError(f"気象データが欠測しています: {', '.join(missing)}")
+    for field, value in weather.items():
+        limit = 360 if field == 'wind_direction' else 100 if field == 'cloud_cover_low' else float('inf')
+        if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value) or not 0 <= value <= limit:
+            raise CollectionError(f"気象値が不正です: {field}")
 
     return {
         "wind_direction": weather["wind_direction"],
@@ -175,64 +172,54 @@ def get_scheduled_flights(date_str, default_status=None):
     ]
 
 
-def _flight_date_from_odpt(flight):
-    flight_date = flight.get("odpt:flightDate")
-    if isinstance(flight_date, str) and flight_date:
-        return flight_date
-
-    created_at = flight.get("dc:date", "")
-    if isinstance(created_at, str) and created_at:
-        try:
-            parsed = datetime.fromisoformat(created_at.replace("Z", "+00:00"))
-            if parsed.tzinfo is None:
-                parsed = parsed.replace(tzinfo=JST)
-            return parsed.astimezone(JST).date().isoformat()
-        except ValueError:
-            return created_at.split("T", 1)[0]
-
-    return datetime.now(JST).strftime("%Y-%m-%d")
+def _flight_date_from_odpt(flight, fetched_at=None):
+    return resolve_date(flight, fetched_at or datetime.now(JST))[0]
 
 
-def parse_flight_data_odpt(flights, target_date=None):
+def parse_flight_data_odpt(flights, target_date=None, fetched_at=None, run_id=None, observations=None):
     if not isinstance(flights, list):
         raise CollectionError("ODPT APIの応答構造が不正です。")
 
     result = []
+    fetched_at = fetched_at or datetime.now(JST)
     for flight in flights:
+        if not isinstance(flight, dict):
+            continue
         if flight.get("odpt:originAirport") != "odpt.Airport:HND":
             continue
         raw_numbers = flight.get("odpt:flightNumber", [])
         raw_number = raw_numbers[0] if isinstance(raw_numbers, list) and raw_numbers else raw_numbers
         if not isinstance(raw_number, str):
             continue
-        flight_number = raw_number.replace("NH", "ANA", 1) if raw_number.startswith("NH") else f"ANA{raw_number}"
+        flight_number = raw_number if raw_number.startswith("ANA") else raw_number.replace("NH", "ANA", 1) if raw_number.startswith("NH") else f"ANA{raw_number}"
         if flight_number not in SCHEDULE_BY_NUMBER:
             continue
 
-        flight_date = _flight_date_from_odpt(flight)
-        if target_date and flight_date != target_date:
+        outcome = classify(flight, fetched_at)
+        if observations is not None:
+            observations.append({"flight_number": flight_number, **outcome})
+        if target_date and outcome["date"] != target_date:
             continue
-        status_raw = flight.get("odpt:flightStatus")
-        if status_raw not in STATUS_MAPPING:
-            raise CollectionError(f"{flight_number}の運航ステータスが未対応です。")
+        if outcome["outcome_state"] != "confirmed":
+            continue
         result.append(
             {
-                "date": flight_date,
+                **outcome,
                 "flight_number": flight_number,
                 "scheduled_time": flight.get("odpt:scheduledArrivalTime", ""),
-                "status": STATUS_MAPPING[status_raw],
+                "outcome_raw_run_id": run_id,
             }
         )
 
     if not result:
         date_suffix = f"（対象日: {target_date}）" if target_date else ""
-        raise CollectionError(f"ODPT APIから対象便を1件も取得できませんでした{date_suffix}。")
+        print(f"ODPT APIに確定した対象便がありません{date_suffix}。rawを保持します。")
     print(f"ODPT APIから {len(result)} 件の対象便を取得しました。")
     return result
 
 
 def get_flight_data_odpt(
-    api_key, raw_sink=None, run_id=None, attempt=1, target_date=None
+    api_key, raw_sink=None, run_id=None, attempt=1, target_date=None, observations=None
 ):
     """Fetch ANA HND-to-HAC arrival outcomes without logging the secret URL."""
     print("ODPT APIから運航実績データを取得中...")
@@ -256,32 +243,40 @@ def get_flight_data_odpt(
     except ValueError as exc:
         raise CollectionError("ODPT APIのJSON応答を解釈できません。") from exc
 
-    return parse_flight_data_odpt(flights, target_date=target_date)
+    return parse_flight_data_odpt(flights, target_date=target_date, run_id=run_id, observations=observations)
 
 
 def merge_with_daily_schedule(date_str, actual_flights):
-    """Require one valid result for every configured flight before persisting."""
+    """Keep confirmed flights independently; never manufacture missing results."""
     actual_by_number = {}
+    conflicts = set()
     for flight in actual_flights:
         flight_number = flight.get("flight_number")
         if flight.get("date") != date_str or flight_number not in SCHEDULE_BY_NUMBER:
             continue
         if flight_number in actual_by_number:
-            raise CollectionError(f"{flight_number}の運航情報が重複しています。")
+            previous = actual_by_number[flight_number]
+            old_time, new_time = timestamp(previous.get('outcome_observed_at')), timestamp(flight.get('outcome_observed_at'))
+            if old_time and new_time and old_time != new_time:
+                if new_time > old_time:
+                    actual_by_number[flight_number] = flight
+                continue
+            if previous.get('status') != flight.get('status'):
+                conflicts.add(flight_number)
+            continue
         actual_by_number[flight_number] = flight
-
-    missing = [number for number in SCHEDULE_BY_NUMBER if number not in actual_by_number]
-    if missing:
-        raise CollectionError(f"当日の運航情報が不足しています: {', '.join(missing)}")
 
     merged = []
     for scheduled in get_scheduled_flights(date_str):
-        actual = actual_by_number[scheduled["flight_number"]]
+        actual = actual_by_number.get(scheduled["flight_number"])
+        if actual is None or scheduled['flight_number'] in conflicts:
+            continue
         if actual.get("status") not in STORED_STATUSES:
             raise CollectionError(f"{scheduled['flight_number']}の運航ステータスが不正です。")
         merged.append(
             {
                 **scheduled,
+                **actual,
                 "scheduled_time": actual.get("scheduled_time") or scheduled["scheduled_time"],
                 "status": actual["status"],
             }
@@ -297,14 +292,16 @@ def get_demo_flight_data(date_str=None):
 
 
 def validate_collected_records(items):
-    if len(items) != len(FLIGHTS_SCHEDULE):
-        raise CollectionError(f"保存対象が{len(items)}件です。3便そろうまで保存しません。")
+    seen = set()
     for item in items:
+        key = (item.get("date"), item.get("flight_number"))
+        if key in seen or key[1] not in SCHEDULE_BY_NUMBER or not key[0]:
+            raise CollectionError("保存対象の日付・便番号が不正または重複しています。")
+        seen.add(key)
+        if item.get("outcome_state") not in (None, "confirmed"):
+            raise CollectionError("未確定の結果を実績へ保存できません。")
         if item.get("status") not in STORED_STATUSES:
             raise CollectionError(f"{item.get('flight_number')}の運航ステータスが不正です。")
-        missing = [field for field in REQUIRED_WEATHER_FIELDS if item.get(field) is None]
-        if missing:
-            raise CollectionError(f"{item.get('flight_number')}の気象データが欠測しています。")
 
 
 def save_collected_data(flights_with_weather):
@@ -324,7 +321,12 @@ def replay_collection_run(run_id):
     if not odpt_rows:
         raise CollectionError(f"ODPTのraw保存が見つからないrun_idです: {run_id}")
     try:
-        flights = parse_flight_data_odpt(json.loads(odpt_rows[-1]["payload_json"]))
+        raw = odpt_rows[-1]
+        fetched = raw.get("fetched_at")
+        fetched = fetched.astimezone(JST) if isinstance(fetched, datetime) else timestamp(fetched)
+        if fetched is None:
+            raise CollectionError("rawの取得時刻がないため再処理を保留します。")
+        flights = parse_flight_data_odpt(json.loads(raw["payload_json"]), fetched_at=fetched, run_id=run_id)
     except (KeyError, TypeError, ValueError, json.JSONDecodeError) as exc:
         raise CollectionError(f"ODPTのraw保存を再生できません: {run_id}") from exc
 
@@ -335,8 +337,6 @@ def replay_collection_run(run_id):
     weather_rows = [
         row for row in raw_rows if row["source"] in {"open_meteo_forecast", "open_meteo_archive"}
     ]
-    if not weather_rows:
-        raise CollectionError(f"気象のraw保存が見つからないrun_idです: {run_id}")
 
     merged = merge_with_daily_schedule(date_str, flights)
     completed = []
@@ -353,13 +353,19 @@ def replay_collection_run(run_id):
                 break
             except (CollectionError, KeyError, TypeError, ValueError, json.JSONDecodeError):
                 continue
-        if weather is None:
-            raise CollectionError(f"{flight['flight_number']}の気象raw保存を再生できません。")
-        item = {**flight, **weather}
+        item = {**flight, **(weather or {})}
         if item["status"] in {"欠航", "条件付き→引返欠航"}:
             item["status_reason"] = item.get("status_reason") or UNKNOWN_REASON
         completed.append(item)
-    return save_collected_data(completed)
+    count = save_collected_data(completed)
+    record_collection_run(
+        f"replay-{run_id}-{uuid.uuid4().hex}", date_str,
+        "succeeded" if len(completed) == 3 else "partial",
+        completed_at=datetime.now(timezone.utc).isoformat(), rows_written=count,
+        source_status={"replay_raw_run_id": run_id, "confirmed_flights": len(completed),
+                       "weather_complete": sum(all(r.get(k) is not None for k in REQUIRED_WEATHER_FIELDS) for r in completed)},
+    )
+    return count
 
 
 def main():
@@ -384,7 +390,7 @@ def main():
     parser.add_argument(
         "--date",
         dest="target_date",
-        help="収集対象日をYYYY-MM-DDで指定する（未指定時はJSTの当日）",
+        help="収集対象日をYYYY-MM-DDで固定する（未指定時はJSTの当日・前日）",
     )
     args = parser.parse_args()
 
@@ -428,6 +434,9 @@ def main():
 
     api_key = os.getenv("ODPT_API_KEY")
     target_date = args.target_date or datetime.now(JST).strftime("%Y-%m-%d")
+    target_dates = [target_date] if args.target_date else [
+        (datetime.strptime(target_date, "%Y-%m-%d").replace(tzinfo=JST) - timedelta(days=1)).date().isoformat(), target_date,
+    ]
 
     if args.demo:
         flights = get_demo_flight_data(target_date)
@@ -447,7 +456,7 @@ def main():
         raise RuntimeError("ODPT_API_KEYが未設定です。")
 
     run_id = uuid.uuid4().hex
-    attempt = 1
+    attempt = int(os.getenv("GITHUB_RUN_ATTEMPT", "1"))
     started_at = datetime.now(timezone.utc).isoformat()
     raw_rows = 0
     source_status = {
@@ -470,40 +479,36 @@ def main():
 
     tracking_started = False
     try:
-        record_collection_run(
-            run_id,
-            target_date,
-            "started",
-            attempt=attempt,
-            started_at=started_at,
-            source_status=source_status,
-        )
+        for day in target_dates:
+            record_collection_run(run_id, day, "started", attempt=attempt,
+                                  started_at=started_at, source_status=source_status)
         tracking_started = True
-        flights = merge_with_daily_schedule(
-            target_date,
-            get_flight_data_odpt(
+        observations = []
+        actual = get_flight_data_odpt(
                 api_key,
-                target_date=target_date,
+                target_date=args.target_date,
                 raw_sink=raw_sink,
                 run_id=run_id,
                 attempt=attempt,
-            ),
+                observations=observations,
         )
+        flights = [flight for day in target_dates for flight in merge_with_daily_schedule(day, actual)]
+        source_status["observations"] = observations
         source_status["odpt_flight_information_arrival"] = "succeeded"
 
         completed = []
         for flight in flights:
-            weather = get_weather_data(
-                flight["date"],
-                flight["scheduled_time"],
-                target_hour=flight["target_hour"],
-                raw_sink=raw_sink,
-                run_id=run_id,
-                attempt=attempt,
-            )
+            try:
+                weather = get_weather_data(
+                    flight["date"], flight["scheduled_time"], target_hour=flight["target_hour"],
+                    raw_sink=raw_sink, run_id=run_id, attempt=attempt,
+                )
+            except CollectionError:
+                weather = {}
+                source_status[f"weather:{flight['date']}:{flight['flight_number']}"] = "missing"
             item = {**flight, **weather}
             weather_source = weather.get("visibility_source", "open_meteo_forecast")
-            source_status[weather_source] = "succeeded"
+            source_status[weather_source] = "succeeded" if weather else "missing"
             if weather_source == "open_meteo_archive":
                 source_status["open_meteo_forecast"] = "fallback"
             if item["status"] in {"欠航", "条件付き→引返欠航"}:
@@ -511,42 +516,37 @@ def main():
             completed.append(item)
 
         validate_collected_records(completed)
-        saved_count = save_collected_data(completed)
-        record_collection_run(
-            run_id,
-            target_date,
-            "succeeded",
-            attempt=attempt,
-            started_at=started_at,
-            completed_at=datetime.now(timezone.utc).isoformat(),
-            rows_written=saved_count,
-            raw_rows=raw_rows,
-            source_status=source_status,
-        )
+        for day in target_dates:
+            day_rows = [row for row in completed if row["date"] == day]
+            saved_count = save_collected_data(day_rows) if day_rows else 0
+            record_collection_run(
+                run_id, day, "succeeded" if len(day_rows) == 3 else "partial",
+                attempt=attempt, started_at=started_at,
+                completed_at=datetime.now(timezone.utc).isoformat(), rows_written=saved_count,
+                raw_rows=raw_rows, source_status={**source_status,
+                    "confirmed_flights": len(day_rows),
+                    "missing_flights": [n for n in SCHEDULE_BY_NUMBER if n not in {r['flight_number'] for r in day_rows}],
+                    "weather_complete": sum(all(r.get(k) is not None for k in REQUIRED_WEATHER_FIELDS) for r in day_rows)},
+            )
         print("データ自動収集処理が完了しました。")
     except Exception as exc:
         if tracking_started:
             source_status = {
                 source: (
                     status
-                    if status in {"succeeded", "fallback"}
+                    if isinstance(status, str) and status in {"succeeded", "fallback"}
                     else "failed"
                 )
                 for source, status in source_status.items()
             }
             try:
-                record_collection_run(
-                    run_id,
-                    target_date,
-                    "failed",
-                    attempt=attempt,
-                    started_at=started_at,
-                    completed_at=datetime.now(timezone.utc).isoformat(),
-                    error_code=exc.__class__.__name__,
-                    error_message=str(exc)[:500],
-                    raw_rows=raw_rows,
-                    source_status=source_status,
-                )
+                for day in target_dates:
+                    record_collection_run(
+                        run_id, day, "failed", attempt=attempt, started_at=started_at,
+                        completed_at=datetime.now(timezone.utc).isoformat(),
+                        error_code=exc.__class__.__name__, error_message="Collection failed; inspect source status and raw reference",
+                        raw_rows=raw_rows, source_status=source_status,
+                    )
             except Exception:  # noqa: BLE001 - preserve the original collection failure
                 print("収集失敗の記録にも失敗しました。")
         raise

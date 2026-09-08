@@ -2,11 +2,20 @@ name: Daily Flight & Weather Data Collection
 
 on:
   schedule:
-    # 毎日日本時間 21:00 (UTC 12:00) に自動実行
-    # 最終便の運航ステータス確定後にデータを回収します
-    - cron: '0 12 * * *'
+    # JST 09:23, 14:23, 18:23, 21:23. Unconfirmed observations stay in raw.
+    - cron: '23 0,5,9,12 * * *'
   workflow_dispatch:
     inputs:
+      target_date:
+        description: 対象日を固定（YYYY-MM-DD、空欄は当日と前日）
+        required: false
+        default: ""
+        type: string
+      replay_run_id:
+        description: rawを再処理するrun_id（target_dateとは併用不可）
+        required: false
+        default: ""
+        type: string
       cleanup_only:
         description: 未取得・未対応ステータス行の件数確認だけを実行する（既定はdry-run）
         required: false
@@ -39,6 +48,8 @@ concurrency:
 
 jobs:
   collect-data:
+    outputs:
+      collected: ${{ steps.collect.outcome }}
     runs-on: ubuntu-latest
     timeout-minutes: 20
 
@@ -61,7 +72,12 @@ jobs:
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install -r requirements.txt -c requirements.lock
+          pip install -r requirements-dev.txt -c requirements.lock
+
+      - name: Test collector before any production writes
+        run: |
+          python -m pytest -q
+          python -m ruff check .
 
       - name: Authenticate to Google Cloud
         uses: google-github-actions/auth@7c6bc770dae815cd3e89ee6cdf493a5fab2cc093 # v3
@@ -72,15 +88,21 @@ jobs:
       # 5. データ収集スクリプトの実行
       # GitHub Secrets に登録した ODPT_API_KEY を環境変数に渡します
       - name: Run data collector
+        id: collect
         if: ${{ github.event_name != 'workflow_dispatch' || inputs.cleanup_only != true }}
         env:
           ODPT_API_KEY: ${{ secrets.ODPT_API_KEY }}
+          TARGET_DATE: ${{ inputs.target_date }}
+          REPLAY_RUN_ID: ${{ inputs.replay_run_id }}
           GCP_PROJECT_ID: hachijo-flight-forecast
           BIGQUERY_DATASET: flight_forecast
           BIGQUERY_TABLE: flight_weather_logs
           BIGQUERY_LOCATION: asia-northeast1
         run: |
-          python data_collector.py
+          args=()
+          if [ -n "$TARGET_DATE" ]; then args+=(--date "$TARGET_DATE"); fi
+          if [ -n "$REPLAY_RUN_ID" ]; then args+=(--replay-run-id "$REPLAY_RUN_ID"); fi
+          python data_collector.py "${args[@]}"
 
       - name: Inspect or clean unresolved BigQuery rows
         if: ${{ github.event_name == 'workflow_dispatch' && inputs.cleanup_only == true }}
@@ -170,4 +192,18 @@ jobs:
           name: collection-coverage-report
           path: collection_coverage_report.md
           if-no-files-found: ignore
+
+  republish:
+    needs: collect-data
+    if: ${{ always() && needs.collect-data.outputs.collected == 'success' && github.ref == 'refs/heads/main' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    permissions:
+      actions: write
+    steps:
+      - name: Republish outcomes through existing Pages quality gates
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: gh workflow run pages.yml --ref main
 

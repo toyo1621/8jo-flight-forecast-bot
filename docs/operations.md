@@ -14,7 +14,7 @@ CI、Pages公開、日次収集、週次評価は`requirements.lock`をconstrain
 ## 定常監視
 
 - `Deploy forecast site to Pages`: 同じSHAのpytest/ruff、生成・検証・公開確認、Data Quality Reportが成功していること
-- `Daily Flight & Weather Data Collection`: 毎日21:00 JSTの3便収集が成功していること
+- `Daily Flight & Weather Data Collection`: JST 09:23・14:23・18:23・21:23に収集。便別確定結果・気象欠測・未実行を別に確認すること
 - `CodeQL`と`CI`: mainとPull Requestの検査が成功していること
 - [公開サイト](https://toyo1621.github.io/8jo-flight-forecast-bot/): 予報データ取得時刻、11日分の表示、詳細ダイアログを確認すること
 - フッターの`過去7日間のアクセス数`: Cloudflare Web Analyticsのページビュー集計が更新されていること
@@ -56,7 +56,7 @@ JMA主予報の取得に失敗した場合、7時間以内のキャッシュが�
 
 ## ODPT・日次収集障害
 
-取得失敗、対象3便不足、未対応ステータス、気象欠測では運航実績本表を更新しません。失敗を欠航へ変換しないでください。各APIの応答はAPIキー等を除去して`flight_collection_raw`へ保存し、runの開始・成功・失敗を`collection_runs`へ記録します。
+取得失敗・未確定ステータス・日付不明の情報を運航実績へ変換しません。確定した便から保存し、気象取得失敗では結果を捨てません。rawは秘匿情報除去後に保存し、runの開始・成功・部分取得・失敗を記録します。新スキーマを先に移行してください。[移行・保護・復旧手順](collection_outcomes.md)
 
 一時的なHTTPエラー・タイムアウトは指数バックオフで最大3回再試行します。raw保存済みrunを再処理する場合は、BigQuery認証後に次を実行します。
 
