@@ -82,7 +82,8 @@ def test_odpt_transient_failure_is_retried_and_raw_payload_can_be_captured():
         {
             "odpt:originAirport": "odpt.Airport:HND",
             "odpt:flightNumber": ["NH1891"],
-            "odpt:flightStatus": "odpt.FlightStatus:Normal",
+            "odpt:flightStatus": "odpt.FlightStatus:Arrived",
+            "dc:date": "2026-07-15T18:00:00+09:00",
             "odpt:flightDate": "2026-07-15",
         }
     ]
@@ -110,13 +111,15 @@ def test_odpt_request_uses_supported_filters_and_applies_target_date_locally():
         {
             "odpt:originAirport": "odpt.Airport:HND",
             "odpt:flightNumber": ["NH1891"],
-            "odpt:flightStatus": "odpt.FlightStatus:Normal",
+            "odpt:flightStatus": "odpt.FlightStatus:Arrived",
+            "odpt:flightDate": "2026-07-15",
             "dc:date": "2026-07-15T12:00:00+09:00",
         },
         {
             "odpt:originAirport": "odpt.Airport:HND",
             "odpt:flightNumber": ["NH1893"],
-            "odpt:flightStatus": "odpt.FlightStatus:Normal",
+            "odpt:flightStatus": "odpt.FlightStatus:Arrived",
+            "odpt:flightDate": "2026-07-16",
             "dc:date": "2026-07-16T12:00:00+09:00",
         }
     ]
@@ -134,7 +137,8 @@ def test_replay_collection_run_rebuilds_rows_from_raw_payloads():
         {
             "odpt:originAirport": "odpt.Airport:HND",
             "odpt:flightNumber": [f"NH{number[3:]}"],
-            "odpt:flightStatus": "odpt.FlightStatus:Normal",
+            "odpt:flightStatus": "odpt.FlightStatus:Arrived",
+            "dc:date": "2026-07-15T18:00:00+09:00",
             "odpt:flightDate": "2026-07-15",
         }
         for number in ("ANA1891", "ANA1893", "ANA1895")
@@ -152,6 +156,7 @@ def test_replay_collection_run_rebuilds_rows_from_raw_payloads():
     raw_rows = [
         {
             "source": "odpt_flight_information_arrival",
+            "fetched_at": "2026-07-15T18:01:00+09:00",
             "payload_json": json.dumps(odpt_payload),
         },
         {
@@ -163,6 +168,7 @@ def test_replay_collection_run_rebuilds_rows_from_raw_payloads():
     with (
         patch("data_collector.load_raw_collection_payloads", return_value=raw_rows),
         patch("data_collector.save_collected_data", return_value=3) as save,
+        patch("data_collector.record_collection_run"),
     ):
         result = replay_collection_run("run-1")
 
@@ -171,11 +177,11 @@ def test_replay_collection_run_rebuilds_rows_from_raw_payloads():
     assert len(save.call_args.args[0]) == 3
 
 
-def test_incomplete_daily_flights_are_not_merged_for_storage():
+def test_incomplete_daily_flights_preserve_available_results():
     flights = [_actual_flight("ANA1891"), _actual_flight("ANA1893")]
 
-    with pytest.raises(CollectionError, match="ANA1895"):
-        merge_with_daily_schedule("2026-07-15", flights)
+    result = merge_with_daily_schedule("2026-07-15", flights)
+    assert [row['flight_number'] for row in result] == ['ANA1891', 'ANA1893']
 
 
 def test_complete_daily_flights_keep_shared_forecast_hours():
@@ -186,12 +192,12 @@ def test_complete_daily_flights_keep_shared_forecast_hours():
     assert [flight["target_hour"] for flight in merged] == [8, 13, 17]
 
 
-def test_missing_weather_prevents_entire_batch_from_being_saved():
+def test_missing_weather_does_not_discard_confirmed_outcomes():
     records = [_complete_record(number) for number in ("ANA1891", "ANA1893", "ANA1895")]
     records[1]["visibility"] = None
 
-    with pytest.raises(CollectionError, match="ANA1893"):
-        validate_collected_records(records)
+    validate_collected_records(records)
+    assert records[1]['visibility'] is None
 
 
 def test_cleanup_only_does_not_call_external_apis(monkeypatch):
@@ -226,7 +232,7 @@ def test_collection_failure_does_not_write_bigquery(monkeypatch):
         main()
 
     save.assert_not_called()
-    assert record_run.call_count == 2
+    assert record_run.call_count == 4  # started/failed for today and yesterday
     assert record_run.call_args_list[-1].args[2] == "failed"
 
 

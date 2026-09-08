@@ -1,4 +1,5 @@
 import argparse
+import json
 import os
 from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
@@ -39,7 +40,7 @@ def _stable_record_key(record):
 def _event_key(record):
     completed_at = record.get("completed_at")
     event_time = completed_at or record.get("created_at") or record.get("started_at")
-    status_rank = {"succeeded": 2, "failed": 1, "started": 0}.get(
+    status_rank = {"succeeded": 3, "failed": 2, "partial": 1, "started": 0}.get(
         record.get("status"), 0
     )
     try:
@@ -72,7 +73,7 @@ def aggregate_collection_runs(records, expected_flights=3, observed_flight_count
             attempt = int(record.get("attempt") or 0)
         except (TypeError, ValueError):
             attempt = 0
-        by_run.setdefault((run_id, attempt), []).append(record)
+        by_run.setdefault((run_id, attempt, str(record.get("target_date"))), []).append(record)
 
     final_runs = []
     for events in by_run.values():
@@ -92,7 +93,9 @@ def aggregate_collection_runs(records, expected_flights=3, observed_flight_count
             rows_written = int(final.get("rows_written"))
         except (TypeError, ValueError):
             rows_written = 0
-        if final.get("status") == "succeeded" and rows_written >= expected_flights:
+        if final.get("status") in {"succeeded", "partial"} and observed_count is not None and observed_count >= expected_flights:
+            state = "succeeded"
+        elif final.get("status") == "succeeded" and rows_written >= expected_flights:
             state = (
                 "data_missing"
                 if observed_count is not None and observed_count < expected_flights
@@ -104,10 +107,12 @@ def aggregate_collection_runs(records, expected_flights=3, observed_flight_count
                 if observed_count is not None and observed_count < expected_flights
                 else "data_incomplete"
             )
-        elif observed_count is not None and observed_count >= expected_flights:
-            state = "success_record_missing"
         elif final.get("status") == "failed":
             state = "run_failed"
+        elif observed_count is not None and observed_count >= expected_flights:
+            state = "success_record_missing"
+        elif final.get("status") == "partial":
+            state = "data_incomplete"
         else:
             state = "started_without_completion"
         states[target] = {
@@ -184,7 +189,9 @@ def coverage_summary(
     collection_states = {}
     for target in expected:
         state = states.get(target)
-        if state:
+        if target == current.date() and current.hour < 21 and (not state or state["state"] in {"data_incomplete", "data_missing"}):
+            collection_states[target.isoformat()] = "not_due"
+        elif state:
             collection_states[target.isoformat()] = state["state"]
         elif target == current.date() and current.hour < 21:
             collection_states[target.isoformat()] = "not_due"
@@ -229,7 +236,7 @@ def fetch_collection_runs(today=None, days=14):
     query = f"""
         SELECT CAST(target_date AS STRING) AS target_date,
                status, rows_written, attempt, run_id, error_code, started_at
-               , completed_at, created_at
+               , completed_at, created_at, source_status_json
         FROM `{_collection_table_path(RUNS_TABLE, config)}`
         WHERE target_date BETWEEN '{start}' AND '{end}'
     """
@@ -245,12 +252,35 @@ def fetch_observed_flight_counts(today=None, days=14):
                COUNT(DISTINCT flight_number) AS flight_count
         FROM `{_collection_table_path(config['table'], config)}`
         WHERE date BETWEEN '{expected[0]}' AND '{expected[-1]}'
+          AND (outcome_state = 'confirmed' OR outcome_locked = TRUE
+               OR (outcome_state IS NULL AND date < DATE '2026-09-09'))
+          AND flight_number IN ('ANA1891', 'ANA1893', 'ANA1895')
         GROUP BY date
     """
     return {
         row["target_date"]: int(row["flight_count"])
         for row in client.query(query).result()
     }
+
+
+def fetch_outcome_details(days=14):
+    expected = expected_collection_dates(days=days)
+    config = settings()
+    client = bigquery.Client(project=config["project"], location=config["location"])
+    rows = client.query(f"""
+        SELECT CAST(date AS STRING) AS date, flight_number,
+          outcome_state, outcome_locked,
+          wind_direction IS NOT NULL AND wind_speed IS NOT NULL
+            AND wind_gusts IS NOT NULL AND cloud_cover_low IS NOT NULL
+            AND visibility IS NOT NULL AS weather_complete
+        FROM `{_collection_table_path(config['table'], config)}`
+        WHERE date BETWEEN '{expected[0]}' AND '{expected[-1]}'
+    """).result()
+    conflicts = client.query(f"""
+        SELECT target_scope, reason FROM `{_collection_table_path('maintenance_audit', config)}`
+        WHERE operation = 'outcome_conflict' AND created_at >= TIMESTAMP_SUB(CURRENT_TIMESTAMP(), INTERVAL 1 DAY)
+    """).result()
+    return list(rows), list(conflicts)
 
 
 def format_report(
@@ -321,6 +351,7 @@ def main():
     current_time = datetime.now(JST)
     records = fetch_collection_runs(days=args.days)
     observed_flight_counts = fetch_observed_flight_counts(days=args.days)
+    details, conflicts = fetch_outcome_details(days=args.days)
     missing = find_missing_collection_days(
         records,
         days=args.days,
@@ -336,10 +367,31 @@ def main():
         current_time=current_time,
         monitoring_start_date=os.getenv("COLLECTION_MONITOR_START_DATE"),
     )
+    report += "\n\n## 便別の確定結果・気象\n"
+    by_key = {(str(row['date']), row['flight_number']): row for row in details}
+    for day in expected_collection_dates(days=args.days):
+        for number in ('ANA1891', 'ANA1893', 'ANA1895'):
+            row = by_key.get((day.isoformat(), number))
+            state = 'missing' if row is None else ('confirmed' if row['outcome_locked'] else row['outcome_state'] or 'legacy')
+            weather = 'complete' if row and row['weather_complete'] else 'missing'
+            report += f"- {day} {number}: result={state}, weather={weather}\n"
+    if conflicts:
+        report += "\n## 管理者訂正との競合（自動更新は拒否）\n"
+        report += '\n'.join(f"- {r['target_scope']}: {r['reason']}" for r in conflicts)
+    latest_completed = max((_timestamp(r.get('completed_at')) for r in records if r.get('completed_at')), default=None)
+    stale = latest_completed is None or current_time - latest_completed > timedelta(hours=26)
+    report += f"\n\n収集処理の最終完了: {latest_completed}; 26時間以上停止: {stale}\n"
+    for record in records:
+        try:
+            source = json.loads(record.get('source_status_json') or '{}')
+        except (ValueError, TypeError):
+            continue
+        if source.get('missing_flights'):
+            report += f"\nrun {record.get('run_id')} / {record.get('target_date')}: 未確定 {source['missing_flights']}\n"
     if args.output:
         args.output.write_text(report + "\n", encoding="utf-8")
     print(report)
-    if missing and args.fail_on_missing:
+    if (missing or conflicts or stale) and args.fail_on_missing:
         raise SystemExit(1)
 
 

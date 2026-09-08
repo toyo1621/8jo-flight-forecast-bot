@@ -167,3 +167,26 @@ def test_collection_monitor_does_not_fail_before_due_time_or_before_monitoring_s
         current_time=datetime(2026, 8, 25, 10, 0, tzinfo=timezone(timedelta(hours=9))),
         monitoring_start_date="2026-08-25",
     ) == []
+
+
+def test_one_run_tracks_two_dates_independently():
+    records = [{'run_id': 'one', 'attempt': 1, 'target_date': day, 'status': 'partial', 'rows_written': 0}
+               for day in ['2026-09-07', '2026-09-08']]
+    states = aggregate_collection_runs(records, observed_flight_counts={'2026-09-07': 3, '2026-09-08': 1})
+    assert states[date(2026, 9, 7)]['state'] == 'succeeded'
+    assert states[date(2026, 9, 8)]['state'] == 'data_incomplete'
+
+
+def test_partial_before_due_does_not_hide_actual_run_failure():
+    now = datetime(2026, 9, 8, 14, tzinfo=timezone(timedelta(hours=9)))
+    for status, expected in [('partial', 'not_due'), ('failed', 'run_failed')]:
+        result = coverage_summary([{'run_id': 'x', 'target_date': '2026-09-08', 'status': status}],
+                                  today=now.date(), days=1, current_time=now)
+        assert result['collection_states']['2026-09-08'] == expected
+
+
+def test_existing_results_do_not_hide_failed_fetch():
+    states = aggregate_collection_runs([
+        {'run_id': 'x', 'target_date': '2026-09-08', 'status': 'failed'}
+    ], observed_flight_counts={'2026-09-08': 3})
+    assert states[date(2026, 9, 8)]['state'] == 'run_failed'

@@ -10,6 +10,13 @@ PREDICTION_SNAPSHOT_TABLE = "prediction_snapshots"
 PREDICTION_PUBLICATION_TABLE = "prediction_publications"
 DEFAULT_LOCATION = "asia-northeast1"
 
+OUTCOME_COLUMNS = (
+    ("outcome_state", "STRING"), ("outcome_source", "STRING"),
+    ("outcome_observed_at", "TIMESTAMP"), ("outcome_raw_run_id", "STRING"),
+    ("outcome_raw_status", "STRING"), ("outcome_date_basis", "STRING"),
+    ("outcome_locked", "BOOLEAN"),
+)
+
 SCHEMA = (
     bigquery.SchemaField("date", "DATE", mode="REQUIRED"),
     bigquery.SchemaField("flight_number", "STRING", mode="REQUIRED"),
@@ -29,7 +36,7 @@ SCHEMA = (
     bigquery.SchemaField("status_reason_confidence", "FLOAT"),
     bigquery.SchemaField("created_at", "TIMESTAMP"),
     bigquery.SchemaField("migrated_at", "TIMESTAMP", mode="REQUIRED"),
-)
+) + tuple(bigquery.SchemaField(name, kind) for name, kind in OUTCOME_COLUMNS)
 
 RAW_SCHEMA = (
     bigquery.SchemaField("run_id", "STRING", mode="REQUIRED"),

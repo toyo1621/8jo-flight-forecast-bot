@@ -279,6 +279,7 @@ def test_normalize_item_rejects_unresolved_status():
 
 def test_upsert_merge_preserves_valid_values_and_known_reason():
     client = Mock(project="hachijo-flight-forecast")
+    client.query.return_value.num_dml_affected_rows = 1
     client.load_table_from_json.return_value.result.return_value = None
     client.query.return_value.result.return_value = None
     item = {
@@ -298,9 +299,17 @@ def test_upsert_merge_preserves_valid_values_and_known_reason():
         assert bigquery_storage.upsert_flight_weather_logs([item]) == 1
 
     merge_sql = client.query.call_args.args[0]
-    assert "wind_direction = COALESCE(S.wind_direction, T.wind_direction)" in merge_sql
-    assert "wind_speed = COALESCE(S.wind_speed, T.wind_speed)" in merge_sql
+    assert "ELSE COALESCE(S.wind_direction, T.wind_direction) END" in merge_sql
+    assert "ELSE COALESCE(S.wind_speed, T.wind_speed) END" in merge_sql
+    assert "THEN COALESCE(T.wind_speed, S.wind_speed)" in merge_sql
     assert "S.status_reason IS NULL OR S.status_reason = '未確認'" in merge_sql
+    assert 'NOT COALESCE(T.outcome_locked, FALSE)' in merge_sql
+    assert "S.outcome_state = 'confirmed'" in merge_sql
+    assert 'S.outcome_observed_at > T.outcome_observed_at' in merge_sql
+    conflict_sql = client.query.call_args_list[-2].args[0]
+    assert "'outcome_conflict'" in conflict_sql
+    assert 'T.outcome_locked = TRUE' in conflict_sql
+    assert 'WHEN NOT MATCHED THEN INSERT' in conflict_sql
     client.delete_table.assert_called_once()
 
 
@@ -333,9 +342,8 @@ def test_demo_data_is_only_created_explicitly():
 
 def test_odpt_arrival_statuses_count_as_operated():
     assert STATUS_MAPPING["odpt.FlightStatus:Arrived"] == "運航"
-    assert STATUS_MAPPING["odpt.FlightStatus:EstimatedArrival"] == "運航"
-    assert STATUS_MAPPING["odpt.FlightStatus:Delayed"] == "運航"
-    assert STATUS_MAPPING["odpt.FlightStatus:Conditional"] == "運航(条件付)"
+    for pending in ("EstimatedArrival", "Delayed", "Conditional", "Normal"):
+        assert f"odpt.FlightStatus:{pending}" not in STATUS_MAPPING
     assert STATUS_MAPPING["odpt.FlightStatus:Diverted"] == "条件付き→引返欠航"
     assert STATUS_MAPPING["odpt.FlightStatus:Returned"] == "条件付き→引返欠航"
 

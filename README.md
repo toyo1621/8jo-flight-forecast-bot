@@ -58,7 +58,7 @@ GitHub Actionsが次の処理を行います。
 5. `build_static.py`でHTMLとCSSを`dist/`へ生成
 6. GitHub Pagesへデプロイ
 
-日次収集では、ODPT・気象APIのraw応答を秘匿情報除去後にBigQueryへ保存し、収集runの成功・失敗と欠損日を記録します。失敗時は本表へ不完全な行を保存せず、raw保存済みrunを`python data_collector.py --replay-run-id <run_id>`で再生できます。
+収集ではODPT・気象APIのraw応答を秘匿情報除去後にBigQueryへ保存し、便ごとの確定結果だけを本表へ保存します。未確定・日付不明の情報は実績にしません。気象欠測でも確定結果は保持します。移行と運用は[収集結果の整合性](docs/collection_outcomes.md)を参照してください。
 
 Pagesの静的生成時には、JMA・GFS・ECMWFの各統計参考値と予測時点のデータ来歴を、内容ハッシュで重複排除した不変レコードとしてBigQueryの`prediction_snapshots`へ保存します。HTML生成前の行は`prediction_publications`で`candidate`として記録し、公開URLのHTTP応答とartifact IDを確認できた行だけを`published`へ更新します。取得時刻が分からない旧データは`unknown`として、後続の時系列評価で現在の予報と混ぜません。
 
@@ -234,7 +234,7 @@ python data_collector.py --demo
 python data_collector.py
 ```
 
-通常収集は、当日の対象3便すべての確定ステータスと必要な気象項目が揃った場合だけBigQueryへ保存します。ODPT・Open-Meteoの取得失敗、未対応ステータス、欠測、便数不足では1行も更新しません。既存行の気象値は、再取得値が`NULL`でも上書きされません。
+通常収集は当日・前日の対象便を照合し、日付と確定状態を検証できた便から保存します。予定・遅延中を運航実績へ変換しません。気象取得失敗は運航結果と独立に記録し、既存気象値をNULLで上書きしません。管理者訂正は保護し、競合は監査記録へ残します。JST 09:23・14:23・18:23・21:23に収集します（GitHubの遅延・実行抜けはあり得ます）。
 
 過去に保存された未取得・未対応ステータス行だけを削除する場合:
 
