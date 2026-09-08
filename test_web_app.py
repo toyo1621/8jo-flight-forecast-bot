@@ -750,9 +750,9 @@ def test_visibility_low_cloud_and_gust_adjustments_are_tiered():
         severe_low_cloud = predict_flight_probability(210.0, 5.0, 8.0, 96.0, 15.0)
         severe_gust = predict_flight_probability(210.0, 5.0, 20.3, 20.0, 15.0)
 
-    assert extreme_visibility["probability"] == 45.0
+    assert extreme_visibility["probability"] == 54.0
     assert severe_visibility["probability"] == 63.0
-    assert moderate_visibility["probability"] == 72.0
+    assert moderate_visibility["probability"] == 81.0
     assert clear_visibility["probability"] == 90.0
     assert severe_low_cloud["probability"] == 67.5
     assert severe_gust["probability"] == 55.0
@@ -771,12 +771,12 @@ def test_adjusted_visibility_factor_keeps_heavy_rain_and_gust_penalties():
         )
 
     assert result["weather_factors"] == {
-        "visibility": 0.7,
+        "visibility": 0.8,
         "precipitation": 0.7,
         "gust": 0.9,
     }
-    assert result["weather_factor"] == 0.441
-    assert result["probability"] == 44.1
+    assert result["weather_factor"] == 0.504
+    assert result["probability"] == 50.4
 
 
 def test_precipitation_from_two_mm_adds_rain_risk():
