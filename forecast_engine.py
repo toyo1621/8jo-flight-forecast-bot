@@ -13,6 +13,8 @@ from app_config import (
     LOW_CLOUD_RISK_PERCENT,
     MAX_PROBABILITY,
     MIN_MATCHING_HISTORY_ROWS,
+    MODERATE_VISIBILITY_PROBABILITY_MULTIPLIER,
+    MODERATE_VISIBILITY_RISK_KM,
     PRECIPITATION_PROBABILITY_MULTIPLIER,
     PRECIPITATION_RISK_MM,
     SEVERE_GUST_PROBABILITY_MULTIPLIER,
@@ -235,14 +237,20 @@ def predict_flight_probability(
     if visibility is not None and visibility < VISIBILITY_RISK_KM:
         if visibility < EXTREME_VISIBILITY_RISK_KM:
             factor = EXTREME_VISIBILITY_PROBABILITY_MULTIPLIER
+            label = "特大"
         elif visibility < SEVERE_VISIBILITY_RISK_KM:
             factor = SEVERE_VISIBILITY_PROBABILITY_MULTIPLIER
+            label = "大"
+        elif visibility < MODERATE_VISIBILITY_RISK_KM:
+            factor = MODERATE_VISIBILITY_PROBABILITY_MULTIPLIER
+            label = "中"
         else:
             factor = VISIBILITY_PROBABILITY_MULTIPLIER
+            label = "小"
         prob *= factor
         weather_factor *= factor
         weather_factors["visibility"] = factor
-        warnings.append(f"視程不良リスク ({visibility} km)")
+        warnings.append(f"視程不良リスク{label}（{visibility:g}km）")
 
     if precipitation is not None and precipitation >= PRECIPITATION_RISK_MM:
         if precipitation >= SEVERE_PRECIPITATION_RISK_MM:
