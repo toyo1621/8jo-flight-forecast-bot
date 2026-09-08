@@ -1,3 +1,5 @@
+import json
+import math
 from collections import defaultdict
 from datetime import date, datetime
 
@@ -10,6 +12,53 @@ MODEL_LABELS = {
     "ecmwf_ifs025": "ECMWF",
 }
 WEEKDAYS = "月火水木金土日"
+
+WEATHER_FIELDS = (
+    ("wind_direction", "風向", "°"), ("wind_speed", "平均風速", "m/s"),
+    ("wind_gusts", "最大瞬間風速", "m/s"), ("visibility", "視程", "km"),
+    ("cloud_cover_low", "低層雲量", "%"), ("precipitation", "降水量", "mm/h"),
+)
+
+
+def _object(value):
+    if isinstance(value, str):
+        try:
+            value = json.loads(value)
+        except (ValueError, TypeError):
+            return {}
+    return value if isinstance(value, dict) else {}
+
+
+def _weather_details(primary, outcome):
+    payload = _object(primary.get("weather_json"))
+    weather = _object(payload.get("weather", payload))
+    def cells(values):
+        result = []
+        for key, label, unit in WEATHER_FIELDS:
+            value = values.get(key)
+            valid = isinstance(value, (int, float)) and not isinstance(value, bool)
+            valid = valid and math.isfinite(value) and value >= 0
+            result.append({"label": label, "value": f"{value:g} {unit}" if valid else "記録なし"})
+        return result
+    breakdown = _object(primary.get("factor_breakdown_json"))
+    names = {"visibility": "視程", "southerly": "南風", "wind": "強風",
+             "gust": "突風", "low_cloud": "低層雲", "precipitation": "降水"}
+    factors = []
+    for key, value in _object(breakdown.get("weather_factors")).items():
+        if isinstance(value, (int, float)) and not isinstance(value, bool) and math.isfinite(value):
+            factors.append(f"{names.get(key, key)} ×{value:g}")
+    typhoon = breakdown.get("typhoon_factor")
+    if isinstance(typhoon, (int, float)) and not isinstance(typhoon, bool) and math.isfinite(typhoon):
+        factors.append(f"台風 ×{typhoon:g}")
+    return {
+        "forecast": cells(weather),
+        "collected": cells({key: outcome.get(f"collected_{key}") for key, _, _ in WEATHER_FIELDS}),
+        "valid_at": _format_timestamp(primary.get("weather_valid_at")),
+        "retrieved_at": _format_timestamp(primary.get("weather_retrieved_at")),
+        "provider": primary.get("provider") or "出所記録なし",
+        "config_version": primary.get("config_version") or "記録なし",
+        "factors": " ／ ".join(factors) or "個別係数の記録なし",
+    }
 
 
 def _iso_date(value):
@@ -102,6 +151,11 @@ def build_archive_days(rows):
                     "outcome": outcome,
                     "outcome_reason": outcome_row.get("status_reason"),
                     "outcome_confirmed": outcome in OPERATED_STATUSES | NON_OPERATED_STATUSES,
+                    "outcome_class": "operated" if outcome in OPERATED_STATUSES else (
+                        "disrupted" if outcome in NON_OPERATED_STATUSES else "pending"
+                    ),
+                    "outcome_label": "引き返し" if outcome == "条件付き→引返欠航" else outcome or "結果未取得",
+                    "weather": _weather_details(primary or {}, outcome_row),
                     "reflection": (
                         "運営者の確認によると、南風の影響で欠航となりました。"
                         "南風が強い状況でしたが、参考スコアは高い値となっていました。"
@@ -119,12 +173,19 @@ def build_archive_days(rows):
         archive_days.append(
             {
                 "date": date_string,
+                "month": date_string[:7],
                 "date_label": f"{parsed_date.month}/{parsed_date.day}",
                 "long_date_label": f"{parsed_date.year}年{parsed_date.month}月{parsed_date.day}日",
                 "weekday": WEEKDAYS[parsed_date.weekday()],
                 "flights": flights,
                 "confirmed_count": confirmed,
                 "operated_count": operated,
+                "cancelled_count": sum(f["outcome"] == "欠航" for f in flights),
+                "returned_count": sum(f["outcome"] == "条件付き→引返欠航" for f in flights),
+                "missing_count": len(flights) - confirmed,
+                "result_class": "disrupted" if confirmed > operated else (
+                    "operated" if confirmed == len(flights) else "pending"
+                ),
                 "publicly_confirmed": all(
                     flight["publicly_confirmed"] for flight in flights
                 ),

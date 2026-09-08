@@ -294,7 +294,8 @@ def fetch_published_forecast_archive():
           SELECT
             snapshot_id, forecast_target_date, flight_number, model,
             calculation_status, probability, prediction_generated_at,
-            weather_valid_at,
+            weather_valid_at, weather_retrieved_at, weather_json,
+            factor_breakdown_json, config_version, provider,
             CASE
               WHEN COALESCE(p.has_published, 0) = 1 THEN 'published'
               ELSE 'legacy'
@@ -321,7 +322,11 @@ def fetch_published_forecast_archive():
         SELECT
           s.snapshot_id, s.forecast_target_date, s.flight_number, s.model,
           s.calculation_status, s.probability, s.prediction_generated_at,
-          s.publication_status,
+          s.publication_status, s.weather_valid_at, s.weather_retrieved_at,
+          s.weather_json, s.factor_breakdown_json, s.config_version, s.provider,
+          h.wind_direction AS collected_wind_direction,
+          h.wind_speed AS collected_wind_speed, h.wind_gusts AS collected_wind_gusts,
+          h.visibility AS collected_visibility, h.cloud_cover_low AS collected_cloud_cover_low,
           h.status AS outcome_status, h.status_reason, h.status_reason_category,
           h.status_reason_source, h.status_reason_observed_at
         FROM ranked_snapshots s

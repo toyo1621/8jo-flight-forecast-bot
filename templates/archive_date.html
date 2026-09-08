@@ -14,7 +14,7 @@
   <meta property="og:url" content="{{ page_url }}">
   <title>{{ day.long_date_label }}の八丈島便｜公開時予測と運航結果</title>
   <script type="application/ld+json">{{ structured_data|tojson }}</script>
-  <link rel="stylesheet" href="../../static/styles.css?v=20260905-1">
+  <link rel="stylesheet" href="../../static/styles.css?v=20260909-history-1">
 </head>
 <body>
   {% set asset_prefix = "../../" %}
@@ -41,6 +41,15 @@
             <section><h2>実際の運航結果</h2><p class="archive-outcome">{{ flight.outcome or "未取得" }}</p>{% if flight.outcome_reason %}<p class="archive-reason">理由: {{ flight.outcome_reason }}</p>{% endif %}</section>
           </div>
           <dl class="archive-models">{% for model in flight.models %}<div><dt>{{ model.label }}</dt><dd>{% if model.score is not none %}{{ model.symbol }} {{ model.score }} / 100{% else %}算出不可{% endif %}</dd></div>{% endfor %}</dl>
+          <details class="archive-weather"><summary>この便の天気・適用係数</summary>
+            <h2>公開時の予報入力（JMA主予報・補完気象）</h2>
+            <p>対象時刻 {{ flight.weather.valid_at or '記録なし' }} ／ 取得時刻 {{ flight.weather.retrieved_at or '記録なし' }}</p>
+            <p>取得元: {{ flight.weather.provider }}</p>
+            <dl>{% for cell in flight.weather.forecast %}<div><dt>{{ cell.label }}</dt><dd>{{ cell.value }}</dd></div>{% endfor %}</dl>
+            <h2>保存された適用係数</h2><p class="archive-factors">{{ flight.weather.factors }}</p><p>設定版: {{ flight.weather.config_version }}。現在の係数で再計算していません。</p>
+            <h2>収集時の気象データ</h2><p>観測値と確認できないため、実測としては扱いません。出所・対象時刻の詳細記録がないデータを含みます。</p>
+            <dl>{% for cell in flight.weather.collected %}<div><dt>{{ cell.label }}</dt><dd>{{ cell.value }}</dd></div>{% endfor %}</dl>
+          </details>
           <section class="archive-reflection"><h2>振り返り</h2><p>{{ flight.reflection }}</p></section>
         </article>
       {% endfor %}
