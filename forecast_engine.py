@@ -8,7 +8,6 @@ from app_config import (
     LOW_CLOUD_PROBABILITY_MULTIPLIER,
     LOW_CLOUD_RISK_PERCENT,
     MAX_PROBABILITY,
-    MIN_MATCHING_HISTORY_ROWS,
     MODERATE_VISIBILITY_PROBABILITY_MULTIPLIER,
     MODERATE_VISIBILITY_RISK_KM,
     PRECIPITATION_PROBABILITY_MULTIPLIER,
@@ -35,7 +34,7 @@ from app_config import (
 )
 from bigquery_storage import fetch_detailed_history
 from flight_metadata import OPERATED_STATUSES
-from history_selection import select_history, valid_wind
+from history_selection import select_history, select_history_with_metadata, valid_wind
 
 
 def load_history():
@@ -137,9 +136,9 @@ def predict_flight_probability(
     """
     source_history = load_history() if history is None else history
     weather = {"wind_direction": wind_direction, "wind_speed": wind_speed, "wind_gusts": wind_gusts}
-    history_rows = select_history(source_history, flight_number, weather)
+    history_rows, selection = select_history_with_metadata(source_history, flight_number, weather)
     history_fingerprint = _history_fingerprint(history_rows)
-    if len(history_rows) < MIN_MATCHING_HISTORY_ROWS:
+    if len(history_rows) < selection["minimum"]:
         scope = f"{flight_number}の" if flight_number else ""
         reason_code = "similar_history_below_minimum" if valid_wind(weather) else "required_wind_missing_or_invalid"
         return {
@@ -154,12 +153,13 @@ def predict_flight_probability(
                             if valid_wind(weather) else "風向・平均風速・最大瞬間風速が欠測または不正のため算出できません。"),
             "data_count": len(history_rows),
             "step_used": 0,
+            "history_selection": selection,
             "history_flight_number": flight_number,
             "history_fingerprint": history_fingerprint,
         }
         
     matching_rows = [(row["status"],) for row in history_rows]
-    step_used = 1
+    step_used = selection["step"]
         
     # ベース確率の算出
     if not matching_rows:
@@ -280,6 +280,7 @@ def predict_flight_probability(
         "data_count": len(matching_rows),
         "step_used": step_used,
         "history_flight_number": flight_number,
+        "history_selection": selection,
         "history_fingerprint": history_fingerprint,
     }
 

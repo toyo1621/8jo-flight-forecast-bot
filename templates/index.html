@@ -238,7 +238,7 @@
                     <div><dt>気圧</dt><dd>{% if flight.pressure_msl is defined and flight.pressure_msl is not none %}{{ flight.pressure_msl }} hPa{% else %}欠測{% endif %}</dd></div>
                     <div><dt>主予報(JMA)での統計参考値（運航参考スコア）</dt><dd>{% if flight.calculation_status == "available" %}<span class="probability-inline-symbol">{{ flight.probability_symbol }}</span>{{ flight.probability }} / 100{% else %}{{ '予測表示終了' if flight.calculation_status == 'expired' else '算出不可' }}{% endif %}</dd></div>
                     <div><dt>過去実績の集計対象</dt><dd>{{ flight.number }} / {{ flight.data_count }}件</dd></div>
-                    <div><dt>実績の選定条件</dt><dd>同じ便・風向差±20°・平均風速差±3m/s・最大瞬間風速差±5m/s。5件未満は算出不可。</dd></div>
+                    <div><dt>実績の選定条件</dt><dd>同じ便・{% if flight.history_selection is defined %}{{ flight.history_selection.label }}{% if flight.history_selection.expanded %}（実績不足のため条件を拡大）{% endif %}{% else %}条件記録なし{% endif %}</dd></div>
                     {% for model in flight.model_probabilities %}
                       <div><dt>{{ model.label }}予報での統計参考値（運航参考スコア）</dt><dd><span class="probability-inline-symbol">{{ model.symbol }}</span>{{ model.probability }} / 100</dd></div>
                     {% endfor %}
@@ -295,7 +295,7 @@
           <li>BigQueryに保存した同じ便の過去実績から、予報と風向・風速が近い事例を探して、運航参考スコアを計算します。</li>
           <li>視程不良、降水、低層雲量80%超、強風・突風、台風接近リスクの場合は、過去実績から算出した基礎値に0.9や0.8などの係数を掛けて下方補正します。リスクがある日は、表示スコアが基礎値より低くなります。上限は97です。</li>
           <li>先の日程は、天気予報の更新で条件が変わると、スコアも上がったり下がったりします。搭乗日が近づいたら再確認してください。</li>
-          <li>計算対象と詳細表示は同じ条件で選びます。風向差±20°・平均風速差±3m/s・最大瞬間風速差±5m/sをすべて満たす同じ便の実績を使います。詳細は風向差、平均風速差、最大瞬間風速差、新しい日付の順で最大10件です。5件未満は条件を緩めず算出不可とします。</li>
+          <li>計算と詳細は同じ候補を使います。通常は風向差±20°・平均風速差±3m/s・最大瞬間風速差±5m/s。5件未満なら6件以上を目標に、風速差を平均±5・瞬間±8m/sへ広げ、その後に風向差を±30°、±45°の順に広げます。上限まで広げても6件未満なら算出不可です。詳細は風向差、平均風速差、最大瞬間風速差、新しい日付の順で最大10件です。</li>
           <li>GFS・ECMWFを混ぜずにモデル別のmember数、欠測率、10〜90パーセンタイル幅を計算し、利用可能モデルの最悪値を予報シナリオの一致度A〜Eとして表示します。必要数に届かない場合は評価不可です。</li>
           <li>日本周辺の短期予報を重視してJMAを主予報とし、GFS・ECMWFも残してモデルごとの見方の違いを比較できるようにしています。</li>
           <li>台風接近リスクは、<a href="https://8jo-typhoon-ensemble.toyo1621.workers.dev/?source=jma" rel="noreferrer">八丈島・東京方面 台風影響目安</a>の飛行機向け影響度を使います。注意度lowは補正なし、medium・high・severeをリスク小・中・大として、運航率に0.9・0.8・0.7を掛けます。</li>

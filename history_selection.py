@@ -20,7 +20,7 @@ def valid_wind(weather):
             and valid_number(weather.get("wind_gusts")))
 
 
-def select_history(history, flight_number, weather):
+def select_candidates(history, flight_number, weather, limits=(ANGLE_LIMIT, SPEED_LIMIT, GUST_LIMIT)):
     if not valid_wind(weather):
         return []
     candidates = []
@@ -36,8 +36,27 @@ def select_history(history, flight_number, weather):
         angle = min(angle, 360 - angle)
         speed = abs(row["wind_speed"] - weather["wind_speed"])
         gust = abs(row["wind_gusts"] - weather["wind_gusts"])
-        if angle <= ANGLE_LIMIT and speed <= SPEED_LIMIT and gust <= GUST_LIMIT:
+        if angle <= limits[0] and speed <= limits[1] and gust <= limits[2]:
             candidates.append({**row, "status": status, "wind_differences": (angle, speed, gust)})
     candidates.sort(key=lambda row: str(row.get("date", "")), reverse=True)
     candidates.sort(key=lambda row: row["wind_differences"])
     return candidates
+
+
+def select_history_with_metadata(history, flight_number, weather):
+    history = list(history)
+    stages = ((20, 3, 5), (20, 5, 8), (30, 5, 8), (45, 5, 8))
+    for index, limits in enumerate(stages):
+        rows = select_candidates(history, flight_number, weather, limits)
+        required = 5 if index == 0 else 6
+        if len(rows) >= required or not valid_wind(weather):
+            break
+    return rows, {
+        "step": index + 1, "minimum": required, "expanded": index > 0,
+        "angle": limits[0], "speed": limits[1], "gust": limits[2],
+        "label": f"風向差±{limits[0]}°・平均風速差±{limits[1]}m/s・最大瞬間風速差±{limits[2]}m/s",
+    }
+
+
+def select_history(history, flight_number, weather):
+    return select_history_with_metadata(history, flight_number, weather)[0]
