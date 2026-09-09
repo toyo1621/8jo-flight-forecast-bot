@@ -13,7 +13,7 @@ from forecast_engine import predict_flight_probability
 ])
 def test_visibility_tiers(visibility, label, factor):
     result = predict_flight_probability(90, 5, 8, 20, visibility,
-        history=[("運航", 90, 5)] * 5)
+        history=[{"status": "運航", "wind_direction": 90, "wind_speed": 5, "wind_gusts": 8}] * 5)
     assert result["weather_factor"] == factor
     assert result["probability"] == min(97, factor * 100)
     if label:
@@ -29,6 +29,6 @@ def test_visibility_tiers(visibility, label, factor):
 
 def test_visibility_multiplies_southerly_risk():
     result = predict_flight_probability(185, 6.02, 13, 20, 2.3,
-        history=[("運航", 185, 6.02)] * 5)
+        history=[{"status": "運航", "wind_direction": 185, "wind_speed": 6.02, "wind_gusts": 13}] * 5)
     assert result["weather_factors"] == {"visibility": .8, "southerly": .8}
     assert result["probability"] == 64

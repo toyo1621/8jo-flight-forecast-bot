@@ -4,11 +4,7 @@ import json
 from app_config import (
     EXTREME_VISIBILITY_PROBABILITY_MULTIPLIER,
     EXTREME_VISIBILITY_RISK_KM,
-    FALLBACK_MATCH_ANGLE_DEGREES,
-    FALLBACK_MATCH_WIND_SPEED_MS,
     GUST_RISK_MS,
-    INITIAL_MATCH_ANGLE_DEGREES,
-    INITIAL_MATCH_WIND_SPEED_MS,
     LOW_CLOUD_PROBABILITY_MULTIPLIER,
     LOW_CLOUD_RISK_PERCENT,
     MAX_PROBABILITY,
@@ -37,12 +33,13 @@ from app_config import (
     VISIBILITY_RISK_KM,
     WIND_PROBABILITY_MULTIPLIER,
 )
-from bigquery_storage import fetch_detailed_history, fetch_history
-from flight_metadata import OPERATED_STATUSES, VALID_STORED_STATUSES, normalize_status
+from bigquery_storage import fetch_detailed_history
+from flight_metadata import OPERATED_STATUSES
+from history_selection import select_history, valid_wind
 
 
 def load_history():
-    return fetch_history()
+    return fetch_detailed_history()
 
 
 def load_detailed_history():
@@ -51,7 +48,7 @@ def load_detailed_history():
 
 def _history_fingerprint(history):
     payload = json.dumps(
-        sorted(history, key=lambda row: tuple(str(value) for value in row)),
+        sorted(history, key=lambda row: json.dumps(row, sort_keys=True, default=str)),
         ensure_ascii=False,
         separators=(",", ":"),
         default=str,
@@ -102,21 +99,14 @@ def _weather_similarity_score(row, weather):
 
 
 def find_similar_flights(flight_number, weather, limit=10, history=None):
-    candidates = []
     history_rows = load_detailed_history() if history is None else history
-    for row in history_rows:
-        if row["flight_number"] != flight_number:
-            continue
-        score = _weather_similarity_score(row, weather)
-        candidates.append((score, row))
-
     similar = []
-    for score, row in sorted(candidates, key=lambda item: item[0])[:limit]:
+    for row in select_history(history_rows, flight_number, weather)[:limit]:
         similar.append(
             {
                 **row,
-                "date_label": row["date"].replace("-", "/"),
-                "similarity_score": round(score, 2),
+                "date_label": str(row.get("date", "")).replace("-", "/"),
+                "similarity_score": row["wind_differences"][0],
             }
         )
     return similar
@@ -145,58 +135,31 @@ def predict_flight_probability(
     Returns:
         dict: 予測結果。履歴不足時は`probability`を`None`にする。
     """
-    history_rows = []
     source_history = load_history() if history is None else history
-    for row in source_history:
-        if len(row) == 4:
-            historical_flight, status, historical_direction, historical_speed = row
-        else:
-            historical_flight = None
-            status, historical_direction, historical_speed = row
-        normalized_status = normalize_status(status)
-        if normalized_status not in VALID_STORED_STATUSES:
-            continue
-        if flight_number is not None and historical_flight != flight_number:
-            continue
-        history_rows.append((normalized_status, historical_direction, historical_speed))
+    weather = {"wind_direction": wind_direction, "wind_speed": wind_speed, "wind_gusts": wind_gusts}
+    history_rows = select_history(source_history, flight_number, weather)
     history_fingerprint = _history_fingerprint(history_rows)
     if len(history_rows) < MIN_MATCHING_HISTORY_ROWS:
         scope = f"{flight_number}の" if flight_number else ""
-        reason_code = "no_history" if not history_rows else "below_minimum_history"
+        reason_code = "similar_history_below_minimum" if valid_wind(weather) else "required_wind_missing_or_invalid"
         return {
             "probability": None,
             "base_probability": None,
             "weather_factor": None,
             "weather_factors": {},
-            "calculation_status": "insufficient_history",
+            "calculation_status": "insufficient_history" if valid_wind(weather) else "weather_missing",
             "reason_code": reason_code,
             "alert_required": False,
-            "warning_msg": f"{scope}過去実績が{len(history_rows)}件のため、統計参考値を算出できません。",
+            "warning_msg": (f"{scope}条件に合う過去実績が{len(history_rows)}件のため、算出できません。"
+                            if valid_wind(weather) else "風向・平均風速・最大瞬間風速が欠測または不正のため算出できません。"),
             "data_count": len(history_rows),
             "step_used": 0,
             "history_flight_number": flight_number,
             "history_fingerprint": history_fingerprint,
         }
         
-    matching_rows = []
+    matching_rows = [(row["status"],) for row in history_rows]
     step_used = 1
-
-    def matches(angle_limit, speed_limit):
-        result = []
-        for status, historical_direction, historical_speed in history_rows:
-            angle_diff = abs(historical_direction - wind_direction)
-            angle_diff = min(angle_diff, 360 - angle_diff)
-            if angle_diff <= angle_limit and abs(historical_speed - wind_speed) <= speed_limit:
-                result.append((status,))
-        return result
-
-    matching_rows = matches(INITIAL_MATCH_ANGLE_DEGREES, INITIAL_MATCH_WIND_SPEED_MS)
-    if len(matching_rows) < MIN_MATCHING_HISTORY_ROWS:
-        step_used = 2
-        matching_rows = matches(FALLBACK_MATCH_ANGLE_DEGREES, FALLBACK_MATCH_WIND_SPEED_MS)
-    if len(matching_rows) < MIN_MATCHING_HISTORY_ROWS:
-        step_used = 3
-        matching_rows = [(status,) for status, _, _ in history_rows]
         
     # ベース確率の算出
     if not matching_rows:
