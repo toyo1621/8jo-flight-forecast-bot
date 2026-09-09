@@ -10,7 +10,7 @@ FORECAST_DAYS = 11
 MAIN_FORECAST_URL = "https://api.open-meteo.com/v1/forecast"
 ENSEMBLE_FORECAST_URL = "https://ensemble-api.open-meteo.com/v1/ensemble"
 JMA_MODEL_NAME = "jma_seamless"
-FORECAST_CONFIG_VERSION = "2026-09-09-1"
+FORECAST_CONFIG_VERSION = "2026-09-09-strict-wind-1"
 
 FLIGHTS = (
     {"number": "ANA1891", "time": "08:30", "forecast_hour": 8},

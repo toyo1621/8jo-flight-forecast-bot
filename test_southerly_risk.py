@@ -16,7 +16,7 @@ from forecast_engine import predict_flight_probability
 ])
 def test_southerly_boundaries(direction, speed, label, factor):
     result = predict_flight_probability(direction, speed, 10, 20, 15,
-        history=[("運航", direction, speed)] * 5)
+        history=[{"status": "運航", "wind_direction": direction, "wind_speed": speed, "wind_gusts": 10}] * 5)
     assert result["weather_factor"] == factor
     assert result["probability"] == min(97, 100 * factor)
     if label:
@@ -27,7 +27,7 @@ def test_southerly_boundaries(direction, speed, label, factor):
 
 def test_gust_does_not_stack_with_southerly():
     result = predict_flight_probability(185, 11, 21, 20, 15,
-        history=[("運航", 185, 11)] * 5)
+        history=[{"status": "運航", "wind_direction": 185, "wind_speed": 11, "wind_gusts": 21}] * 5)
     assert result["weather_factors"] == {"gust": .55}
     assert result["probability"] == 55
 

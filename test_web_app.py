@@ -555,7 +555,7 @@ def test_ended_flights_are_hidden_on_home_but_retained_in_source():
     assert 'href="#date-2026-06-20"' not in body
     assert len(days[0]["flights"]) == 3
     assert "予測表示終了" not in body
-    assert "算出不可" not in body
+    assert 'class="probability-unavailable"' not in body
 
 
 def test_active_forecasts_keep_missing_and_future_flights():
@@ -601,13 +601,13 @@ def test_find_similar_flights_filters_same_flight_and_orders_by_weather():
     with patch("forecast_engine.load_detailed_history", return_value=history):
         result = find_similar_flights("ANA1891", weather)
 
-    assert [row["date"] for row in result] == ["2026-01-01", "2026-01-02"]
+    assert [row["date"] for row in result] == ["2026-01-01"]
     assert result[0]["date_label"] == "2026/01/01"
     assert result[0]["flight_display_name"] == "ANA1891(1便)"
 
 
 def test_forecast_domain_functions_accept_injected_history_without_bigquery():
-    history = [("ANA1891", "運航", 180.0, 5.0)] * 5
+    history = [{"flight_number": "ANA1891", "status": "運航", "wind_direction": 180.0, "wind_speed": 5.0, "wind_gusts": 10.0}] * 5
     with patch("forecast_engine.load_history", side_effect=AssertionError("BigQuery called")):
         result = predict_flight_probability(
             180.0,
@@ -631,19 +631,20 @@ def test_similar_flight_search_accepts_injected_history_without_bigquery():
             "status": "運航",
             "wind_direction": 180.0,
             "wind_speed": 5.0,
+            "wind_gusts": 8.0,
         }
     ]
     with patch("forecast_engine.load_detailed_history", side_effect=AssertionError("BigQuery called")):
         result = find_similar_flights(
             "ANA1891",
-            {"wind_direction": 180.0, "wind_speed": 5.0},
+            {"wind_direction": 180.0, "wind_speed": 5.0, "wind_gusts": 8.0},
             history=history,
         )
 
     assert result[0]["date"] == "2026-01-01"
 
 
-def test_find_similar_flights_prefers_visibility_when_scores_are_equal():
+def test_find_similar_flights_prefers_recent_date_when_wind_is_equal():
     history = [
         {"date": "2026-01-01", "flight_number": "ANA1891", "flight_display_name": "ANA1891(1便)", "status": "通常", "status_reason": None, "wind_direction": 180.0, "wind_speed": 5.0, "wind_gusts": 8.0, "cloud_cover_low": 20.0, "visibility": None},
         {"date": "2026-01-02", "flight_number": "ANA1891", "flight_display_name": "ANA1891(1便)", "status": "通常", "status_reason": None, "wind_direction": 180.0, "wind_speed": 5.0, "wind_gusts": 8.0, "cloud_cover_low": 20.0, "visibility": 10.0},
@@ -656,7 +657,7 @@ def test_find_similar_flights_prefers_visibility_when_scores_are_equal():
     assert result[0]["date"] == "2026-01-02"
 
 
-def test_find_similar_flights_prioritizes_matching_adverse_condition():
+def test_find_similar_flights_excludes_outside_direction_even_with_similar_visibility():
     base = {"flight_number": "ANA1891", "flight_display_name": "ANA1891(1便)", "status": "通常", "status_reason": None}
     history = [
         {**base, "date": "2026-01-01", "wind_direction": 180.0, "wind_speed": 5.0, "wind_gusts": 8.0, "cloud_cover_low": 20.0, "visibility": 15.0},
@@ -667,7 +668,7 @@ def test_find_similar_flights_prioritizes_matching_adverse_condition():
     with patch("forecast_engine.load_detailed_history", return_value=history):
         result = find_similar_flights("ANA1891", weather, limit=1)
 
-    assert result[0]["date"] == "2026-01-02"
+    assert result[0]["date"] == "2026-01-01"
 
 
 def test_find_similar_flights_prioritizes_matching_strong_wind_and_direction():
@@ -685,7 +686,7 @@ def test_find_similar_flights_prioritizes_matching_strong_wind_and_direction():
 
 
 def test_low_cloud_warning_uses_precise_wording():
-    with patch("forecast_engine.load_history", return_value=[("通常", 180.0, 5.0)] * 5):
+    with patch("forecast_engine.load_history", return_value=[{"status": "通常", "wind_direction": 180.0, "wind_speed": 5.0, "wind_gusts": 10.0}] * 5):
         result = predict_flight_probability(180.0, 5.0, 8.0, 100.0, 15.0)
 
     assert result["warning_msg"] == "南風リスク中、低層雲の影響注意 (低層雲量 100.0%)"
@@ -698,26 +699,26 @@ def test_probability_without_history_is_unavailable():
     assert MAX_PROBABILITY == 97.0
     assert result["probability"] is None
     assert result["calculation_status"] == "insufficient_history"
-    assert result["reason_code"] == "no_history"
+    assert result["reason_code"] == "similar_history_below_minimum"
     assert result["data_count"] == 0
     assert "算出できません" in result["warning_msg"]
 
 
 def test_probability_with_fewer_than_minimum_history_rows_is_unavailable():
-    with patch("forecast_engine.load_history", return_value=[("通常", 180.0, 5.0)] * 4):
+    with patch("forecast_engine.load_history", return_value=[{"status": "通常", "wind_direction": 180.0, "wind_speed": 5.0, "wind_gusts": 10.0}] * 4):
         result = predict_flight_probability(180.0, 3.0, 5.0, 10.0, 20.0)
 
     assert result["probability"] is None
     assert result["calculation_status"] == "insufficient_history"
-    assert result["reason_code"] == "below_minimum_history"
+    assert result["reason_code"] == "similar_history_below_minimum"
     assert result["data_count"] == 4
 
 
 def test_probability_history_is_filtered_by_flight_number():
     history = [
-        *( [("ANA1891", "運航", 180.0, 5.0)] * 3 ),
-        *( [("ANA1891", "欠航", 180.0, 5.0)] * 2 ),
-        *( [("ANA1893", "欠航", 180.0, 5.0)] * 5 ),
+        *( [{"flight_number": "ANA1891", "status": "運航", "wind_direction": 180.0, "wind_speed": 5.0, "wind_gusts": 10.0}] * 3 ),
+        *( [{"flight_number": "ANA1891", "status": "欠航", "wind_direction": 180.0, "wind_speed": 5.0, "wind_gusts": 10.0}] * 2 ),
+        *( [{"flight_number": "ANA1893", "status": "欠航", "wind_direction": 180.0, "wind_speed": 5.0, "wind_gusts": 10.0}] * 5 ),
     ]
     with patch("forecast_engine.load_history", return_value=history):
         first = predict_flight_probability(180.0, 5.0, 8.0, 20.0, 15.0, flight_number="ANA1891")
@@ -730,7 +731,7 @@ def test_probability_history_is_filtered_by_flight_number():
 
 
 def test_low_cloud_and_strongest_wind_adjustments():
-    history = [("通常", 210.0, 18.0)] * 3 + [("欠航", 210.0, 18.0)] * 6
+    history = [{"status": "通常", "wind_direction": 210.0, "wind_speed": 18.0, "wind_gusts": 18.5}] * 3 + [{"status": "欠航", "wind_direction": 210.0, "wind_speed": 18.0, "wind_gusts": 18.5}] * 6
     with patch("forecast_engine.load_history", return_value=history):
         result = predict_flight_probability(210.0, 18.09, 18.5, 85.0, 12.2)
 
@@ -741,14 +742,15 @@ def test_low_cloud_and_strongest_wind_adjustments():
 
 
 def test_visibility_low_cloud_and_gust_adjustments_are_tiered():
-    history = [("通常", 210.0, 5.0)] * 10
+    history = [{"status": "通常", "wind_direction": 210.0, "wind_speed": 5.0, "wind_gusts": 10.0}] * 10
     with patch("forecast_engine.load_history", return_value=history):
         extreme_visibility = predict_flight_probability(210.0, 5.0, 8.0, 20.0, 0.9)
         severe_visibility = predict_flight_probability(210.0, 5.0, 8.0, 20.0, 1.0)
         moderate_visibility = predict_flight_probability(210.0, 5.0, 8.0, 20.0, 3.0)
         clear_visibility = predict_flight_probability(210.0, 5.0, 8.0, 20.0, 5.0)
         severe_low_cloud = predict_flight_probability(210.0, 5.0, 8.0, 96.0, 15.0)
-        severe_gust = predict_flight_probability(210.0, 5.0, 20.3, 20.0, 15.0)
+        severe_gust = predict_flight_probability(210.0, 5.0, 20.3, 20.0, 15.0,
+            history=[{**r, "wind_gusts": 20.3} for r in history])
 
     assert extreme_visibility["probability"] == 54.0
     assert severe_visibility["probability"] == 63.0
@@ -759,7 +761,7 @@ def test_visibility_low_cloud_and_gust_adjustments_are_tiered():
 
 
 def test_adjusted_visibility_factor_keeps_heavy_rain_and_gust_penalties():
-    history = [("通常", 98.0, 6.77)] * 10
+    history = [{"status": "通常", "wind_direction": 98.0, "wind_speed": 6.77, "wind_gusts": 16.5}] * 10
     with patch("forecast_engine.load_history", return_value=history):
         result = predict_flight_probability(
             98.0,
@@ -780,7 +782,7 @@ def test_adjusted_visibility_factor_keeps_heavy_rain_and_gust_penalties():
 
 
 def test_precipitation_from_two_mm_adds_rain_risk():
-    history = [("通常", 180.0, 5.0)] * 10
+    history = [{"status": "通常", "wind_direction": 180.0, "wind_speed": 5.0, "wind_gusts": 10.0}] * 10
     with patch("forecast_engine.load_history", return_value=history):
         dry = predict_flight_probability(180.0, 5.0, 8.0, 20.0, 15.0, precipitation=1.9)
         rainy = predict_flight_probability(180.0, 5.0, 8.0, 20.0, 15.0, precipitation=2.0)
@@ -791,7 +793,10 @@ def test_precipitation_from_two_mm_adds_rain_risk():
 
 
 def test_southerly_wind_warning_includes_boundary_values():
-    with patch("forecast_engine.load_history", return_value=[("通常", 180.0, 9.0)] * 5):
+    with patch("forecast_engine.load_history", return_value=[
+        {"status": "通常", "wind_direction": direction, "wind_speed": 5.0, "wind_gusts": 10.0}
+        for direction in (120, 240) for _ in range(5)
+    ]):
         lower = predict_flight_probability(120.0, 5.0, 10.0, 20.0, 15.0)
         upper = predict_flight_probability(240.0, 5.0, 10.0, 20.0, 15.0)
 
@@ -801,7 +806,7 @@ def test_southerly_wind_warning_includes_boundary_values():
 
 
 def test_southerly_wind_warning_requires_direction_and_speed():
-    with patch("forecast_engine.load_history", return_value=[("通常", 180.0, 9.0)] * 5):
+    with patch("forecast_engine.load_history", return_value=[{"status": "通常", "wind_direction": 180.0, "wind_speed": 9.0, "wind_gusts": 10.0}] * 5):
         weak = predict_flight_probability(180.0, 3.99, 10.0, 20.0, 15.0)
         outside = predict_flight_probability(241.0, 9.0, 10.0, 20.0, 15.0)
 
@@ -810,7 +815,7 @@ def test_southerly_wind_warning_requires_direction_and_speed():
 
 
 def test_september_eighth_final_flight_southerly_warning():
-    with patch("forecast_engine.load_history", return_value=[("通常", 185.0, 6.02)] * 5):
+    with patch("forecast_engine.load_history", return_value=[{"status": "通常", "wind_direction": 185.0, "wind_speed": 6.02, "wind_gusts": 10.0}] * 5):
         result = predict_flight_probability(185.0, 6.02, 13.0, 30.0, 13.0)
     assert "南風リスク中" in result["warning_msg"]
     assert result["weather_factor"] == 0.8
@@ -1401,7 +1406,7 @@ def test_index_renders_forecast():
     assert "気象業法への配慮" in body
     assert "予報気象情報" in body
     assert "モデル別リスク" in body
-    assert "気象条件が近い過去の運航実績10件" in body
+    assert "計算対象の過去実績（最大10件）" in body
     assert "6ポイント以内" not in body
 
 
