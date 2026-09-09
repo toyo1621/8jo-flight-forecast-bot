@@ -252,6 +252,7 @@ def build_prediction_snapshot_rows(
                     "step_used": flight.get("step_used"),
                     "history_flight_number": flight.get("history_flight_number"),
                     "history_fingerprint": flight.get("history_fingerprint"),
+                    "selection": flight.get("history_selection"),
                 }
                 row = {
                         "run_id": run_id,
