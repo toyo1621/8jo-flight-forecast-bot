@@ -102,7 +102,7 @@ jobs:
           args=()
           if [ -n "$TARGET_DATE" ]; then args+=(--date "$TARGET_DATE"); fi
           if [ -n "$REPLAY_RUN_ID" ]; then args+=(--replay-run-id "$REPLAY_RUN_ID"); fi
-          python data_collector.py "${args[@]}"
+          python -m flight_forecast.data_collector "${args[@]}"
 
       - name: Inspect or clean unresolved BigQuery rows
         if: ${{ github.event_name == 'workflow_dispatch' && inputs.cleanup_only == true }}
@@ -119,7 +119,7 @@ jobs:
           if [ "$CLEANUP_APPLY" = "true" ]; then args+=(--cleanup-apply); fi
           if [ -n "$CLEANUP_DATE" ]; then args+=(--cleanup-date "$CLEANUP_DATE"); fi
           if [ -n "$CLEANUP_REASON" ]; then args+=(--cleanup-reason "$CLEANUP_REASON"); fi
-          python data_collector.py "${args[@]}"
+          python -m flight_forecast.data_collector "${args[@]}"
 
       - name: Check BigQuery data quality
         if: always()
@@ -128,7 +128,7 @@ jobs:
           BIGQUERY_DATASET: flight_forecast
           BIGQUERY_TABLE: flight_weather_logs
           BIGQUERY_LOCATION: asia-northeast1
-        run: python data_quality.py --format markdown --output data_quality_report.md --fail-on error
+        run: python -m flight_forecast.data_quality --format markdown --output data_quality_report.md --fail-on error
 
       - name: Add data quality report to summary
         if: always()
@@ -147,7 +147,7 @@ jobs:
           BIGQUERY_DATASET: flight_forecast
           BIGQUERY_TABLE: flight_weather_logs
           BIGQUERY_LOCATION: asia-northeast1
-        run: python collection_monitor.py --days 14 --output collection_coverage_report.md --fail-on-missing
+        run: python -m flight_forecast.collection_monitor --days 14 --output collection_coverage_report.md --fail-on-missing
 
       - name: Add collection coverage report to summary
         if: always()

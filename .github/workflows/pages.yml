@@ -73,12 +73,12 @@ jobs:
           BIGQUERY_DATASET: flight_forecast
           BIGQUERY_TABLE: flight_weather_logs
           BIGQUERY_LOCATION: asia-northeast1
-        run: python data_quality.py --format markdown --output data_quality_report.md --fail-on error
+        run: python -m flight_forecast.data_quality --format markdown --output data_quality_report.md --fail-on error
 
       - name: Independently check collection heartbeat and outcomes
         id: collection_health
         continue-on-error: true
-        run: python collection_monitor.py --days 14 --output collection_health.md --fail-on-missing
+        run: python -m flight_forecast.collection_monitor --days 14 --output collection_health.md --fail-on-missing
 
       - name: Report collection health without blocking forecast publication
         if: always()
@@ -116,11 +116,11 @@ jobs:
           CLOUDFLARE_ANALYTICS_HOST: toyo1621.github.io
           CLOUDFLARE_ANALYTICS_PATH: /8jo-flight-forecast-bot%
           CLOUDFLARE_ANALYTICS_START_DATE: "2026-08-24"
-        run: python access_stats.py
+        run: python -m flight_forecast.access_stats
 
       - name: Mark access counts stale when Cloudflare is unavailable
         if: steps.access_stats.outcome != 'success'
-        run: python access_stats.py --mark-stale
+        run: python -m flight_forecast.access_stats --mark-stale
 
       - name: Add access stats status to summary
         if: always()
@@ -160,10 +160,10 @@ jobs:
           BIGQUERY_DATASET: flight_forecast
           BIGQUERY_TABLE: flight_weather_logs
           BIGQUERY_LOCATION: asia-northeast1
-        run: python build_static.py
+        run: python -m flight_forecast.build_static
 
       - name: Validate static pages and SEO metadata
-        run: python validate_static_site.py dist
+        run: python -m flight_forecast.validate_static_site dist
 
       - name: Read build artifact identity
         id: build_manifest
@@ -234,5 +234,5 @@ jobs:
           BIGQUERY_DATASET: flight_forecast
           BIGQUERY_TABLE: flight_weather_logs
           BIGQUERY_LOCATION: asia-northeast1
-        run: python publish_prediction_snapshots.py --artifact-id "${{ needs.build.outputs.artifact_id }}" --public-url "${{ steps.deployment.outputs.page_url }}"
+        run: python -m flight_forecast.publish_prediction_snapshots --artifact-id "${{ needs.build.outputs.artifact_id }}" --public-url "${{ steps.deployment.outputs.page_url }}"
 

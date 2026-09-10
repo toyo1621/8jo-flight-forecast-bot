@@ -8,10 +8,10 @@
 
 ## データフロー
 
-1. `data_collector.py`がODPTの当日運航結果とOpen-Meteoの気象値を取得します。
+1. `flight_forecast/data_collector.py`がODPTの当日運航結果とOpen-Meteoの気象値を取得します。
 2. 日付・確定状態を検証できた便からBigQueryへMERGEします。未確定はrawに保持し、気象の欠測で確定結果を捨てません。
-3. `build_static.py`がOpen-Meteo経由のJMA主予報、GFS・ECMWFアンサンブル、外部の台風影響度を取得します。
-4. `forecast_engine.py`と`web_app.py`が便ごとの統計参考値、天候信頼度、モデル別参考値、類似実績を計算します。
+3. `flight_forecast/build_static.py`がOpen-Meteo経由のJMA主予報、GFS・ECMWFアンサンブル、外部の台風影響度を取得します。
+4. `flight_forecast/forecast_engine.py`と`flight_forecast/web_app.py`が便ごとの統計参考値、天候信頼度、モデル別参考値、類似実績を計算します。
 5. `templates/index.html`を`dist/`へレンダリングし、GitHub Pagesへデプロイします。
 
 Pagesは`main`へのpush、手動実行、6時間ごとのスケジュール、およびmain上の収集成功後に更新します。収集はJST 09:23・14:23・18:23・21:23です。actions:writeは独立した再公開jobのみに限定します。
@@ -21,7 +21,7 @@ Pagesは`main`へのpush、手動実行、6時間ごとのスケジュール、�
 - 運用データの保存・参照先はBigQueryだけです。
 - `data/flights_dump.sql`とSQLiteの運用経路は削除済みです。
 - `user_raw_data.csv`は移行入力として一時的に残していますが、実行時やPages生成では参照しません。
-- `migrate_sqlite_to_bigquery.py`は、手元の旧SQLiteをBigQueryへ一方向移行するためだけに残しています。
+- `flight_forecast/migrate_sqlite_to_bigquery.py`は、手元の旧SQLiteをBigQueryへ一方向移行するためだけに残しています。
 - SQLダンプ、DBファイル、Google Cloud鍵、`.env`をコミットしないでください。
 
 ## データ収集の不変条件
@@ -66,7 +66,7 @@ Pagesは`main`へのpush、手動実行、6時間ごとのスケジュール、�
 12. 表示範囲は0〜97%です。
 13. 風向120〜240度かつ平均風速9 m/s以上では「南風注意」を表示しますが、それ自体では値を下げません。
 
-しきい値や補正倍率は`app_config.py`に集約します。コード中へ重複して直書きしないでください。
+しきい値や補正倍率は`flight_forecast/app_config.py`に集約します。コード中へ重複して直書きしないでください。
 
 ## 時刻の不変条件
 
@@ -79,7 +79,7 @@ Pagesは`main`へのpush、手動実行、6時間ごとのスケジュール、�
 
 ## キャッシュ
 
-- `.cache/forecast_bundle.json`のバージョンは`forecast_cache.py`で管理します。
+- `.cache/forecast_bundle.json`のバージョンは`flight_forecast/forecast_cache.py`で管理します。
 - 主予報の代替に使えるキャッシュは7時間以内だけです。期限切れの主予報を最新として表示しないでください。
 - 最大瞬間風速・視程の補完だけが失敗した場合は、JMA主予報を維持し、該当項目を欠測として画面へ通知します。
 - アンサンブル、台風影響度の取得だけが失敗した場合は、7時間以内の該当キャッシュがあれば使用し、その旨を画面へ表示します。
@@ -97,7 +97,7 @@ Pagesは`main`へのpush、手動実行、6時間ごとのスケジュール、�
 - 記号は95%以上`◎`、75%以上`〇`、35%以上`△`、35%未満`×`です。
 - 「雲量」ではなく「低層雲量」と表示します。
 - faviconのロゴはトップへ置かず、フッターだけに表示します。
-- 表示用フィールドは`presentation.py`で整形します。
+- 表示用フィールドは`flight_forecast/presentation.py`で整形します。
 
 ## ステータス
 
@@ -105,23 +105,23 @@ Pagesは`main`へのpush、手動実行、6時間ごとのスケジュール、�
 - 引き返し: `条件付き→引返欠航`
 - 旧表記の正規化と外部APIの確定判定は別です。ODPTの遅延・到着予定を運航実績としません。
 - BigQueryのレコード識別子は`date + flight_number`です。
-- ステータス集合と正規化は`flight_metadata.py`を正とし、別ファイルへ複製しないでください。
+- ステータス集合と正規化は`flight_forecast/flight_metadata.py`を正とし、別ファイルへ複製しないでください。
 
 ## 主要ファイル
 
 | ファイル | 責務 |
 | --- | --- |
-| `app_config.py` | 便、時刻、予報日数、しきい値、補正倍率 |
-| `flight_metadata.py` | 便表示名、ステータス集合、正規化 |
-| `data_collector.py` | 失敗時に保存しない日次収集とデータ掃除 |
-| `bigquery_storage.py` | BigQuery取得・MERGE |
-| `bigquery_schema.py` | BigQuery設定、スキーマ、テーブル作成 |
-| `forecast_engine.py` | 便別の統計参考値と類似実績 |
-| `web_app.py` | 外部予報API、モデル比較、表示データ構築 |
-| `forecast_cache.py` | 予報キャッシュと鮮度判定 |
-| `presentation.py` | 画面表示用データ整形 |
-| `data_quality.py` | BigQuery品質検査 |
-| `build_static.py` | `dist/`生成 |
+| `flight_forecast/app_config.py` | 便、時刻、予報日数、しきい値、補正倍率 |
+| `flight_forecast/flight_metadata.py` | 便表示名、ステータス集合、正規化 |
+| `flight_forecast/data_collector.py` | 失敗時に保存しない日次収集とデータ掃除 |
+| `flight_forecast/bigquery_storage.py` | BigQuery取得・MERGE |
+| `flight_forecast/bigquery_schema.py` | BigQuery設定、スキーマ、テーブル作成 |
+| `flight_forecast/forecast_engine.py` | 便別の統計参考値と類似実績 |
+| `flight_forecast/web_app.py` | 外部予報API、モデル比較、表示データ構築 |
+| `flight_forecast/forecast_cache.py` | 予報キャッシュと鮮度判定 |
+| `flight_forecast/presentation.py` | 画面表示用データ整形 |
+| `flight_forecast/data_quality.py` | BigQuery品質検査 |
+| `flight_forecast/build_static.py` | `dist/`生成 |
 | `.github/workflows/ci.yml` | テストと`pip-audit` |
 | `.github/workflows/codeql.yml` | CodeQL検査 |
 | `.github/workflows/pages.yml` | 6時間ごとのPages生成・公開 |
@@ -143,15 +143,15 @@ export GCP_PROJECT_ID=hachijo-flight-forecast
 export BIGQUERY_DATASET=flight_forecast
 export BIGQUERY_TABLE=flight_weather_logs
 export BIGQUERY_LOCATION=asia-northeast1
-python data_quality.py --format markdown --output data_quality_report.md --fail-on error
-python build_static.py
+python -m flight_forecast.data_quality --format markdown --output data_quality_report.md --fail-on error
+python -m flight_forecast.build_static
 ```
 
 CSV取り込みもBigQuery専用です。Open-Meteo Archiveの取得失敗・欠測時は全件を中止します。
 
 ```bash
-python import_user_csv.py --csv path/to/data.csv
-python backfill_bigquery_visibility.py
+python -m flight_forecast.import_user_csv --csv path/to/data.csv
+python -m flight_forecast.backfill_bigquery_visibility
 ```
 
 テストでは外部APIとBigQueryをモックし、認証不要で完走できる状態を維持してください。
@@ -169,7 +169,7 @@ python backfill_bigquery_visibility.py
 ## 変更時チェックリスト
 
 1. 実装、`README.md`、`docs/forecast_spec.md`、この文書の数値が一致しているか確認します。
-2. 表示文言を変えたら`test_web_app.py`も更新します。
+2. 表示文言を変えたら`tests/test_web_app.py`も更新します。
 3. 統計参考値のロジックを変えたら、便の分離と境界値の回帰テストを追加します。
 4. BigQueryスキーマを変える場合は移行・MERGE・テストを同時に更新します。
 5. `python -m pytest -q`を実行します。

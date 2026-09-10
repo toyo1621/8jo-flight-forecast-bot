@@ -11,7 +11,7 @@
 | セキュリティ | 7.5 | WIF、最小workflow権限、pip-audit、CodeQL、Dependabot | ActionsのSHA固定と定期的な権限監査が必要 |
 | プライバシー | 8.0 | 個人情報を扱わず、鍵を保存しない | 将来データ項目追加時の再評価が必要 |
 | 法務・データガバナンス | 5.0 | SQLダンプ削除、出典・免責表示 | CSVが残存し、ODPT由来履歴の公開範囲と再配布条件は専門確認が必要 |
-| 保守性 | 7.5 | 共通便設定、ステータス正規化、BigQuery単一運用、文書 | `web_app.py`が大きく、API取得と組み立ての分割余地がある |
+| 保守性 | 7.5 | 共通便設定、ステータス正規化、BigQuery単一運用、文書 | `flight_forecast/web_app.py`が大きく、API取得と組み立ての分割余地がある |
 | テスト容易性 | 7.5 | 外部APIをモックしたpytest、失敗系テスト、CI | BigQuery MERGEの統合テストと画面回帰テストがない |
 | 監視性 | 6.5 | Actions summary、品質レポート、badge | SLA、メトリクス、外部通知がない |
 | 性能・コスト | 8.5 | GitHub Pages、生成時のみAPI/BigQuery利用 | 履歴増加時のクエリ量監視がない |

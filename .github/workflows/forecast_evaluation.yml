@@ -37,7 +37,7 @@ jobs:
 
       - name: Evaluate published forecasts
         run: |
-          python forecast_evaluation.py \
+          python -m flight_forecast.forecast_evaluation \
             --lookback-days 365 \
             --format markdown \
             --output forecast_evaluation.md \
