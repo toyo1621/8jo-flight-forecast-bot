@@ -1391,7 +1391,8 @@ def test_index_renders_forecast():
     assert "主予報(JMA)での統計参考値" in body
     assert "予報シナリオの一致度" in body
     assert "モデル別の運航参考スコア" in body
-    assert "未校正の統計参考値で、将来の運航確率ではありません" in body
+    assert "同じ便の類似実績とリスクから算出した統計参考値で、将来の運航確率ではありません" in body
+    assert "\u672a\u6821\u6b63" not in body
     assert "表示スコアが過去実績から求めた基礎値より低くなります" in body
     assert "天気予報の更新で条件が変わると、スコアも上がったり下がったりします" in body
     assert ">雲量<" not in body
