@@ -145,4 +145,4 @@ Pages deploy後に`publish_prediction_snapshots.py`がHTTP 200とartifact IDを�
 https://toyo1621.github.io/8jo-flight-forecast-bot/?verify=<timestamp>
 ```
 
-サイト名「八丈島便 運航の目安」、実データの取得時刻、未校正の注意書き、台風影響度の欠測通知を確認します。
+サイト名「八丈島便 運航の目安」、実データの取得時刻、参考スコアの注意書き、台風影響度の欠測通知を確認します。
