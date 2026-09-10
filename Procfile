@@ -1,1 +1,1 @@
-web: gunicorn web_app:app
+web: gunicorn flight_forecast.web_app:app

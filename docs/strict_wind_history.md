@@ -24,7 +24,7 @@ BigQuery実績1351行、必要な風3項目が有効な行1345行。6行は風�
 全11日やモデル全体の算出不可増加率を実測したものではない。
 特に7件は少数標本であり、97を校正済み運航確率とは解釈しない。
 
-再確認: compare_history_selection.pyへ実績JSONと公開確認済みJMAスナップショットJSONを渡す。
+再確認: flight_forecast/compare_history_selection.pyへ実績JSONと公開確認済みJMAスナップショットJSONを渡す。
 BigQueryのJSON出力はFLOATが文字列、TIMESTAMPがUTCのため変換する。
 データファイルはリポジトリに含めない。スクリプトは本番への保存・更新を行わない。
 

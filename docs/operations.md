@@ -7,7 +7,7 @@ CI、Pages公開、日次収集、週次評価は`requirements.lock`をconstrain
 `pytest`、`ruff check .`、`pip-audit -r requirements.lock`を実行してから変更します。
 
 公開状態用のBigQueryスキーマを先に確認する場合は、認証済み環境で
-`python migrate_prediction_publications.py`を実行します。これはdry-runが既定で、
+`python -m flight_forecast.migrate_prediction_publications`を実行します。これはdry-runが既定で、
 本番へ適用する場合だけ明示的に`--apply`を付けます。この作業は本番データの削除や
 既存スナップショットの上書きを行いません。
 
@@ -61,12 +61,12 @@ JMA主予報の取得に失敗した場合、7時間以内のキャッシュが�
 一時的なHTTPエラー・タイムアウトは指数バックオフで最大3回再試行します。raw保存済みrunを再処理する場合は、BigQuery認証後に次を実行します。
 
 ```bash
-python data_collector.py --replay-run-id <run_id>
+python -m flight_forecast.data_collector --replay-run-id <run_id>
 ```
 
 日次workflowは直近14日分の`collection_runs`を確認し、run_idとattempt単位でstarted/succeeded/failedを時刻順に集約します。同時に`flight_weather_logs`の指定日ごとの実便数を読み取り、`run_failed`、`started_without_completion`、`data_incomplete`、`data_missing`、`success_record_missing`、`not_recorded`、`not_recorded_before_monitoring`、`not_due`を混同しません。最終成功日、連続欠損日数、最新runも表示します。欠損日がある場合はworkflowを失敗させ、run_idを特定してraw再生または原因修正を行います。監視導入日を設定する場合は`COLLECTION_MONITOR_START_DATE=YYYY-MM-DD`を使います。欠損検知が失敗した場合は、既存の未解決Issueへ追記するか新規Issueを作成します。
 
-収集を過去日に再実行する場合は、`python data_collector.py --date YYYY-MM-DD`を使います。収集runにはODPT・気象ソースごとの状態、開始・完了時刻、raw保存件数が残ります。
+収集を過去日に再実行する場合は、`python -m flight_forecast.data_collector --date YYYY-MM-DD`を使います。収集runにはODPT・気象ソースごとの状態、開始・完了時刻、raw保存件数が残ります。
 
 欠航理由カテゴリは`weather`（天候・台風・強風等）、`operational`（機材・整備・乗員等）、`airport`（空港・滑走路・管制等）、`other`、`unknown`、`not_applicable`に分けます。理由がない、または未確認の行は`unknown`で保存し、天候起因の学習・評価へ自動算入しません。`status_reason_source`、`status_reason_observed_at`、`status_reason_confidence`は不明な場合に推測で埋めません。
 
@@ -98,16 +98,16 @@ Repository Variablesの`GCP_WORKLOAD_IDENTITY_PROVIDER`と`GCP_SERVICE_ACCOUNT`�
 1. BigQueryで対象行と出典を確認します。
 2. 正しい値を確認できた場合だけ修正します。
 3. 未取得・未対応ステータスなら`--cleanup-only`を使用します。
-4. 必要ならCSVを修正し、`python import_user_csv.py --csv path/to/data.csv`でBigQueryへ再投入します。
-5. `python data_quality.py --format markdown --output data_quality_report.md --fail-on error`で再確認します。
+4. 必要ならCSVを修正し、`python -m flight_forecast.import_user_csv --csv path/to/data.csv`でBigQueryへ再投入します。
+5. `python -m flight_forecast.data_quality --format markdown --output data_quality_report.md --fail-on error`で再確認します。
 
 ## ローカル検証
 
 ```bash
 python -m pytest -q
 python -m compileall -q .
-python data_quality.py --format markdown --output data_quality_report.md --fail-on error
-python build_static.py
+python -m flight_forecast.data_quality --format markdown --output data_quality_report.md --fail-on error
+python -m flight_forecast.build_static
 ```
 
 品質検査と静的生成にはBigQuery Application Default Credentialsが必要です。
@@ -116,7 +116,7 @@ python build_static.py
 
 Pagesの静的生成時に、JMA・GFS・ECMWFの各値を`prediction_snapshots`へ不変保存し、公開候補と公開確認を`prediction_publications`へ保存します。各スナップショットには予測生成時刻、取得元別の取得時刻、予報有効時刻、リード時間、provider/model、取得元endpoint、キャッシュfallback、コードSHA、設定版、算出状態、モデル固有入力を記録します。同じ計算内容の`snapshot_id`は入力・結果の内容ハッシュで再送時に重複登録を抑止し、取得時刻だけの違いでは別行にしません。公開候補はPagesのライブHTMLに同じartifact IDが存在するまで`candidate`のままです。
 
-Pages deploy後に`publish_prediction_snapshots.py`がHTTP 200とartifact IDを確認し、対応する候補だけを`published`へ更新します。この更新が失敗しても公開済みHTMLを未確認の予測として評価せず、同じartifact IDでスクリプトを再実行できます。生成・検証・デプロイが失敗した候補は公開履歴と厳密評価に採用しません。
+Pages deploy後に`flight_forecast/publish_prediction_snapshots.py`がHTTP 200とartifact IDを確認し、対応する候補だけを`published`へ更新します。この更新が失敗しても公開済みHTMLを未確認の予測として評価せず、同じartifact IDでスクリプトを再実行できます。生成・検証・デプロイが失敗した候補は公開履歴と厳密評価に採用しません。
 
 過去日ページは、予測対象時刻より前に保存された最後のスナップショットを
 「公開時の予測」として採用し、`flight_weather_logs`の運航結果を結合して再生成します。
@@ -136,6 +136,16 @@ Pages deploy後に`publish_prediction_snapshots.py`がHTTP 200とartifact IDを�
 - `date + flight_number`を一意キーとする
 - 視程補完値は実測ではなく数値予報値として`visibility_source`を残す
 - SQLダンプやDBファイルをGitHubへ置かない
+
+## Pythonコマンドの配置
+
+Python本体は`flight_forecast/`、テストは`tests/`です。リポジトリ直下から
+`python -m flight_forecast.<モジュール名>`で実行してください。
+外部の手動ジョブやcronで旧`python <ファイル名>.py`を使っている場合も更新します。
+Flaskは`flask --app flight_forecast.web_app run`、Gunicornは
+`gunicorn flight_forecast.web_app:app`です。
+キャッシュ、公開成果物、BigQueryテーブルに移行は必要ありません。
+ロールバックはこの配置変更をrevertして再デプロイし、外部ジョブの起動コマンドも戻します。
 
 ## 公開後確認
 

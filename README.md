@@ -35,6 +35,24 @@
 - Cloudflare Web Analytics障害時も予報公開を継続し、アクセス数は前回値を`stale`または`unavailable`として表示
 - CI、データ品質チェック、Dependabot、Issueテンプレートによる運用保守
 
+## ディレクトリ構成
+
+```text
+flight_forecast/   Python本体（予測・収集・保存・公開・管理コマンド）
+  clients/        外部APIクライアント
+tests/            オフラインの単体・統合・ワークフローテスト
+templates/        HTMLテンプレート
+static/           CSS・JavaScript・画像
+docs/             計算仕様・運用手順・設計資料
+.github/          CI・収集・Pages公開のワークフロー
+```
+
+コマンドはリポジトリ直下で実行します。静的生成は
+`python -m flight_forecast.build_static`、収集は
+`python -m flight_forecast.data_collector`、テストは`python -m pytest -q`です。
+旧来の`python ファイル名.py`は、`python -m flight_forecast.モジュール名`へ変更してください。
+`.cache/`と`dist/`は従来どおり直下に生成されます。移行用CSVの位置も維持しています。
+
 ## システム構成
 
 ```mermaid
@@ -55,14 +73,14 @@ GitHub Actionsが次の処理を行います。
 2. 台風影響目安サイトのJMAモードから日別の飛行機向け影響度を取得
 3. BigQueryから過去の運航実績と気象情報を取得
 4. 便ごとの運航統計参考値、天候信頼度、類似過去実績を計算
-5. `build_static.py`でHTMLとCSSを`dist/`へ生成
+5. `flight_forecast/build_static.py`でHTMLとCSSを`dist/`へ生成
 6. GitHub Pagesへデプロイ
 
 収集ではODPT・気象APIのraw応答を秘匿情報除去後にBigQueryへ保存し、便ごとの確定結果だけを本表へ保存します。未確定・日付不明の情報は実績にしません。気象欠測でも確定結果は保持します。移行と運用は[収集結果の整合性](docs/collection_outcomes.md)を参照してください。
 
 Pagesの静的生成時には、JMA・GFS・ECMWFの各統計参考値と予測時点のデータ来歴を、内容ハッシュで重複排除した不変レコードとしてBigQueryの`prediction_snapshots`へ保存します。HTML生成前の行は`prediction_publications`で`candidate`として記録し、公開URLのHTTP応答とartifact IDを確認できた行だけを`published`へ更新します。取得時刻が分からない旧データは`unknown`として、後続の時系列評価で現在の予報と混ぜません。
 
-公開成果物には`build-manifest.json`を含め、artifact ID、コードSHA、設定版、生成時刻、snapshot ID一覧を確認できます。公開確認の記録が一時的に失敗した場合は、同じartifact IDに対して`python publish_prediction_snapshots.py --artifact-id <id> --public-url <url>`を再実行します。
+公開成果物には`build-manifest.json`を含め、artifact ID、コードSHA、設定版、生成時刻、snapshot ID一覧を確認できます。公開確認の記録が一時的に失敗した場合は、同じartifact IDに対して`python -m flight_forecast.publish_prediction_snapshots --artifact-id <id> --public-url <url>`を再実行します。
 
 週次Actionsで実績と結合した公開値を時系列分割で検証し、モデル別・便別・リード日別のBrier score・信頼度曲線・ベースライン比較をartifactとして保存します。評価データ不足は精度0や推測値に置き換えず、`insufficient_data`として報告します。評価の定義は[`docs/evaluation.md`](docs/evaluation.md)にまとめています。
 
@@ -101,7 +119,7 @@ Pagesの静的生成時には、JMA・GFS・ECMWFの各統計参考値と予測�
 
 ## 運航統計参考値の計算
 
-`forecast_engine.py`は、対象便と同じ便の中から、予報された風向・風速に近い過去レコードを段階的に検索します。3便を混ぜた集計は行いません。
+`flight_forecast/forecast_engine.py`は、対象便と同じ便の中から、予報された風向・風速に近い過去レコードを段階的に検索します。3便を混ぜた集計は行いません。
 
 画面の主予報にはOpen-Meteo経由のJMA GSM・MSMモデルを使用します。便カードと詳細画面の比較欄にはGFS・ECMWF・JMAを併記し、JMA欄は主予報と同じ値を表示します。コード上の`probability`は既存互換のフィールド名であり、統計的に校正された確率を意味しません。
 
@@ -128,7 +146,7 @@ Pagesの静的生成時には、JMA・GFS・ECMWFの各統計参考値と予測�
 
 台風接近リスクは外部サイトの日別の飛行機向け影響度から判定します。`low`は補正なし、`medium`はリスク小として0.9、`high`はリスク中として0.8、`severe`はリスク大として0.7を、因子内訳が取得できる場合だけJMA主予報、GFS、ECMWFの表示値に掛けます。因子内訳がない旧キャッシュや、縮退応答で因子内訳を失った場合は注意表示だけにし、同じ日の全便へ同じ影響度を適用します。適用前後の値と外部因子は予測スナップショットへ保存します。
 
-これらのしきい値、補正倍率、表示色の境界値、信頼度A〜Eの境界値は`app_config.py`に集約しています。
+これらのしきい値、補正倍率、表示色の境界値、信頼度A〜Eの境界値は`flight_forecast/app_config.py`に集約しています。
 
 風向120°〜240°かつ平均風速9 m/s以上の場合、リスク欄に「南風注意」を表示します。
 
@@ -201,7 +219,7 @@ pip install -r requirements-dev.txt
 Flask開発サーバーを起動します。
 
 ```bash
-flask --app web_app run
+flask --app flight_forecast.web_app run
 ```
 
 ブラウザで<http://127.0.0.1:5000/>を開きます。
@@ -209,7 +227,7 @@ flask --app web_app run
 GitHub Pagesと同じ静的サイトを生成する場合:
 
 ```bash
-python build_static.py
+python -m flight_forecast.build_static
 ```
 
 生成結果は`dist/index.html`へ出力されます。
@@ -225,13 +243,13 @@ ODPT_API_KEY=your_odpt_api_key_here
 デモモード:
 
 ```bash
-python data_collector.py --demo
+python -m flight_forecast.data_collector --demo
 ```
 
 通常収集:
 
 ```bash
-python data_collector.py
+python -m flight_forecast.data_collector
 ```
 
 通常収集は当日・前日の対象便を照合し、日付と確定状態を検証できた便から保存します。予定・遅延中を運航実績へ変換しません。気象取得失敗は運航結果と独立に記録し、既存気象値をNULLで上書きしません。管理者訂正は保護し、競合は監査記録へ残します。JST 09:23・14:23・18:23・21:23に収集します（GitHubの遅延・実行抜けはあり得ます）。
@@ -239,16 +257,16 @@ python data_collector.py
 過去に保存された未取得・未対応ステータス行だけを削除する場合:
 
 ```bash
-python data_collector.py --cleanup-only
+python -m flight_forecast.data_collector --cleanup-only
 ```
 
 過去のCSVを取り込む場合:
 
 ```bash
-python import_user_csv.py --csv path/to/past_flights.csv
+python -m flight_forecast.import_user_csv --csv path/to/past_flights.csv
 ```
 
-CSV取り込み先もBigQueryだけです。`運航`と旧表記の`通常`は`運航`、`条件付→運航`・`条件付き運航`・`条件付き→就航`は`運航(条件付)`として保存します。通常運航か条件付き運航か判別できない場合も、飛んだ事実だけを示す`運航`を使用します。`欠航(強風)`のような括弧内の理由は`status_reason`へ分離します。Open-Meteo Archiveの取得失敗・欠測時は全件を中止し、不完全な行を保存しません。過去視程は`backfill_bigquery_visibility.py`でHistorical Forecastから補完します。
+CSV取り込み先もBigQueryだけです。`運航`と旧表記の`通常`は`運航`、`条件付→運航`・`条件付き運航`・`条件付き→就航`は`運航(条件付)`として保存します。通常運航か条件付き運航か判別できない場合も、飛んだ事実だけを示す`運航`を使用します。`欠航(強風)`のような括弧内の理由は`status_reason`へ分離します。Open-Meteo Archiveの取得失敗・欠測時は全件を中止し、不完全な行を保存しません。過去視程は`flight_forecast/backfill_bigquery_visibility.py`でHistorical Forecastから補完します。
 
 ## テスト
 
@@ -262,7 +280,7 @@ Web表示、信頼度計算、外部API障害時の表示、ヘルスチェッ�
 データ品質チェック:
 
 ```bash
-python data_quality.py --format markdown --output data_quality_report.md --fail-on error
+python -m flight_forecast.data_quality --format markdown --output data_quality_report.md --fail-on error
 ```
 
 GitHub Actionsでは、BigQuery上の重複、未知ステータス、未知便名、日付形式不正、欠航理由欠損、気象欠測をチェックし、Step Summaryとartifactにレポートを残します。
@@ -281,21 +299,21 @@ GitHub Actionsでは、BigQuery上の重複、未知ステータス、未知便�
 
 | パス | 役割 |
 | --- | --- |
-| `web_app.py` | Flaskアプリ、取得・キャッシュ・表示のオーケストレーション |
-| `clients/` | Open-Meteo・台風影響度APIのHTTPクライアントとレスポンス解析 |
-| `ensemble_evaluation.py` | memberを一度だけ評価し、モデル別集計を導出 |
-| `ensemble_quality.py` | モデル別のアンサンブル品質・欠測要約 |
-| `app_config.py` | 予報日数、確率しきい値、補正倍率などの共通設定 |
-| `forecast_cache.py` | Open-Meteo取得失敗時に使う前回予報キャッシュ |
-| `presentation.py` | 便カード・詳細画面向けの表示用データ整形 |
-| `forecast_engine.py` | 同じ便の過去実績に基づく運航統計参考値の計算 |
-| `build_static.py` | GitHub Pages用の静的HTML生成 |
-| `data_collector.py` | 当日の運航・気象情報の収集 |
-| `bigquery_storage.py` | BigQueryの読み書き |
-| `bigquery_schema.py` | BigQuery設定、スキーマ、テーブル作成 |
-| `data_quality.py` | BigQueryのデータ品質チェック |
-| `backfill_bigquery_visibility.py` | 過去の視程欠損を補完 |
-| `import_user_csv.py` | 過去運航実績の取り込み |
+| `flight_forecast/web_app.py` | Flaskアプリ、取得・キャッシュ・表示のオーケストレーション |
+| `flight_forecast/clients/` | Open-Meteo・台風影響度APIのHTTPクライアントとレスポンス解析 |
+| `flight_forecast/ensemble_evaluation.py` | memberを一度だけ評価し、モデル別集計を導出 |
+| `flight_forecast/ensemble_quality.py` | モデル別のアンサンブル品質・欠測要約 |
+| `flight_forecast/app_config.py` | 予報日数、確率しきい値、補正倍率などの共通設定 |
+| `flight_forecast/forecast_cache.py` | Open-Meteo取得失敗時に使う前回予報キャッシュ |
+| `flight_forecast/presentation.py` | 便カード・詳細画面向けの表示用データ整形 |
+| `flight_forecast/forecast_engine.py` | 同じ便の過去実績に基づく運航統計参考値の計算 |
+| `flight_forecast/build_static.py` | GitHub Pages用の静的HTML生成 |
+| `flight_forecast/data_collector.py` | 当日の運航・気象情報の収集 |
+| `flight_forecast/bigquery_storage.py` | BigQueryの読み書き |
+| `flight_forecast/bigquery_schema.py` | BigQuery設定、スキーマ、テーブル作成 |
+| `flight_forecast/data_quality.py` | BigQueryのデータ品質チェック |
+| `flight_forecast/backfill_bigquery_visibility.py` | 過去の視程欠損を補完 |
+| `flight_forecast/import_user_csv.py` | 過去運航実績の取り込み |
 | `templates/index.html` | WebページのHTML |
 | `static/styles.css` | Webページのスタイル |
 | `static/flags/*.svg` | GFS・ECMWF・JMA表示用の旗アイコン |
@@ -317,4 +335,3 @@ AIエージェント向けの実装・運用ガイドは[`README_AI.md`](README_
 ## ライセンス
 
 [MIT License](LICENSE)
-

@@ -2,7 +2,7 @@
 
 ## 状態と日付
 
-`collection_outcomes.py`はネットワーク・DBを参照しない判定境界です。
+`flight_forecast/collection_outcomes.py`はネットワーク・DBを参照しない判定境界です。
 Arrived/Cancelled/Returned/Divertedを確定結果として扱います。
 Normal/Delayed/Conditional/EstimatedArrivalは未確定です。ただし妥当なactualArrivalTimeが
 あり更新時刻以前の到着を裏付ける場合は運航を確定できます。欠航・引き返しとactualArrivalTimeが
@@ -39,13 +39,13 @@ MERGEは管理者保護を最優先し、古い時刻・同時刻の異なる結
 2. SQLを生成してレビュー（このコマンドは接続も更新もしません）:
 
 ```bash
-python migrate_collection_outcomes.py --protect-owner-report
+python -m flight_forecast.migrate_collection_outcomes --protect-owner-report
 ```
 
 3. 承認後にのみ実行:
 
 ```bash
-python migrate_collection_outcomes.py --protect-owner-report --apply
+python -m flight_forecast.migrate_collection_outcomes --protect-owner-report --apply
 ```
 
 既存のoutcome_audit_20260908_owner_reportを根拠に6便の状態を検証して保護します。
