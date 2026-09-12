@@ -7,6 +7,7 @@ from flight_forecast.clients.open_meteo import (
     fetch_deterministic_forecast,
     parse_deterministic_response,
     parse_ensemble_response,
+    select_evenly,
 )
 from flight_forecast.clients.typhoon_impact import parse_typhoon_impact_response
 
@@ -47,6 +48,15 @@ def test_open_meteo_ensemble_parser_preserves_model_member_and_skips_incomplete_
     ]
     assert parsed["2026-08-25T09:00"][0]["wind_speed"] == 5.0
     assert len(parsed["2026-08-25T09:00"]) == 1
+
+
+def test_ensemble_member_sampling_keeps_range_without_duplicates():
+    selected = select_evenly(list(range(51)), 31)
+
+    assert len(selected) == 31
+    assert selected[0] == 0
+    assert selected[-1] == 50
+    assert selected == sorted(set(selected))
 
 
 def test_open_meteo_deterministic_parser_keeps_optional_missing_fields_explicit():

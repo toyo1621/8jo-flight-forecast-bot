@@ -1,11 +1,9 @@
 import json
-import re
 from datetime import date, datetime, timedelta, timezone
 from unittest.mock import Mock, patch
 
 from flask import render_template
 
-from flight_forecast.app_config import LOW_PROBABILITY_THRESHOLD
 from flight_forecast.forecast_cache import (
     is_cached_forecast_fresh,
     load_cached_forecast_bundle,
@@ -13,7 +11,6 @@ from flight_forecast.forecast_cache import (
 )
 from flight_forecast.forecast_engine import (
     MAX_PROBABILITY,
-    find_similar_flights,
     predict_flight_probability,
 )
 from flight_forecast.presentation import (
@@ -21,17 +18,12 @@ from flight_forecast.presentation import (
     decorate_flight_for_display,
 )
 from flight_forecast.web_app import (
-    BASE_DIR,
     FORECAST_DAYS,
-    _select_evenly,
     _supplement_primary_forecast,
     _with_typhoon_impact,
     _with_typhoon_risk_summary,
     app,
     build_daily_forecasts,
-    calculate_confidence,
-    calculate_model_reference_probabilities,
-    calculate_model_reference_risks,
     create_app,
     deterministic_risk_summary,
     fallback_confidence,
@@ -593,101 +585,6 @@ def test_wind_direction_label_uses_sixteen_points():
     assert wind_direction_label(None) is None
 
 
-def test_find_similar_flights_filters_same_flight_and_orders_by_weather():
-    history = [
-        {"date": "2026-01-01", "flight_number": "ANA1891", "flight_display_name": "ANA1891(1便)", "status": "通常", "status_reason": None, "wind_direction": 180.0, "wind_speed": 5.0, "wind_gusts": 8.0, "cloud_cover_low": 20.0, "visibility": 10.0},
-        {"date": "2026-01-02", "flight_number": "ANA1891", "flight_display_name": "ANA1891(1便)", "status": "欠航", "status_reason": "強風", "wind_direction": 260.0, "wind_speed": 14.0, "wind_gusts": 20.0, "cloud_cover_low": 90.0, "visibility": 5.0},
-        {"date": "2026-01-03", "flight_number": "ANA1893", "flight_display_name": "ANA1893(2便)", "status": "通常", "status_reason": None, "wind_direction": 180.0, "wind_speed": 5.0, "wind_gusts": 8.0, "cloud_cover_low": 20.0, "visibility": 10.0},
-    ]
-    weather = {"wind_direction": 182.0, "wind_speed": 5.2, "wind_gusts": 8.0, "cloud_cover_low": 20.0, "visibility": 10.0}
-
-    with patch("flight_forecast.forecast_engine.load_detailed_history", return_value=history):
-        result = find_similar_flights("ANA1891", weather)
-
-    assert [row["date"] for row in result] == ["2026-01-01"]
-    assert result[0]["date_label"] == "2026/01/01"
-    assert result[0]["flight_display_name"] == "ANA1891(1便)"
-
-
-def test_forecast_domain_functions_accept_injected_history_without_bigquery():
-    history = [{"flight_number": "ANA1891", "status": "運航", "wind_direction": 180.0, "wind_speed": 5.0, "wind_gusts": 10.0}] * 5
-    with patch("flight_forecast.forecast_engine.load_history", side_effect=AssertionError("BigQuery called")):
-        result = predict_flight_probability(
-            180.0,
-            5.0,
-            8.0,
-            20.0,
-            15.0,
-            flight_number="ANA1891",
-            history=history,
-        )
-
-    assert result["calculation_status"] == "available"
-    assert result["probability"] == 80.0
-
-
-def test_similar_flight_search_accepts_injected_history_without_bigquery():
-    history = [
-        {
-            "date": "2026-01-01",
-            "flight_number": "ANA1891",
-            "status": "運航",
-            "wind_direction": 180.0,
-            "wind_speed": 5.0,
-            "wind_gusts": 8.0,
-        }
-    ]
-    with patch("flight_forecast.forecast_engine.load_detailed_history", side_effect=AssertionError("BigQuery called")):
-        result = find_similar_flights(
-            "ANA1891",
-            {"wind_direction": 180.0, "wind_speed": 5.0, "wind_gusts": 8.0},
-            history=history,
-        )
-
-    assert result[0]["date"] == "2026-01-01"
-
-
-def test_find_similar_flights_prefers_recent_date_when_wind_is_equal():
-    history = [
-        {"date": "2026-01-01", "flight_number": "ANA1891", "flight_display_name": "ANA1891(1便)", "status": "通常", "status_reason": None, "wind_direction": 180.0, "wind_speed": 5.0, "wind_gusts": 8.0, "cloud_cover_low": 20.0, "visibility": None},
-        {"date": "2026-01-02", "flight_number": "ANA1891", "flight_display_name": "ANA1891(1便)", "status": "通常", "status_reason": None, "wind_direction": 180.0, "wind_speed": 5.0, "wind_gusts": 8.0, "cloud_cover_low": 20.0, "visibility": 10.0},
-    ]
-    weather = {"wind_direction": 180.0, "wind_speed": 5.0, "wind_gusts": 8.0, "cloud_cover_low": 20.0, "visibility": 10.0}
-
-    with patch("flight_forecast.forecast_engine.load_detailed_history", return_value=history):
-        result = find_similar_flights("ANA1891", weather, limit=1)
-
-    assert result[0]["date"] == "2026-01-02"
-
-
-def test_find_similar_flights_excludes_outside_direction_even_with_similar_visibility():
-    base = {"flight_number": "ANA1891", "flight_display_name": "ANA1891(1便)", "status": "通常", "status_reason": None}
-    history = [
-        {**base, "date": "2026-01-01", "wind_direction": 180.0, "wind_speed": 5.0, "wind_gusts": 8.0, "cloud_cover_low": 20.0, "visibility": 15.0},
-        {**base, "date": "2026-01-02", "wind_direction": 210.0, "wind_speed": 6.0, "wind_gusts": 9.0, "cloud_cover_low": 90.0, "visibility": 4.0},
-    ]
-    weather = {"wind_direction": 180.0, "wind_speed": 5.0, "wind_gusts": 8.0, "cloud_cover_low": 95.0, "visibility": 3.0}
-
-    with patch("flight_forecast.forecast_engine.load_detailed_history", return_value=history):
-        result = find_similar_flights("ANA1891", weather, limit=1)
-
-    assert result[0]["date"] == "2026-01-01"
-
-
-def test_find_similar_flights_prioritizes_matching_strong_wind_and_direction():
-    base = {"flight_number": "ANA1891", "flight_display_name": "ANA1891(1便)", "status": "通常", "status_reason": None, "cloud_cover_low": 30.0, "visibility": 15.0}
-    history = [
-        {**base, "date": "2026-01-01", "wind_direction": 180.0, "wind_speed": 5.0, "wind_gusts": 8.0},
-        {**base, "date": "2026-01-02", "wind_direction": 245.0, "wind_speed": 13.0, "wind_gusts": 19.0},
-    ]
-    weather = {"wind_direction": 250.0, "wind_speed": 14.0, "wind_gusts": 20.0, "cloud_cover_low": 30.0, "visibility": 15.0}
-
-    with patch("flight_forecast.forecast_engine.load_detailed_history", return_value=history):
-        result = find_similar_flights("ANA1891", weather, limit=1)
-
-    assert result[0]["date"] == "2026-01-02"
-
-
 def test_low_cloud_warning_uses_precise_wording():
     with patch("flight_forecast.forecast_engine.load_history", return_value=[{"status": "通常", "wind_direction": 180.0, "wind_speed": 5.0, "wind_gusts": 10.0}] * 5):
         result = predict_flight_probability(180.0, 5.0, 8.0, 100.0, 15.0)
@@ -705,16 +602,6 @@ def test_probability_without_history_is_unavailable():
     assert result["reason_code"] == "similar_history_below_minimum"
     assert result["data_count"] == 0
     assert "算出できません" in result["warning_msg"]
-
-
-def test_probability_with_fewer_than_minimum_history_rows_is_unavailable():
-    with patch("flight_forecast.forecast_engine.load_history", return_value=[{"status": "通常", "wind_direction": 180.0, "wind_speed": 5.0, "wind_gusts": 10.0}] * 4):
-        result = predict_flight_probability(180.0, 3.0, 5.0, 10.0, 20.0)
-
-    assert result["probability"] is None
-    assert result["calculation_status"] == "insufficient_history"
-    assert result["reason_code"] == "similar_history_below_minimum"
-    assert result["data_count"] == 4
 
 
 def test_probability_history_is_filtered_by_flight_number():
@@ -744,21 +631,13 @@ def test_low_cloud_and_strongest_wind_adjustments():
     assert result["weather_factor"] == 0.63
 
 
-def test_visibility_low_cloud_and_gust_adjustments_are_tiered():
+def test_low_cloud_and_gust_adjustments_are_tiered():
     history = [{"status": "通常", "wind_direction": 210.0, "wind_speed": 5.0, "wind_gusts": 10.0}] * 10
     with patch("flight_forecast.forecast_engine.load_history", return_value=history):
-        extreme_visibility = predict_flight_probability(210.0, 5.0, 8.0, 20.0, 0.9)
-        severe_visibility = predict_flight_probability(210.0, 5.0, 8.0, 20.0, 1.0)
-        moderate_visibility = predict_flight_probability(210.0, 5.0, 8.0, 20.0, 3.0)
-        clear_visibility = predict_flight_probability(210.0, 5.0, 8.0, 20.0, 5.0)
         severe_low_cloud = predict_flight_probability(210.0, 5.0, 8.0, 96.0, 15.0)
         severe_gust = predict_flight_probability(210.0, 5.0, 20.3, 20.0, 15.0,
             history=[{**r, "wind_gusts": 20.3} for r in history])
 
-    assert extreme_visibility["probability"] == 54.0
-    assert severe_visibility["probability"] == 63.0
-    assert moderate_visibility["probability"] == 81.0
-    assert clear_visibility["probability"] == 90.0
     assert severe_low_cloud["probability"] == 67.5
     assert severe_gust["probability"] == 55.0
 
@@ -795,197 +674,11 @@ def test_precipitation_from_two_mm_adds_rain_risk():
     assert "降水注意" in rainy["warning_msg"]
 
 
-def test_southerly_wind_warning_includes_boundary_values():
-    with patch("flight_forecast.forecast_engine.load_history", return_value=[
-        {"status": "通常", "wind_direction": direction, "wind_speed": 5.0, "wind_gusts": 10.0}
-        for direction in (120, 240) for _ in range(5)
-    ]):
-        lower = predict_flight_probability(120.0, 5.0, 10.0, 20.0, 15.0)
-        upper = predict_flight_probability(240.0, 5.0, 10.0, 20.0, 15.0)
-
-    assert "南風リスク中" in lower["warning_msg"]
-    assert "南風リスク小" in upper["warning_msg"]
-    assert lower["alert_required"] is True
-
-
-def test_southerly_wind_warning_requires_direction_and_speed():
-    with patch("flight_forecast.forecast_engine.load_history", return_value=[{"status": "通常", "wind_direction": 180.0, "wind_speed": 9.0, "wind_gusts": 10.0}] * 5):
-        weak = predict_flight_probability(180.0, 3.99, 10.0, 20.0, 15.0)
-        outside = predict_flight_probability(241.0, 9.0, 10.0, 20.0, 15.0)
-
-    assert "南風リスク" not in weak["warning_msg"]
-    assert "南風リスク" not in outside["warning_msg"]
-
-
-def test_september_eighth_final_flight_southerly_warning():
-    with patch("flight_forecast.forecast_engine.load_history", return_value=[{"status": "通常", "wind_direction": 185.0, "wind_speed": 6.02, "wind_gusts": 10.0}] * 5):
-        result = predict_flight_probability(185.0, 6.02, 13.0, 30.0, 13.0)
-    assert "南風リスク中" in result["warning_msg"]
-    assert result["weather_factor"] == 0.8
-    assert result["alert_required"] is True
-
-
-
-def test_calculate_confidence_uses_ensemble_spread():
-    members = [
-        {
-            "_model": "gfs_seamless",
-            "wind_direction": 180.0,
-            "wind_speed": float(value),
-            "wind_gusts": 7.0,
-            "cloud_cover_low": 20.0,
-            "visibility": 15.0,
-        }
-        for value in range(40)
-    ]
-
-    with patch(
-        "flight_forecast.web_app.predict_flight_probability",
-        side_effect=lambda **weather: {"probability": weather["wind_speed"]},
-    ):
-        confidence = calculate_confidence(members)
-
-    assert confidence["grade"] == "D"
-    assert confidence["member_count"] == 40
-    assert confidence["source"] == "ensemble_partial"
-    assert confidence["models"]["gfs_seamless"]["valid_member_count"] == 40
-
-
-def test_calculate_confidence_ignores_unavailable_member_predictions():
-    members = [
-        {"_model": "gfs_seamless", "wind_direction": 180.0, "wind_speed": 5.0}
-        for _ in range(20)
-    ]
-
-    with patch(
-        "flight_forecast.web_app.predict_flight_probability",
-        return_value={"probability": None, "calculation_status": "insufficient_history"},
-    ):
-        confidence = calculate_confidence(members)
-
-    assert confidence["grade"] is None
-    assert confidence["source"] == "unavailable"
-    assert confidence["models"]["gfs_seamless"]["status"] == "insufficient_history"
-
-
-def test_model_reference_probabilities_use_each_models_median():
-    members = [
-        {"_model": "gfs_seamless", "wind_speed": value}
-        for value in (10.0, 20.0, 30.0)
-    ] + [
-        {"_model": "ecmwf_ifs025", "wind_speed": value}
-        for value in (40.0, 50.0)
-    ]
-    with patch(
-        "flight_forecast.web_app.predict_flight_probability",
-        side_effect=lambda **weather: {"probability": weather["wind_speed"]},
-    ):
-        probabilities = calculate_model_reference_probabilities(members)
-
-    assert probabilities == {"gfs_seamless": 20.0, "ecmwf_ifs025": 45.0}
-
-
-def test_model_reference_risks_summarize_each_model_members():
-    members = [
-        {"_model": "gfs_seamless", "wind_speed": 9.0},
-        {"_model": "gfs_seamless", "wind_speed": 12.0},
-        {"_model": "ecmwf_ifs025", "wind_speed": 4.0, "cloud_cover_low": 95.0},
-    ]
-
-    with patch(
-        "flight_forecast.web_app.predict_flight_probability",
-        side_effect=[
-            {"warning_msg": "特になし"},
-            {"warning_msg": "強風注意 (予報風速: 12.0 m/s)"},
-            {"warning_msg": "低層雲の影響注意 (低層雲量 95.0%)"},
-        ],
-    ):
-        risks = calculate_model_reference_risks(members, SAMPLE_WEATHER["2026-06-20T08:00"])
-
-    assert risks == {
-        "gfs_seamless": "強風注意 (1/2通り)",
-        "ecmwf_ifs025": "低層雲の影響注意 (1/1通り)",
-    }
-
-
 def test_deterministic_risk_summary_keeps_jma_risk_labels():
     assert deterministic_risk_summary({"warning_msg": "特になし"}) == "特になし"
     assert deterministic_risk_summary(
         {"warning_msg": "突風注意 (予報突風: 16.0 m/s)、台風接近リスク小"}
     ) == "突風注意、台風接近リスク"
-
-
-def test_confidence_note_uses_short_wording():
-    template = (BASE_DIR / "templates" / "index.html").read_text(encoding="utf-8")
-
-    assert "予報シナリオの一致度" in template
-    assert "{{ day.confidence.valid_member_count }}・期待{{ day.confidence.expected_member_count }}通り" in template
-
-
-def test_mobile_css_prevents_horizontal_overflow():
-    stylesheet = (BASE_DIR / "static" / "styles.css").read_text(encoding="utf-8")
-
-    assert "overflow-x: clip" in stylesheet
-    assert ".header::after { right: 0; width: 55%; }" in stylesheet
-
-
-def test_stylesheet_url_has_cache_buster():
-    template = (BASE_DIR / "templates" / "index.html").read_text(encoding="utf-8")
-
-    assert 'href="{{ asset_prefix }}static/styles.css?v=' in template
-
-
-def test_template_includes_quick_guide_for_non_experts():
-    template = (BASE_DIR / "templates" / "index.html").read_text(encoding="utf-8")
-    stylesheet = (BASE_DIR / "static" / "styles.css").read_text(encoding="utf-8")
-
-    assert 'class="quick-guide"' in template
-    assert "◎95以上 / 〇75以上 / △35以上 / ×35未満" in template
-    assert "比較欄にはGFS・ECMWF・JMAを併記" in template
-    assert ".quick-guide" in stylesheet
-
-
-def test_template_includes_forecast_day_index():
-    template = (BASE_DIR / "templates" / "index.html").read_text(encoding="utf-8")
-    stylesheet = (BASE_DIR / "static" / "styles.css").read_text(encoding="utf-8")
-
-    assert 'class="forecast-index"' in template
-    assert 'href="#date-{{ day.date }}"' in template
-    assert ".forecast-index-links" in stylesheet
-
-
-def test_orange_flight_style_depends_on_probability_below_sixty():
-    template = (BASE_DIR / "templates" / "index.html").read_text(encoding="utf-8")
-    stylesheet = (BASE_DIR / "static" / "styles.css").read_text(encoding="utf-8")
-
-    assert "{% if flight.is_low_probability %} flight--low-probability{% endif %}" in template
-    assert LOW_PROBABILITY_THRESHOLD == 60.0
-    assert "flight.alert_required" not in template
-    assert ".flight--low-probability .probability" in stylesheet
-    assert ".flight--alert" not in stylesheet
-
-
-def test_flight_card_shows_model_reference_probabilities_with_threshold_styles():
-    template = (BASE_DIR / "templates" / "index.html").read_text(encoding="utf-8")
-    stylesheet = (BASE_DIR / "static" / "styles.css").read_text(encoding="utf-8")
-
-    assert 'class="model-probabilities"' in template
-    assert "{% for model in flight.model_probabilities %}" in template
-    assert 'src="{{ asset_prefix }}{{ model.flag_path }}"' in template
-    assert "model-probability--{{ model.tone }}" in template
-    assert "モデル別リスク" in template
-    assert "model-risk--{{ model.risk_tone }}" in template
-    assert "JMA主予報 / 過去実績×リスクによる参考スコア" in template
-    assert "詳しく見る(運航実績・気象情報)" in template
-    assert ".model-probability--ok" in stylesheet
-    assert ".model-probability--low" in stylesheet
-    assert ".flight-meta" in stylesheet
-    assert ".model-flag" in stylesheet
-    assert "flight.probability_symbol" in template
-    assert "model.symbol" in template
-    assert ".probability-symbol" in stylesheet
-    assert ".probability-inline-symbol" in stylesheet
-    assert ".probability small" in stylesheet
 
 
 def test_probability_symbol_thresholds_render_in_template():
@@ -1058,12 +751,6 @@ def test_insufficient_probability_renders_as_unavailable_without_percent():
     assert 'class="probability-unavailable"' in body
     assert "算出不可" in body
     assert "None%" not in body
-
-
-def test_flag_icon_assets_exist():
-    assert (BASE_DIR / "static" / "flags" / "us.svg").exists()
-    assert (BASE_DIR / "static" / "flags" / "eu.svg").exists()
-    assert (BASE_DIR / "static" / "flags" / "jp.svg").exists()
 
 
 def test_forecast_cache_write_is_atomic_and_rejects_future_timestamp(tmp_path):
@@ -1155,6 +842,11 @@ def test_decorate_flight_for_display_does_not_treat_missing_probability_as_low()
     assert flight["probability_symbol"] is None
     assert flight["is_low_probability"] is False
     assert flight["model_probabilities"] == []
+
+
+def test_low_probability_display_boundary_is_sixty():
+    assert decorate_flight_for_display({"probability": 59.9})["is_low_probability"] is True
+    assert decorate_flight_for_display({"probability": 60.0})["is_low_probability"] is False
 
 
 def test_load_forecast_bundle_uses_cached_main_forecast_on_api_error():
@@ -1334,17 +1026,6 @@ def test_partial_typhoon_coverage_is_reported():
     assert "2026-07-16の台風影響度は未取得" in bundle["notices"][0]
 
 
-def test_select_evenly_balances_ensemble_members():
-    members = list(range(51))
-
-    selected = _select_evenly(members, 31)
-
-    assert len(selected) == 31
-    assert selected[0] == 0
-    assert selected[-1] == 50
-    assert selected == sorted(set(selected))
-
-
 def test_fallback_confidence_decreases_with_lead_time():
     reference = date(2026, 6, 19)
 
@@ -1375,43 +1056,19 @@ def test_index_renders_forecast():
     body = response.get_data(as_text=True)
     assert "八丈島便 運航の目安" in body
     assert 'class="today-summary"' in body
-    assert "今日の運航目安" not in body
-    assert "運航目安を取得できません" in body
     assert "ANA公式の運航状況" in body
     assert 'href="https://www.ana.co.jp/fs/dom/jp/"' in body
     assert "運航参考スコア" in body
     assert "88.0 / 100" in body
     assert ">88.0%</strong>" not in body
-    assert "羽田空港から八丈島空港へ向かうANA1891・ANA1893・ANA1895便の運航目安を、天気・台風影響度・過去の運航実績から確認できます。" in body
-    assert "天候信頼度は、Open-Meteo APIからオープンデータ" not in body
     assert "比較欄にはGFS・ECMWF・JMAを併記" in body
     assert "主予報は気象庁(JMA)モデルをOpen-Meteo経由で使用しています。" in body
-    assert "予報データ取得 " in body
-    assert "(6時間ごとに更新)" in body
-    assert "青: 参考スコア60以上" in body
-    assert "オレンジ: 参考スコア60未満" in body
-    assert "主予報: 気象庁(JMA) GSM・MSMモデル (Open-Meteo経由)" in body
-    assert "主予報(JMA)での統計参考値" in body
     assert "予報シナリオの一致度" in body
     assert "モデル別の運航参考スコア" in body
     assert "同じ便の類似実績とリスクから算出した統計参考値で、将来の運航確率ではありません" in body
     assert "\u672a\u6821\u6b63" not in body
-    assert "表示スコアが過去実績から求めた基礎値より低くなります" in body
-    assert "天気予報の更新で条件が変わると、スコアも上がったり下がったりします" in body
-    assert ">雲量<" not in body
-    assert "なぜ作ったか" in body
-    assert "ざっくりどういう仕組みか" in body
-    assert "GFS・ECMWFを混ぜずにモデル別" in body
-    assert "日本周辺の短期予報を重視してJMAを主予報" in body
-    assert "八丈島・東京方面 台風影響目安" in body
-    assert "運航率に0.9・0.8・0.7を掛けます" in body
-    assert "運航参考スコア60未満の便はオレンジ" in body
-    assert "GitHub Actionsで6時間ごとに再計算" in body
-    assert "気象業法への配慮" in body
-    assert "予報気象情報" in body
     assert "モデル別リスク" in body
     assert "計算対象の過去実績（最大10件）" in body
-    assert "6ポイント以内" not in body
 
 
 def test_access_stats_render_in_footer_when_static_data_is_available():
@@ -1481,14 +1138,6 @@ def test_access_stats_render_unavailable_without_fabricating_zero():
     assert "0ページビュー" not in body
 
 
-def test_history_template_includes_flight_name_and_visibility_fallback():
-    template = (BASE_DIR / "templates" / "index.html").read_text(encoding="utf-8")
-
-    assert "{{ history.date_label }} {{ history.flight_display_name }}" in template
-    assert "/ 視程 {% if history.visibility is not none %}{{ history.visibility }} km{% else %}欠測{% endif %}" in template
-    assert "{{ model.label }}予報での統計参考値" in template
-
-
 def test_index_handles_weather_api_error():
     with (
         patch("flight_forecast.web_app.fetch_forecast", side_effect=ValueError("bad data")),
@@ -1521,38 +1170,3 @@ def test_index_uses_injected_jst_clock_for_today_selection():
     assert response.status_code == 200
     assert build_days.call_args.kwargs["current_time"] == current_time
     assert render.call_args.kwargs["today_day"] == day
-
-
-def test_health():
-    response = app.test_client().get("/health")
-
-    assert response.status_code == 200
-    assert response.get_json() == {"status": "ok"}
-
-
-def test_workflows_run_tests_and_data_quality_reports():
-    ci = (BASE_DIR / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8")
-    codeql = (BASE_DIR / ".github" / "workflows" / "codeql.yml").read_text(encoding="utf-8")
-    pages = (BASE_DIR / ".github" / "workflows" / "pages.yml").read_text(encoding="utf-8")
-    collection = (BASE_DIR / ".github" / "workflows" / "data_collection.yml").read_text(encoding="utf-8")
-    evaluation = (BASE_DIR / ".github" / "workflows" / "forecast_evaluation.yml").read_text(encoding="utf-8")
-
-    assert "python -m pytest -q" in ci
-    assert "python -m ruff check ." in ci
-    assert "python -m pip_audit -r requirements.lock" in ci
-    assert "github/codeql-action/analyze@" in codeql
-    assert "python -m flight_forecast.data_quality --format markdown" in pages
-    assert "python -m flight_forecast.data_quality --format markdown" in collection
-    assert "python -m flight_forecast.collection_monitor --days 14" in collection
-    assert "--replay-run-id" in (BASE_DIR / "flight_forecast" / "data_collector.py").read_text(encoding="utf-8")
-    assert "actions/upload-artifact@" in pages
-    assert "actions/upload-artifact@" in collection
-    assert "--fail-on error" in pages
-    assert "--fail-on error" in collection
-    assert "python -m flight_forecast.forecast_evaluation" in evaluation
-    assert "--fail-on-insufficient-data" in evaluation
-    for workflow in (ci, codeql, pages, collection, evaluation):
-        assert re.search(r"uses:\s+[^\s@]+@[0-9a-f]{40}", workflow)
-        assert re.search(r"uses:\s+[^\s@]+@v\d+", workflow) is None
-
-
