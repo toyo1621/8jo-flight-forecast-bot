@@ -100,8 +100,9 @@ def add_brand_assets(html, asset_prefix=""):
     return html
 
 
-def build_site(output_dir=DIST_DIR, current_time=None):
-    current_time = current_time or datetime.now(JST)
+def build_site(output_dir=DIST_DIR, current_time=None, now_provider=None):
+    now_provider = now_provider or (lambda: datetime.now(JST))
+    current_time = current_time or now_provider()
     bundle = load_forecast_bundle(print)
     days = build_daily_forecasts(
         bundle["weather"],
@@ -112,7 +113,8 @@ def build_site(output_dir=DIST_DIR, current_time=None):
     if not days:
         raise RuntimeError("予報日が0件です。空の成果物を公開しません。")
 
-    generated_at = current_time.isoformat()
+    # The prediction is generated only after all source data has been retrieved.
+    generated_at = now_provider().isoformat()
     identity = runtime_prediction_identity()
     config_version = bundle.get("config_version") or FORECAST_CONFIG_VERSION
     snapshot_rows = build_prediction_snapshot_rows(

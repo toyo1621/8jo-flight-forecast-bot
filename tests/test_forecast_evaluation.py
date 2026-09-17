@@ -19,6 +19,7 @@ def _row(
     flight_number="ANA1891",
     lead_hours=24,
     generated="2026-08-19T00:00:00+09:00",
+    retrieved="2026-08-18T00:00:00+09:00",
     valid="2026-08-20T08:00:00+09:00",
     provenance="known",
     category=None,
@@ -34,7 +35,7 @@ def _row(
         "lead_hours": lead_hours,
         "calculation_status": "available",
         "prediction_generated_at": generated,
-        "weather_retrieved_at": "2026-08-18T00:00:00+09:00",
+        "weather_retrieved_at": retrieved,
         "weather_valid_at": valid,
         "provenance_status": provenance,
         "status_reason_category": category,
@@ -54,6 +55,20 @@ def test_partition_excludes_unknown_provenance_and_future_leakage():
 
     assert len(eligible) == 1
     assert excluded == {"unknown_provenance": 1, "prediction_after_valid_time": 1}
+
+
+def test_partition_accepts_source_retrieved_before_prediction_generation():
+    eligible, excluded = partition_evaluable_predictions(
+        [
+            _row(
+                retrieved="2026-08-19T00:00:02+09:00",
+                generated="2026-08-19T00:00:03+09:00",
+            )
+        ]
+    )
+
+    assert len(eligible) == 1
+    assert excluded == {}
 
 
 def test_partition_excludes_candidate_snapshots_from_strict_evaluation():

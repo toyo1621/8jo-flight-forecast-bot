@@ -131,6 +131,57 @@ def test_build_site_persists_prediction_snapshots_before_rendering(tmp_path):
     assert 'name="forecast-artifact-id"' in html
 
 
+def test_build_site_records_generation_after_source_retrieval(tmp_path):
+    reference_time = datetime(2026, 8, 24, 1, tzinfo=timezone(timedelta(hours=9)))
+    retrieved_at = datetime(2026, 8, 24, 1, 0, 2, tzinfo=reference_time.tzinfo)
+    generated_at = datetime(2026, 8, 24, 1, 0, 3, tzinfo=reference_time.tzinfo)
+    events = []
+    bundle = {
+        "weather": {},
+        "ensembles": {},
+        "typhoon_impacts": {},
+        "notices": [],
+        "source_updated_at": {"weather": retrieved_at.isoformat()},
+    }
+    days = [{
+        "date": "2026-08-24",
+        "date_label": "8/24",
+        "weekday": "月",
+        "flights": [],
+        "confidence": {"grade": None, "label": "評価不可", "lead_days": 0},
+    }]
+
+    def load_bundle(_logger):
+        events.append("source_retrieved")
+        return bundle
+
+    def build_forecasts(*_args, **_kwargs):
+        events.append("forecast_built")
+        return days
+
+    def provide_now():
+        events.append("generation_time_recorded")
+        return generated_at
+
+    with (
+        patch("flight_forecast.build_static.load_forecast_bundle", side_effect=load_bundle),
+        patch("flight_forecast.build_static.build_daily_forecasts", side_effect=build_forecasts),
+        patch(
+            "flight_forecast.build_static.build_prediction_snapshot_rows",
+            return_value=[{"snapshot_id": "snapshot-1"}],
+        ) as build_rows,
+        patch("flight_forecast.build_static.save_prediction_snapshots", return_value=1),
+        patch("flight_forecast.build_static.save_prediction_publication_candidates", return_value=1),
+        patch("flight_forecast.build_static.fetch_published_forecast_archive", return_value=[]),
+        patch("flight_forecast.build_static.load_access_stats", return_value={"days": []}),
+    ):
+        build_site(tmp_path, current_time=reference_time, now_provider=provide_now)
+
+    assert events == ["source_retrieved", "forecast_built", "generation_time_recorded"]
+    assert generated_at > retrieved_at
+    assert build_rows.call_args.kwargs["generated_at"] == generated_at.isoformat()
+
+
 def test_build_site_rejects_nonempty_weather_that_produces_no_forecast_days(tmp_path):
     bundle = {
         "weather": {"2026-08-24T08:00": {"wind_speed": 4.0}},
