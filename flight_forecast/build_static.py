@@ -13,6 +13,7 @@ from flight_forecast.app_config import (
     LOW_PROBABILITY_THRESHOLD,
 )
 from flight_forecast.bigquery_storage import (
+    fetch_detailed_history,
     fetch_published_forecast_archive,
     save_prediction_publication_candidates,
     save_prediction_snapshots,
@@ -31,12 +32,14 @@ from flight_forecast.web_app import (
     build_daily_forecasts,
     load_forecast_bundle,
 )
+from flight_forecast.wind_statistics import build_wind_cancellation_summary
 
 DIST_DIR = BASE_DIR / "dist"
 FAVICON_VERSION = "20260905-1"
 SITE_URL = "https://toyo1621.github.io/8jo-flight-forecast-bot/"
 GUIDE_URL = f"{SITE_URL}guide/"
 HISTORY_URL = f"{SITE_URL}history/"
+WIND_URL = f"{SITE_URL}wind/"
 ABOUT_URL = f"{SITE_URL}about/"
 PRIVACY_URL = f"{SITE_URL}privacy/"
 FLIGHTS_URL = f"{SITE_URL}flights/"
@@ -140,11 +143,13 @@ def build_site(output_dir=DIST_DIR, current_time=None, now_provider=None):
     now_provider = now_provider or (lambda: datetime.now(JST))
     current_time = current_time or now_provider()
     bundle = load_forecast_bundle(print)
+    history = fetch_detailed_history()
     days = build_daily_forecasts(
         bundle["weather"],
         bundle["ensembles"],
         current_time=current_time,
         typhoon_impacts_by_date=bundle["typhoon_impacts"],
+        history=history,
     )
     if not days:
         raise RuntimeError("予報日が0件です。空の成果物を公開しません。")
@@ -182,6 +187,8 @@ def build_site(output_dir=DIST_DIR, current_time=None, now_provider=None):
     print(f"公開候補を {candidate_count} 件記録しました: {artifact_id}")
     archive_days = build_archive_days(fetch_published_forecast_archive())
     print(f"BigQueryから過去日の公開スナップショットを {len(archive_days)} 日分取得しました。")
+    wind_summary = build_wind_cancellation_summary(history)
+    print(f"風向別の過去実績を {wind_summary['sample_count']} 件集計しました。")
     access_stats = load_access_stats()
     updated_at = format_forecast_timestamp(bundle.get("data_updated_at")) or "取得時刻不明"
     today_day = next(
@@ -257,6 +264,7 @@ def build_site(output_dir=DIST_DIR, current_time=None, now_provider=None):
         {"url": SITE_URL, "last_modified": bundle.get("data_updated_at")},
         {"url": GUIDE_URL},
         {"url": HISTORY_URL, "last_modified": historical_days[0]["date"] if historical_days else None},
+        {"url": WIND_URL, "last_modified": wind_summary["last_date"]},
         {"url": ABOUT_URL},
         {"url": PRIVACY_URL},
         *({"url": page["url"], "last_modified": bundle.get("data_updated_at")} for page in flight_pages),
@@ -340,6 +348,24 @@ def build_site(output_dir=DIST_DIR, current_time=None, now_provider=None):
             access_stats=access_stats,
             page_url=HISTORY_URL,
             structured_data=archive_structured_data,
+        )
+        wind_html = render_template(
+            "wind.html",
+            summary=wind_summary,
+            access_stats=access_stats,
+            page_url=WIND_URL,
+            structured_data=page_schema(
+                "Dataset",
+                "八丈島便の風向・風速別の欠航傾向",
+                WIND_URL,
+                "羽田発八丈島行きANA3便の過去実績を、風向・平均風速・最大瞬間風速ごとに集計した資料です。",
+                (("トップ", SITE_URL), ("風向・風速別の欠航傾向", None)),
+                temporalCoverage=(
+                    f"{wind_summary['first_date']}/{wind_summary['last_date']}"
+                    if wind_summary["first_date"] and wind_summary["last_date"]
+                    else None
+                ),
+            ),
         )
         info_pages = [
             (
@@ -510,6 +536,11 @@ def build_site(output_dir=DIST_DIR, current_time=None, now_provider=None):
     history_dir.mkdir(parents=True, exist_ok=True)
     history_dir.joinpath("index.html").write_text(
         add_brand_assets(history_html, asset_prefix="../"), encoding="utf-8"
+    )
+    wind_dir = output_dir / "wind"
+    wind_dir.mkdir(parents=True, exist_ok=True)
+    wind_dir.joinpath("index.html").write_text(
+        add_brand_assets(wind_html, asset_prefix="../"), encoding="utf-8"
     )
     for page_path, page_html in rendered_info_pages:
         page_path.parent.mkdir(parents=True, exist_ok=True)
