@@ -465,6 +465,10 @@ footer {
 .archive-reflection { margin-top: 14px; padding: 13px 15px; border-left: 2px solid var(--blue); background: rgba(90, 199, 255, .06); }
 .archive-reflection p { margin: 0; color: #fff; font-size: .76rem; line-height: 1.7; }
 .archive-back { margin: 22px 0 0; }
+.flight-history-summary { margin-top: 28px; }
+.flight-history-summary > h2,
+.archive-page > section > h2 { font-size: 1.2rem; }
+.flight-history-summary > p { color: #e8f7ff; font-size: .82rem; line-height: 1.75; }
 .history-controls { display:flex; flex-wrap:wrap; gap:16px; margin:24px 0 12px; }
 .history-controls label { display:grid; gap:8px; font-size:16px; }
 .history-controls select { min-height:44px; max-width:100%; padding:8px 12px; border:1px solid #7893a3; border-radius:4px; background:#102b39; color:#fff; font:inherit; }
