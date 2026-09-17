@@ -593,7 +593,7 @@ def test_wind_direction_label_uses_sixteen_points():
     assert wind_direction_label(None) is None
 
 
-def test_find_similar_flights_filters_same_flight_and_orders_by_weather():
+def test_find_similar_flights_includes_all_flights_and_orders_by_weather():
     history = [
         {"date": "2026-01-01", "flight_number": "ANA1891", "flight_display_name": "ANA1891(1便)", "status": "通常", "status_reason": None, "wind_direction": 180.0, "wind_speed": 5.0, "wind_gusts": 8.0, "cloud_cover_low": 20.0, "visibility": 10.0},
         {"date": "2026-01-02", "flight_number": "ANA1891", "flight_display_name": "ANA1891(1便)", "status": "欠航", "status_reason": "強風", "wind_direction": 260.0, "wind_speed": 14.0, "wind_gusts": 20.0, "cloud_cover_low": 90.0, "visibility": 5.0},
@@ -604,9 +604,9 @@ def test_find_similar_flights_filters_same_flight_and_orders_by_weather():
     with patch("flight_forecast.forecast_engine.load_detailed_history", return_value=history):
         result = find_similar_flights("ANA1891", weather)
 
-    assert [row["date"] for row in result] == ["2026-01-01"]
-    assert result[0]["date_label"] == "2026/01/01"
-    assert result[0]["flight_display_name"] == "ANA1891(1便)"
+    assert [row["date"] for row in result] == ["2026-01-03", "2026-01-01"]
+    assert result[0]["date_label"] == "2026/01/03"
+    assert result[0]["flight_display_name"] == "ANA1893(2便)"
 
 
 def test_forecast_domain_functions_accept_injected_history_without_bigquery():
@@ -717,7 +717,7 @@ def test_probability_with_fewer_than_minimum_history_rows_is_unavailable():
     assert result["data_count"] == 4
 
 
-def test_probability_history_is_filtered_by_flight_number():
+def test_probability_history_uses_all_flight_numbers():
     history = [
         *( [{"flight_number": "ANA1891", "status": "運航", "wind_direction": 180.0, "wind_speed": 5.0, "wind_gusts": 10.0}] * 3 ),
         *( [{"flight_number": "ANA1891", "status": "欠航", "wind_direction": 180.0, "wind_speed": 5.0, "wind_gusts": 10.0}] * 2 ),
@@ -727,10 +727,10 @@ def test_probability_history_is_filtered_by_flight_number():
         first = predict_flight_probability(180.0, 5.0, 8.0, 20.0, 15.0, flight_number="ANA1891")
         second = predict_flight_probability(180.0, 5.0, 8.0, 20.0, 15.0, flight_number="ANA1893")
 
-    assert first["probability"] == 48.0
-    assert second["probability"] == 0.0
-    assert first["history_flight_number"] == "ANA1891"
-    assert first["history_fingerprint"] != second["history_fingerprint"]
+    assert first["probability"] == 24.0
+    assert second["probability"] == 24.0
+    assert first["history_flight_number"] == "all_flights"
+    assert first["history_fingerprint"] == second["history_fingerprint"]
 
 
 def test_low_cloud_and_strongest_wind_adjustments():
@@ -1394,7 +1394,7 @@ def test_index_renders_forecast():
     assert "主予報(JMA)での統計参考値" in body
     assert "予報シナリオの一致度" in body
     assert "モデル別の運航参考スコア" in body
-    assert "同じ便の類似実績とリスクから算出した統計参考値で、将来の運航確率ではありません" in body
+    assert "対象3便の類似実績とリスクから算出した統計参考値で、将来の運航確率ではありません" in body
     assert "\u672a\u6821\u6b63" not in body
     assert "表示スコアが過去実績から求めた基礎値より低くなります" in body
     assert "天気予報の更新で条件が変わると、スコアも上がったり下がったりします" in body

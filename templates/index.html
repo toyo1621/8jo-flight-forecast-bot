@@ -62,8 +62,8 @@
         </div>
         <details class="quick-guide">
           <summary>数値の見方</summary>
-          <p><strong>見方:</strong> ◎95以上 / 〇75以上 / △35以上 / ×35未満。表示する数値は、同じ便の類似実績とリスクから算出した統計参考値で、将来の運航確率ではありません。比較欄にはGFS・ECMWF・JMAを併記しています。</p>
-          <p><strong>計算の考え方:</strong> 同じ便の類似した過去実績から基礎値を作り、視程不良、降水、低層雲、強風・突風、台風接近などのリスクに応じて0.9や0.8などの係数を掛けます。そのため、リスクがある日は、表示スコアが過去実績から求めた基礎値より低くなります。</p>
+          <p><strong>見方:</strong> ◎95以上 / 〇75以上 / △35以上 / ×35未満。表示する数値は、対象3便の類似実績とリスクから算出した統計参考値で、将来の運航確率ではありません。比較欄にはGFS・ECMWF・JMAを併記しています。</p>
+          <p><strong>計算の考え方:</strong> 対象3便の類似した過去実績から基礎値を作り、視程不良、降水、低層雲、強風・突風、台風接近などのリスクに応じて0.9や0.8などの係数を掛けます。そのため、リスクがある日は、表示スコアが過去実績から求めた基礎値より低くなります。</p>
           <p><strong>先の日程:</strong> 天気予報の更新で条件が変わると、スコアも上がったり下がったりします。搭乗日が近づいたら改めて確認してください。</p>
           <p>予報シナリオの一致度は、GFS・ECMWFそれぞれのmemberのばらつきを示します。運航結果の正確さや信頼区間ではありません。</p>
         </details>
@@ -234,8 +234,8 @@
                     <div><dt>降水量</dt><dd>{% if flight.precipitation is defined and flight.precipitation is not none %}{{ flight.precipitation }} mm/h{% else %}欠測{% endif %}</dd></div>
                     <div><dt>気圧</dt><dd>{% if flight.pressure_msl is defined and flight.pressure_msl is not none %}{{ flight.pressure_msl }} hPa{% else %}欠測{% endif %}</dd></div>
                     <div><dt>主予報(JMA)での統計参考値（運航参考スコア）</dt><dd>{% if flight.calculation_status == "available" %}<span class="probability-inline-symbol">{{ flight.probability_symbol }}</span>{{ flight.probability }} / 100{% else %}{{ '予測表示終了' if flight.calculation_status == 'expired' else '算出不可' }}{% endif %}</dd></div>
-                    <div><dt>過去実績の集計対象</dt><dd>{{ flight.number }} / {{ flight.data_count }}件</dd></div>
-                    <div><dt>実績の選定条件</dt><dd>同じ便・{% if flight.history_selection is defined %}{{ flight.history_selection.label }}{% if flight.history_selection.expanded %}（実績不足のため条件を拡大）{% endif %}{% else %}条件記録なし{% endif %}</dd></div>
+                    <div><dt>過去実績の集計対象</dt><dd>対象3便共通 / {{ flight.data_count }}件</dd></div>
+                    <div><dt>実績の選定条件</dt><dd>対象3便共通・{% if flight.history_selection is defined %}{{ flight.history_selection.label }}{% if flight.history_selection.expanded %}（実績不足のため条件を拡大）{% endif %}{% else %}条件記録なし{% endif %}</dd></div>
                     {% for model in flight.model_probabilities %}
                       <div><dt>{{ model.label }}予報での統計参考値（運航参考スコア）</dt><dd><span class="probability-inline-symbol">{{ model.symbol }}</span>{{ model.probability }} / 100</dd></div>
                     {% endfor %}
@@ -289,7 +289,7 @@
         <h3>ざっくりどういう仕組みか</h3>
         <ol class="system-flow">
           <li>主予報には、<a href="https://open-meteo.com/en/docs/jma-api" rel="noreferrer">気象庁(JMA)のGSM・MSMモデル</a>をOpen-Meteo経由で使います。JMAモデルで提供されない最大瞬間風速・視程はOpen-Meteo標準予報で補完します。</li>
-          <li>BigQueryに保存した同じ便の過去実績から、予報と風向・風速が近い事例を探して、運航参考スコアを計算します。</li>
+          <li>BigQueryに保存した対象3便の過去実績から、予報と風向・風速が近い事例を探して、運航参考スコアを計算します。</li>
           <li>視程不良、降水、低層雲量80%超、強風・突風、台風接近リスクの場合は、過去実績から算出した基礎値に0.9や0.8などの係数を掛けて下方補正します。リスクがある日は、表示スコアが基礎値より低くなります。上限は97です。</li>
           <li>先の日程は、天気予報の更新で条件が変わると、スコアも上がったり下がったりします。搭乗日が近づいたら再確認してください。</li>
           <li>計算と詳細は同じ候補を使います。通常は風向差±20°・平均風速差±3m/s・最大瞬間風速差±5m/s。5件未満なら6件以上を目標に、風速差を平均±5・瞬間±8m/sへ広げ、その後に風向差を±30°、±45°の順に広げます。最終的に5件以上あれば算出し、5件未満なら算出不可です。詳細は風向差、平均風速差、最大瞬間風速差、新しい日付の順で最大10件です。</li>

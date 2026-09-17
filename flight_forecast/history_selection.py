@@ -22,13 +22,16 @@ def valid_wind(weather):
 
 
 def select_candidates(history, flight_number, weather, limits=(ANGLE_LIMIT, SPEED_LIMIT, GUST_LIMIT)):
+    """Select weather matches across all three flights.
+
+    ``flight_number`` remains in the signature for compatibility with callers
+    and stored provenance, but it no longer limits the history pool.
+    """
     if not valid_wind(weather):
         return []
     candidates = []
     for row in history:
         if not isinstance(row, dict) or not valid_wind(row):
-            continue
-        if flight_number is not None and row.get("flight_number") != flight_number:
             continue
         status = normalize_status(row.get("status"))
         if status not in VALID_STORED_STATUSES:
@@ -54,6 +57,7 @@ def select_history_with_metadata(history, flight_number, weather):
             break
     return rows, {
         "step": index + 1, "minimum": MIN_MATCHING_HISTORY_ROWS, "expanded": index > 0,
+        "scope": "all_flights",
         "angle": limits[0], "speed": limits[1], "gust": limits[2],
         "label": f"風向差±{limits[0]}°・平均風速差±{limits[1]}m/s・最大瞬間風速差±{limits[2]}m/s",
     }

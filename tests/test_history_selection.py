@@ -26,7 +26,7 @@ def row(**changes):
     ({"wind_gusts": None}, False), ({"wind_gusts": True}, False),
     ({"wind_speed": float("nan")}, False), ({"wind_direction": float("inf")}, False),
     ({"wind_speed": -1}, False), ({"status": "予定"}, False),
-    ({"flight_number": "ANA1893"}, False),
+    ({"flight_number": "ANA1893"}, True),
 ])
 def test_strict_boundaries(changes, accepted):
     assert bool(select_candidates([row(**changes)], "ANA1891", row())) is accepted
@@ -36,6 +36,15 @@ def test_five_strict_records_do_not_expand():
     rows, metadata = select_history_with_metadata([row()] * 5 + [row(wind_speed=10)] * 10, "ANA1891", row())
     assert len(rows) == 5
     assert not metadata["expanded"]
+    assert metadata["scope"] == "all_flights"
+
+
+def test_scoring_uses_weather_matches_from_other_flights():
+    history = [row(flight_number="ANA1893", status="欠航")] * 5
+    result = predict_flight_probability(350, 6, 13, 20, 15,
+                                        flight_number="ANA1891", history=history)
+    assert result["data_count"] == 5
+    assert result["base_probability"] == 0.0
 
 
 def test_four_records_expand_to_at_least_six_and_details_match():
