@@ -23,6 +23,7 @@ def test_collection_is_distributed_and_tested_before_writes():
     assert "needs.collect-data.outputs.collected == 'success'" in workflow
     assert "github.ref == 'refs/heads/main'" in workflow
     assert 'gh workflow run pages.yml --ref main' in workflow
+    assert 'gh workflow run pages.yml --ref main -f full_quality_checks=false' in workflow
 
 
 def test_pages_independently_observes_collection_without_stopping_forecast():

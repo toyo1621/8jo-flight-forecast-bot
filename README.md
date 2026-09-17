@@ -29,7 +29,7 @@
 - 外部の台風影響目安（JMAモード）から日別の飛行機向け影響度を取得し、「台風接近リスク」を表示
 - 運航統計参考値60%未満の便をオレンジで強調（警告の有無とは独立）
 - PC・スマートフォン対応のシンプルなWeb UI
-- GitHub Pagesで公開し、6時間ごとに自動更新
+- GitHub Pagesで公開し、JST 06:17〜21:17は毎時、夜間は00:17・03:17に自動更新
 - Open-Meteo障害時のエラー表示と信頼度の暫定評価
 - 当日の対象3便は、表示対象時刻を過ぎた場合も「終了」として残し、欠測便も「算出不可」と理由付きで表示
 - Cloudflare Web Analytics障害時も予報公開を継続し、アクセス数は前回値を`stale`または`unavailable`として表示
@@ -84,7 +84,7 @@ Pagesの静的生成時には、JMA・GFS・ECMWFの各統計参考値と予測�
 
 週次Actionsで実績と結合した公開値を時系列分割で検証し、モデル別・便別・リード日別のBrier score・信頼度曲線・ベースライン比較をartifactとして保存します。評価データ不足は精度0や推測値に置き換えず、`insufficient_data`として報告します。評価の定義は[`docs/evaluation.md`](docs/evaluation.md)にまとめています。
 
-`.github/workflows/pages.yml`は6時間ごとに実行されます。GitHub Actionsのスケジュール実行は混雑状況により遅れる場合があります。
+`.github/workflows/pages.yml`は、JST 06:17〜21:17は毎時、夜間は00:17・03:17に実行されます。定期更新と収集後の再公開では、同一SHAのCI成功を確認したうえで公開用依存だけを使用します。コード変更時と通常の手動実行では、同じPages経路内でも全テストとLintを実行します。診断レポートとPages成果物の保持期間は30日です。GitHub Actionsのスケジュール実行は混雑状況により遅れる場合があります。
 
 ## データソース
 
@@ -317,7 +317,7 @@ GitHub Actionsでは、BigQuery上の重複、未知ステータス、未知便�
 | `templates/index.html` | WebページのHTML |
 | `static/styles.css` | Webページのスタイル |
 | `static/flags/*.svg` | GFS・ECMWF・JMA表示用の旗アイコン |
-| `.github/workflows/pages.yml` | 6時間ごとのPages更新 |
+| `.github/workflows/pages.yml` | 日中毎時・夜間3時間間隔のPages更新 |
 | `.github/workflows/data_collection.yml` | 日次のデータ収集 |
 | `SECURITY.md` | 秘密情報・依存更新・インシデント対応方針 |
 | `.github/ISSUE_TEMPLATE/` | データ修正・運用障害の受付テンプレート |
