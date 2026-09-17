@@ -327,6 +327,7 @@ def fetch_published_forecast_archive():
           h.wind_direction AS collected_wind_direction,
           h.wind_speed AS collected_wind_speed, h.wind_gusts AS collected_wind_gusts,
           h.visibility AS collected_visibility, h.cloud_cover_low AS collected_cloud_cover_low,
+          h.precipitation AS collected_precipitation,
           h.status AS outcome_status, h.status_reason, h.status_reason_category,
           h.status_reason_source, h.status_reason_observed_at
         FROM ranked_snapshots s
@@ -364,7 +365,8 @@ def _fetch_detailed_history_cached(_cache_epoch):
     query = f"""
         SELECT CAST(date AS STRING) AS date, flight_number, flight_display_name,
                status, status_reason, wind_direction, wind_speed, wind_gusts,
-               cloud_cover_low, visibility, status_reason_category,
+               cloud_cover_low, visibility, visibility_source, precipitation,
+               precipitation_source, status_reason_category,
                status_reason_source, status_reason_observed_at, status_reason_confidence
         FROM `{table_path(config)}`
         WHERE status IS NOT NULL
@@ -449,6 +451,10 @@ def _normalize_item(item, timestamp):
         "visibility_source": item.get("visibility_source") or (
             "open_meteo_forecast" if item.get("visibility") is not None else None
         ),
+        "precipitation": item.get("precipitation"),
+        "precipitation_source": item.get("precipitation_source") or (
+            "open_meteo_forecast" if item.get("precipitation") is not None else None
+        ),
         "status_reason": item.get("status_reason"),
         "status_reason_category": reason_category,
         "status_reason_source": reason_source,
@@ -461,7 +467,10 @@ def _normalize_item(item, timestamp):
 
 
 def build_upsert_sql(destination, staging):
-    weather_fields = ('wind_direction', 'wind_speed', 'wind_gusts', 'cloud_cover_low', 'visibility')
+    weather_fields = (
+        'wind_direction', 'wind_speed', 'wind_gusts', 'cloud_cover_low',
+        'visibility', 'precipitation',
+    )
     weather_updates = ',\n'.join(
         f"{field} = CASE WHEN S.outcome_observed_at = T.outcome_observed_at "
         f"THEN COALESCE(T.{field}, S.{field}) ELSE COALESCE(S.{field}, T.{field}) END"
@@ -479,7 +488,8 @@ def build_upsert_sql(destination, staging):
                            OR (T.wind_speed IS NULL AND S.wind_speed IS NOT NULL)
                            OR (T.wind_gusts IS NULL AND S.wind_gusts IS NOT NULL)
                            OR (T.cloud_cover_low IS NULL AND S.cloud_cover_low IS NOT NULL)
-                           OR (T.visibility IS NULL AND S.visibility IS NOT NULL)))))
+                           OR (T.visibility IS NULL AND S.visibility IS NOT NULL)
+                           OR (T.precipitation IS NULL AND S.precipitation IS NOT NULL)))))
                OR (S.outcome_state IS NULL AND T.outcome_state IS NULL))
         THEN UPDATE SET
           {', '.join(f'{name} = S.{name}' for name, _ in OUTCOME_COLUMNS)},
@@ -491,6 +501,11 @@ def build_upsert_sql(destination, staging):
             WHEN S.outcome_observed_at = T.outcome_observed_at AND T.visibility IS NOT NULL THEN T.visibility_source
             WHEN S.visibility IS NULL THEN T.visibility_source
             ELSE COALESCE(S.visibility_source, T.visibility_source)
+          END,
+          precipitation_source = CASE
+            WHEN S.outcome_observed_at = T.outcome_observed_at AND T.precipitation IS NOT NULL THEN T.precipitation_source
+            WHEN S.precipitation IS NULL THEN T.precipitation_source
+            ELSE COALESCE(S.precipitation_source, T.precipitation_source)
           END,
           status_reason = CASE
             WHEN S.status = T.status
@@ -526,14 +541,16 @@ def build_upsert_sql(destination, staging):
           migrated_at = COALESCE(T.migrated_at, S.migrated_at)
         WHEN NOT MATCHED THEN INSERT
           (date, flight_number, flight_display_name, scheduled_time, status, wind_direction,
-           wind_speed, wind_gusts, cloud_cover_low, visibility, visibility_source, status_reason,
+           wind_speed, wind_gusts, cloud_cover_low, visibility, visibility_source,
+           precipitation, precipitation_source, status_reason,
            status_reason_category, status_reason_source, status_reason_observed_at,
            status_reason_confidence, created_at, migrated_at,
            {', '.join(name for name, _ in OUTCOME_COLUMNS)})
         VALUES
           (S.date, S.flight_number, S.flight_display_name, S.scheduled_time, S.status,
            S.wind_direction, S.wind_speed, S.wind_gusts, S.cloud_cover_low, S.visibility,
-           S.visibility_source, S.status_reason, S.status_reason_category,
+           S.visibility_source, S.precipitation, S.precipitation_source,
+           S.status_reason, S.status_reason_category,
            S.status_reason_source, S.status_reason_observed_at, S.status_reason_confidence,
            S.created_at, S.migrated_at,
            {', '.join('S.' + name for name, _ in OUTCOME_COLUMNS)})

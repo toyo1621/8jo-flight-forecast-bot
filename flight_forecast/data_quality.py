@@ -65,7 +65,7 @@ def fetch_bigquery_records():
     query = f"""
         SELECT CAST(date AS STRING) AS date, flight_number, scheduled_time, status,
                status_reason, status_reason_category, wind_direction, wind_speed, wind_gusts, cloud_cover_low,
-               visibility, visibility_source
+               visibility, visibility_source, precipitation, precipitation_source
         FROM `{table_path(config)}`
     """
     return [dict(row.items()) for row in client.query(query).result()]
@@ -191,6 +191,32 @@ def analyze_records(records, today=None):
     ]
     if missing_visibility_source:
         findings.append(_finding("info", "missing_visibility_source", "visibility_source が未設定です。", missing_visibility_source))
+
+    missing_precipitation = [row for row in rows if row.get("precipitation") is None]
+    if missing_precipitation:
+        findings.append(
+            _finding(
+                "warning",
+                "missing_precipitation",
+                "precipitation が欠測しています。",
+                missing_precipitation,
+            )
+        )
+
+    missing_precipitation_source = [
+        row
+        for row in rows
+        if row.get("precipitation") is not None and not row.get("precipitation_source")
+    ]
+    if missing_precipitation_source:
+        findings.append(
+            _finding(
+                "info",
+                "missing_precipitation_source",
+                "precipitation_source が未設定です。",
+                missing_precipitation_source,
+            )
+        )
 
     invalid_time_rows = [
         row

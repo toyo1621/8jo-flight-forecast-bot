@@ -136,7 +136,24 @@ Pages deploy後に`flight_forecast/publish_prediction_snapshots.py`がHTTP 200�
 - 既知値を`NULL`や`未確認`で劣化させない
 - `date + flight_number`を一意キーとする
 - 視程補完値は実測ではなく数値予報値として`visibility_source`を残す
+- 降水量は便の基準時刻におけるmm/hとし、実測雨量と混同せず`precipitation_source`を残す
 - SQLダンプやDBファイルをGitHubへ置かない
+
+### 過去降水量の補完
+
+新規収集は`precipitation`と`precipitation_source`を自動保存します。既存行は、最初に書き込みなしで対象件数と取得可能件数を確認します。
+
+```bash
+python -m flight_forecast.backfill_bigquery_precipitation
+```
+
+結果を確認後、NULLの行だけへ反映します。既存値と運航結果は上書きしません。
+
+```bash
+python -m flight_forecast.backfill_bigquery_precipitation --apply
+```
+
+補完元はOpen-Meteo Historical Forecastであり、空港の雨量計による実測値ではありません。ロールバックが必要な場合は、対象件数を先に確認したうえで`precipitation_source = 'open_meteo_historical_forecast'`の行だけをNULLへ戻します。運航結果、風、視程など他の列は変更しません。
 
 ## Pythonコマンドの配置
 

@@ -116,7 +116,7 @@ Pagesの静的生成時には、JMA・GFS・ECMWFの各統計参考値と予測�
 
 過去の運航実績と対応する気象情報は、`hachijo-flight-forecast.flight_forecast.flight_weather_logs`としてBigQueryだけに保存します。レコードは`date + flight_number`で識別し、不要な連番IDは使用しません。SQLダンプはリポジトリから削除し、再コミット防止のため`.gitignore`にも登録しています。CSVは移行入力として一時的に残していますが、実行時の参照先や配信元には使用しません。
 
-過去の視程欠損はOpen-Meteo Historical Forecastで補完し、`visibility_source`に出典を保存します。補完値は空港の実測観測ではなく、過去の数値予報モデル値です。
+過去の視程・1時間降水量の欠損はOpen-Meteo Historical Forecastで補完し、`visibility_source`・`precipitation_source`に出典を保存します。補完値は空港の実測観測ではなく、過去の数値予報モデル値です。降水量は各便の基準時刻におけるmm/hで保存します。
 
 公開サイトの「風向・風速別の欠航傾向」は、風向・平均風速・最大瞬間風速がそろった運航実績だけを集計します。欠航理由が未確認の記録も含むため、表示する割合は風による欠航確率ではなく、その風の条件で発生した全欠航・引き返しの割合です。5件未満の区分は割合を表示せず「データ不足」とします。
 
@@ -269,7 +269,7 @@ python -m flight_forecast.data_collector --cleanup-only
 python -m flight_forecast.import_user_csv --csv path/to/past_flights.csv
 ```
 
-CSV取り込み先もBigQueryだけです。`運航`と旧表記の`通常`は`運航`、`条件付→運航`・`条件付き運航`・`条件付き→就航`は`運航(条件付)`として保存します。通常運航か条件付き運航か判別できない場合も、飛んだ事実だけを示す`運航`を使用します。`欠航(強風)`のような括弧内の理由は`status_reason`へ分離します。Open-Meteo Archiveの取得失敗・欠測時は全件を中止し、不完全な行を保存しません。過去視程は`flight_forecast/backfill_bigquery_visibility.py`でHistorical Forecastから補完します。
+CSV取り込み先もBigQueryだけです。`運航`と旧表記の`通常`は`運航`、`条件付→運航`・`条件付き運航`・`条件付き→就航`は`運航(条件付)`として保存します。通常運航か条件付き運航か判別できない場合も、飛んだ事実だけを示す`運航`を使用します。`欠航(強風)`のような括弧内の理由は`status_reason`へ分離します。Open-Meteo Archiveの取得失敗・欠測時は全件を中止し、不完全な行を保存しません。過去視程は`flight_forecast/backfill_bigquery_visibility.py`、過去降水量は`flight_forecast/backfill_bigquery_precipitation.py`でHistorical Forecastから補完します。降水量補完は既定でdry-runとなり、`--apply`を付けた場合だけNULL行を更新します。
 
 ## テスト
 
@@ -316,6 +316,7 @@ GitHub Actionsでは、BigQuery上の重複、未知ステータス、未知便�
 | `flight_forecast/bigquery_schema.py` | BigQuery設定、スキーマ、テーブル作成 |
 | `flight_forecast/data_quality.py` | BigQueryのデータ品質チェック |
 | `flight_forecast/backfill_bigquery_visibility.py` | 過去の視程欠損を補完 |
+| `flight_forecast/backfill_bigquery_precipitation.py` | 過去の1時間降水量欠損をdry-runまたは補完 |
 | `flight_forecast/import_user_csv.py` | 過去運航実績の取り込み |
 | `templates/index.html` | WebページのHTML |
 | `static/styles.css` | Webページのスタイル |
