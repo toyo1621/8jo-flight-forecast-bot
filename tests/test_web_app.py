@@ -1387,7 +1387,7 @@ def test_index_renders_forecast():
     assert "比較欄にはGFS・ECMWF・JMAを併記" in body
     assert "主予報は気象庁(JMA)モデルをOpen-Meteo経由で使用しています。" in body
     assert "予報データ取得 " in body
-    assert "(6時間ごとに更新)" in body
+    assert "(日中は1時間ごと・夜間は3時間ごとに更新)" in body
     assert "青: 参考スコア60以上" in body
     assert "オレンジ: 参考スコア60未満" in body
     assert "主予報: 気象庁(JMA) GSM・MSMモデル (Open-Meteo経由)" in body
@@ -1406,7 +1406,7 @@ def test_index_renders_forecast():
     assert "八丈島・東京方面 台風影響目安" in body
     assert "運航率に0.9・0.8・0.7を掛けます" in body
     assert "運航参考スコア60未満の便はオレンジ" in body
-    assert "GitHub Actionsで6時間ごとに再計算" in body
+    assert "GitHub Actionsで日中は1時間ごと、夜間は3時間ごとに再計算" in body
     assert "気象業法への配慮" in body
     assert "予報気象情報" in body
     assert "モデル別リスク" in body

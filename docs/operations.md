@@ -13,7 +13,7 @@ CI、Pages公開、日次収集、週次評価は`requirements.lock`をconstrain
 
 ## 定常監視
 
-- `Deploy forecast site to Pages`: 同じSHAのpytest/ruff、生成・検証・公開確認、Data Quality Reportが成功していること
+- `Deploy forecast site to Pages`: コード変更時は同じSHAのpytest/ruff、定期更新時は同じSHAのCI成功確認を行い、生成・静的検証・公開確認・Data Quality Reportが成功していること
 - `Daily Flight & Weather Data Collection`: JST 09:23・14:23・18:23・21:23に収集。便別確定結果・気象欠測・未実行を別に確認すること
 - `CodeQL`と`CI`: mainとPull Requestの検査が成功していること
 - [公開サイト](https://toyo1621.github.io/8jo-flight-forecast-bot/): 予報データ取得時刻、11日分の表示、詳細ダイアログを確認すること
@@ -24,7 +24,8 @@ Data Quality Reportの`error`はPagesと日次収集を失敗させます。エ�
 ## アクセス数の集計
 
 - Cloudflare Web Analyticsのページビューを、JSTの暦日単位で直近7日分取得して静的HTMLへ埋め込みます。ユニークユーザー数ではありません。
-- 集計処理は`Deploy forecast site to Pages`のビルド中に実行し、6時間ごとの定期デプロイで表示を更新します。
+- 集計処理は`Deploy forecast site to Pages`のビルド中に実行し、JST 06:17〜21:17の毎時更新と、夜間00:17・03:17の更新で表示へ反映します。
+- Pages成果物、ビルドmanifest、品質・監視レポートは30日保持します。静的ビルドの診断用複製は、ビルド失敗時だけ保存します。
 - 計測開始前の日は`未計測`と表示します。Cloudflare側の集計反映に時間差があるため、当日値は途中経過です。
 - API取得に失敗してもPagesの予報ビルド・公開は継続します。前回成功した7日分がキャッシュにあれば`stale`として最終取得時刻を表示し、なければ`unavailable`として取得不能を表示します。アクセス数を推測値や0件に置き換えません。
 - 取得失敗時はPagesのStep Summaryにも記録します。予報の公開成功とアクセス解析の状態を別々に確認してください。

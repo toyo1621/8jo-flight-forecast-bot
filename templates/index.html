@@ -54,7 +54,7 @@
         <p class="eyebrow">HND / HAC</p>
         <h1>{{ page_heading }}</h1>
         <p class="lead">羽田空港から八丈島空港へ向かうANA1891・ANA1893・ANA1895便の運航目安を、天気・台風影響度・過去の運航実績から確認できます。</p>
-        <p class="updated">予報データ取得 {{ updated_at }} (6時間ごとに更新)</p>
+        <p class="updated">予報データ取得 {{ updated_at }} (日中は1時間ごと・夜間は3時間ごとに更新)</p>
         <p class="forecast-source">主予報は気象庁(JMA)モデルをOpen-Meteo経由で使用しています。</p>
         <div class="status-legend" aria-label="表示色の説明">
           <span><i class="legend-dot legend-dot--blue" aria-hidden="true"></i>青: 参考スコア{{ low_threshold }}以上</span>
@@ -299,7 +299,7 @@
           <li>便カードと詳細画面の比較欄にはGFS・ECMWF・JMAを併記します。JMA欄は主予報と同じ値です。</li>
           <li>運航参考スコア{{ low_threshold }}未満の便はオレンジで表示し、当日便は到着予定時刻の30分後を過ぎるとトップページから非表示にします。結果は「過去の予測と結果」で確認できます。</li>
         </ol>
-        <p>GitHub Actionsで6時間ごとに再計算し、静的サイトとして公開しています。</p>
+        <p>GitHub Actionsで日中は1時間ごと、夜間は3時間ごとに再計算し、静的サイトとして公開しています。</p>
       </article>
 
       <article class="about-block about-block--notice">

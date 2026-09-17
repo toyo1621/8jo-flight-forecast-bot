@@ -62,3 +62,4 @@ jobs:
             forecast_evaluation.md
             forecast_evaluation.json
           if-no-files-found: ignore
+          retention-days: 30

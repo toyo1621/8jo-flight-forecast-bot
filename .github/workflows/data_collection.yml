@@ -184,6 +184,7 @@ jobs:
           name: collection-data-quality-report
           path: data_quality_report.md
           if-no-files-found: ignore
+          retention-days: 30
 
       - name: Upload collection coverage report
         if: always()
@@ -192,6 +193,7 @@ jobs:
           name: collection-coverage-report
           path: collection_coverage_report.md
           if-no-files-found: ignore
+          retention-days: 30
 
   republish:
     needs: collect-data
@@ -205,5 +207,5 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
-        run: gh workflow run pages.yml --ref main
+        run: gh workflow run pages.yml --ref main -f full_quality_checks=false
 

@@ -353,7 +353,7 @@ def build_site(output_dir=DIST_DIR, current_time=None, now_provider=None):
                     "sections": [
                         {"title": "目的と運営者", "wide": True, "paragraphs": ["八丈島を訪れる人が、羽田発のANA3便について天候上の注意点をまとめて確認できるよう、開発者 toyo1621 が個人で運営しています。航空会社、空港、気象庁、公共交通オープンデータセンターの公式サービスではありません。", "運航可否の最終確認はANA公式情報を優先してください。"], "links": [{"label": "開発者のX", "url": "https://x.com/toyo1621", "external": True}, {"label": "開発者のInstagram", "url": "https://www.instagram.com/toyo1621/", "external": True}]},
                         {"title": "使用データ", "wide": False, "paragraphs": ["気象庁(JMA)モデルを主予報とし、GFS・ECMWFを比較表示します。運航実績はBigQueryに保存した対象3便の記録を使います。公開ページから生データのダンプは配布しません。"], "links": []},
-                        {"title": "更新と訂正", "wide": False, "paragraphs": ["予報ページは原則6時間ごとに再生成します。取得障害時は古いデータを最新と表示せず、公開済みサイトを維持します。誤りを確認した場合は、元の公開予測を改変せず、実績または説明を訂正します。"], "links": []},
+                        {"title": "更新と訂正", "wide": False, "paragraphs": ["予報ページは日中は1時間ごと、夜間は3時間ごとに再生成します。取得障害時は古いデータを最新と表示せず、公開済みサイトを維持します。誤りを確認した場合は、元の公開予測を改変せず、実績または説明を訂正します。"], "links": []},
                     ],
                 },
             ),

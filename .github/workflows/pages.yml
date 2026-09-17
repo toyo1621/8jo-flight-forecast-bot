@@ -4,10 +4,19 @@ on:
   push:
     branches: [main]
   schedule:
-    - cron: "17 */6 * * *"
+    # JST 06:17-21:17: hourly while passengers are most likely to check.
+    - cron: "17 0-12,21-23 * * *"
+    # JST 00:17 and 03:17: every three hours overnight.
+    - cron: "17 15,18 * * *"
   workflow_dispatch:
+    inputs:
+      full_quality_checks:
+        description: Run the full test and lint suite before publishing
+        type: boolean
+        default: true
 
 permissions:
+  actions: read
   contents: read
   issues: write
   pages: write
@@ -36,13 +45,31 @@ jobs:
             requirements-dev.txt
             requirements.lock
 
-      - name: Install dependencies
+      - name: Install dependencies for full quality checks
+        if: ${{ github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.full_quality_checks) }}
         run: pip install -r requirements-dev.txt -c requirements.lock
 
+      - name: Install publication dependencies for a lightweight refresh
+        if: ${{ github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && inputs.full_quality_checks != true) }}
+        run: pip install -r requirements.txt -c requirements.lock
+
+      - name: Require a successful CI run for a lightweight refresh
+        if: ${{ github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && inputs.full_quality_checks != true) }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          conclusion="$(gh api "repos/$GITHUB_REPOSITORY/actions/workflows/ci.yml/runs?head_sha=$GITHUB_SHA&status=completed&per_page=1" --jq '.workflow_runs[0].conclusion // ""')"
+          if [ "$conclusion" != "success" ]; then
+            echo "::error::Lightweight publication requires a successful CI run for $GITHUB_SHA (found: ${conclusion:-none})."
+            exit 1
+          fi
+
       - name: Verify the same SHA before building
+        if: ${{ github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.full_quality_checks) }}
         run: python -m pytest -q
 
       - name: Lint the same SHA before building
+        if: ${{ github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.full_quality_checks) }}
         run: python -m ruff check .
 
       - name: Restore forecast API cache
@@ -97,6 +124,7 @@ jobs:
           name: pages-collection-health
           path: collection_health.md
           if-no-files-found: warn
+          retention-days: 30
 
       - name: Add data quality report to summary
         if: always()
@@ -153,6 +181,7 @@ jobs:
           name: pages-data-quality-report
           path: data_quality_report.md
           if-no-files-found: ignore
+          retention-days: 30
 
       - name: Build static forecast
         env:
@@ -176,14 +205,16 @@ jobs:
           name: pages-build-manifest
           path: dist/build-manifest.json
           if-no-files-found: ignore
+          retention-days: 30
 
       - name: Upload static build for diagnostics
-        if: always()
+        if: failure()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: pages-static-build
           path: dist
           if-no-files-found: ignore
+          retention-days: 30
 
       - name: Configure Pages
         uses: actions/configure-pages@45bfe0192ca1faeb007ade9deae92b16b8254a0d # v6
@@ -192,6 +223,7 @@ jobs:
         uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5
         with:
           path: dist
+          retention-days: 30
 
   deploy:
     environment:
