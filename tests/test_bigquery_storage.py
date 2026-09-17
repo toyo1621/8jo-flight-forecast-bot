@@ -34,6 +34,8 @@ def test_normalize_item_formats_time():
     assert result["status"] == "運航"
     assert "id" not in result
     assert result["visibility_source"] is None
+    assert result["precipitation"] is None
+    assert result["precipitation_source"] is None
 
 
 def test_raw_payload_redacts_secret_like_fields():
@@ -204,12 +206,16 @@ def test_normalize_item_uses_database_status_and_visibility_source():
             "status": "条件付き→就航",
             "visibility": 12.0,
             "visibility_source": "open_meteo_archive",
+            "precipitation": 2.5,
+            "precipitation_source": "open_meteo_archive",
         },
         "2026-06-22T00:00:00+00:00",
     )
 
     assert result["status"] == "運航(条件付)"
     assert result["visibility_source"] == "open_meteo_archive"
+    assert result["precipitation"] == 2.5
+    assert result["precipitation_source"] == "open_meteo_archive"
 
 
 def test_normalize_item_keeps_reason_metadata_and_marks_heuristic_confidence():
@@ -259,6 +265,7 @@ def test_collector_uses_bigquery_backend():
             "wind_gusts": 8.0,
             "cloud_cover_low": 20.0,
             "visibility": 15.0,
+            "precipitation": 0.5,
         }
         for flight in get_demo_flight_data()
     ]
@@ -305,6 +312,8 @@ def test_upsert_merge_preserves_valid_values_and_known_reason():
     merge_sql = client.query.call_args.args[0]
     assert "ELSE COALESCE(S.wind_direction, T.wind_direction) END" in merge_sql
     assert "ELSE COALESCE(S.wind_speed, T.wind_speed) END" in merge_sql
+    assert "ELSE COALESCE(S.precipitation, T.precipitation) END" in merge_sql
+    assert "T.precipitation IS NOT NULL" in merge_sql
     assert "THEN COALESCE(T.wind_speed, S.wind_speed)" in merge_sql
     assert "S.status_reason IS NULL OR S.status_reason = '未確認'" in merge_sql
     assert 'NOT COALESCE(T.outcome_locked, FALSE)' in merge_sql

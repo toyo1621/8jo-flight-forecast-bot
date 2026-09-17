@@ -22,6 +22,8 @@ def _row(**overrides):
         "cloud_cover_low": 20.0,
         "visibility": 15.0,
         "visibility_source": "open_meteo_historical_forecast",
+        "precipitation": 0.0,
+        "precipitation_source": "open_meteo_historical_forecast",
     }
     return {**base, **overrides}
 

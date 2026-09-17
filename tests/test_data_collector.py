@@ -6,6 +6,7 @@ import requests
 
 from flight_forecast.data_collector import (
     CollectionError,
+    _parse_weather_payload,
     get_flight_data_odpt,
     get_weather_data,
     main,
@@ -25,6 +26,7 @@ def _weather_response():
             "wind_gusts_10m": [18.0] * 24,
             "cloud_cover_low": [20.0] * 24,
             "visibility": [15000.0] * 24,
+            "precipitation": [1.25] * 24,
         }
     }
     return response
@@ -47,6 +49,7 @@ def _complete_record(number):
         "wind_gusts": 8.0,
         "cloud_cover_low": 20.0,
         "visibility": 15.0,
+        "precipitation": 1.25,
     }
 
 
@@ -56,6 +59,20 @@ def test_first_flight_weather_uses_configured_eight_oclock_hour():
 
     assert weather["wind_speed"] == round(8 / 3.6, 2)
     assert weather["visibility_source"] == "open_meteo_forecast"
+    assert weather["precipitation"] == 1.25
+    assert weather["precipitation_source"] == "open_meteo_forecast"
+
+
+def test_legacy_raw_without_precipitation_keeps_other_weather_values():
+    payload = _weather_response().json.return_value
+    del payload["hourly"]["precipitation"]
+
+    weather = _parse_weather_payload(payload, "2026-07-15", 8)
+
+    assert weather["wind_direction"] == 180.0
+    assert weather["visibility"] == 15.0
+    assert weather["precipitation"] is None
+    assert weather["precipitation_source"] is None
 
 
 def test_odpt_request_failure_raises_without_secret_in_message():
@@ -151,6 +168,7 @@ def test_replay_collection_run_rebuilds_rows_from_raw_payloads():
             "wind_gusts_10m": [18.0, 18.0, 18.0],
             "cloud_cover_low": [20.0, 20.0, 20.0],
             "visibility": [15000.0, 15000.0, 15000.0],
+            "precipitation": [0.0, 1.5, 3.0],
         }
     }
     raw_rows = [
@@ -246,6 +264,8 @@ def test_collection_date_argument_is_recorded_and_passed_to_odpt(monkeypatch):
         "cloud_cover_low": 20.0,
         "visibility": 15.0,
         "visibility_source": "open_meteo_forecast",
+        "precipitation": 1.25,
+        "precipitation_source": "open_meteo_forecast",
     }
     with (
         patch(

@@ -29,6 +29,8 @@ SCHEMA = (
     bigquery.SchemaField("cloud_cover_low", "FLOAT"),
     bigquery.SchemaField("visibility", "FLOAT"),
     bigquery.SchemaField("visibility_source", "STRING"),
+    bigquery.SchemaField("precipitation", "FLOAT"),
+    bigquery.SchemaField("precipitation_source", "STRING"),
     bigquery.SchemaField("status_reason", "STRING"),
     bigquery.SchemaField("status_reason_category", "STRING"),
     bigquery.SchemaField("status_reason_source", "STRING"),
@@ -136,6 +138,8 @@ def ensure_destination(client, dataset_id, table_id, location):
     table_ref.clustering_fields = ["flight_number", "status"]
     client.create_table(table_ref, exists_ok=True)
     for column in (
+        "precipitation FLOAT64",
+        "precipitation_source STRING",
         "status_reason_category STRING",
         "status_reason_source STRING",
         "status_reason_observed_at TIMESTAMP",

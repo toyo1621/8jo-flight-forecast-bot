@@ -39,6 +39,7 @@ REQUIRED_WEATHER_FIELDS = (
     "wind_gusts",
     "cloud_cover_low",
     "visibility",
+    "precipitation",
 )
 FLIGHTS_SCHEDULE = tuple(
     {
@@ -88,7 +89,7 @@ def _request_with_retries(url, params, source, timeout=10):
     raise _safe_request_error(source, last_error) from None
 
 
-def _parse_weather_payload(payload, date_str, target_hour, visibility_source="open_meteo_forecast"):
+def _parse_weather_payload(payload, date_str, target_hour, weather_source="open_meteo_forecast"):
     if not isinstance(payload, dict):
         raise CollectionError("Open-Meteo APIの応答構造が不正です。")
     hourly = payload.get("hourly")
@@ -98,20 +99,32 @@ def _parse_weather_payload(payload, date_str, target_hour, visibility_source="op
     target_timestamp = f"{date_str}T{target_hour:02d}:00"
     try:
         target_index = hourly["time"].index(target_timestamp)
+        precipitation_values = hourly.get("precipitation")
         weather = {
             "wind_direction": hourly["wind_direction_10m"][target_index],
             "wind_speed": hourly["wind_speed_10m"][target_index],
             "wind_gusts": hourly["wind_gusts_10m"][target_index],
             "cloud_cover_low": hourly["cloud_cover_low"][target_index],
             "visibility": hourly["visibility"][target_index],
+            "precipitation": (
+                precipitation_values[target_index]
+                if isinstance(precipitation_values, list)
+                and target_index < len(precipitation_values)
+                else None
+            ),
         }
     except (KeyError, IndexError, AttributeError, ValueError) as exc:
         raise CollectionError(f"気象データに対象時刻 {target_timestamp} がありません。") from exc
 
-    missing = [field for field, value in weather.items() if value is None]
+    missing = [
+        field for field, value in weather.items()
+        if field != "precipitation" and value is None
+    ]
     if missing:
         raise CollectionError(f"気象データが欠測しています: {', '.join(missing)}")
     for field, value in weather.items():
+        if value is None:
+            continue
         limit = 360 if field == 'wind_direction' else 100 if field == 'cloud_cover_low' else float('inf')
         if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value) or not 0 <= value <= limit:
             raise CollectionError(f"気象値が不正です: {field}")
@@ -122,7 +135,15 @@ def _parse_weather_payload(payload, date_str, target_hour, visibility_source="op
         "wind_gusts": round(weather["wind_gusts"] / 3.6, 2),
         "cloud_cover_low": weather["cloud_cover_low"],
         "visibility": round(weather["visibility"] / 1000.0, 2),
-        "visibility_source": visibility_source,
+        "visibility_source": weather_source,
+        "precipitation": (
+            round(weather["precipitation"], 2)
+            if weather["precipitation"] is not None
+            else None
+        ),
+        "precipitation_source": (
+            weather_source if weather["precipitation"] is not None else None
+        ),
     }
 
 
@@ -142,7 +163,7 @@ def get_weather_data(
     params = {
         "latitude": HACHIJO_AIRPORT_LATITUDE,
         "longitude": HACHIJO_AIRPORT_LONGITUDE,
-        "hourly": "wind_speed_10m,wind_direction_10m,wind_gusts_10m,cloud_cover_low,visibility",
+        "hourly": "wind_speed_10m,wind_direction_10m,wind_gusts_10m,cloud_cover_low,visibility,precipitation",
         "timezone": "Asia/Tokyo",
         "start_date": date_str,
         "end_date": date_str,
