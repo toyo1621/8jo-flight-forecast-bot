@@ -100,10 +100,15 @@ def test_build_site_persists_prediction_snapshots_before_rendering(tmp_path):
         'content="uqqq0NUofXd_HvVElpSmwF8uGZWy70xdrY71bj7hq6U">'
     ) in html
     assert '"@type": "WebApplication"' in html
+    assert '"@type": "WebSite"' in html
     assert (tmp_path / "guide" / "index.html").exists()
     assert (tmp_path / "history" / "index.html").exists()
     assert (tmp_path / "about" / "index.html").exists()
     assert (tmp_path / "privacy" / "index.html").exists()
+    for number in ("ana1891", "ana1893", "ana1895"):
+        flight_page = tmp_path / "flights" / number / "index.html"
+        assert flight_page.exists()
+        assert '"@type": "BreadcrumbList"' in flight_page.read_text(encoding="utf-8")
     assert (tmp_path / "404.html").exists()
     guide_html = (tmp_path / "guide" / "index.html").read_text(encoding="utf-8")
     assert "https://toyo1621.github.io/8jo-flight-forecast-bot/guide/" in (
@@ -129,6 +134,8 @@ def test_build_site_persists_prediction_snapshots_before_rendering(tmp_path):
     assert html.index('class="contact-section"') < html.index('class="access-stats"')
     assert (tmp_path / "build-manifest.json").exists()
     assert 'name="forecast-artifact-id"' in html
+    sitemap = (tmp_path / "sitemap.xml").read_text(encoding="utf-8")
+    assert "https://toyo1621.github.io/8jo-flight-forecast-bot/flights/ana1891/" in sitemap
 
 
 def test_build_site_records_generation_after_source_retrieval(tmp_path):
@@ -318,6 +325,8 @@ def test_build_site_writes_shareable_date_pages(tmp_path):
     assert '<p class="page-nav"><a href="../../">トップページへ｜今日の八丈島便の運航目安を見る</a></p>' in date_html
     assert '<p class="eyebrow">HND / HAC</p>' not in date_html
     assert '<h1 class="visually-hidden">8/25の八丈島便 運航目安</h1>' in date_html
+    assert "<title>2026/08/25の八丈島便運航目安｜ANA羽田発3便</title>" in date_html
+    assert '"@type": "BreadcrumbList"' in date_html
     assert 'href="https://forms.gle/7m2JsHjdi2dNe4Rk6"' in date_html
     assert "お問い合わせフォーム（Googleフォーム）を開く" in date_html
     assert 'href="https://x.com/toyo1621"' in date_html

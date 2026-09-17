@@ -14,6 +14,7 @@ class PageParser(HTMLParser):
         super().__init__()
         self.canonicals = []
         self.descriptions = []
+        self.titles = []
         self.h1_count = 0
         self.links = []
         self.json_ld = []
@@ -22,6 +23,7 @@ class PageParser(HTMLParser):
         self.forecast_config_versions = []
         self.forecast_snapshot_counts = []
         self._json_ld_parts = None
+        self._title_parts = None
 
     def handle_starttag(self, tag, attrs):
         values = dict(attrs)
@@ -39,6 +41,8 @@ class PageParser(HTMLParser):
             self.forecast_snapshot_counts.append(values.get("content"))
         if tag == "h1":
             self.h1_count += 1
+        if tag == "title":
+            self._title_parts = []
         if tag == "a" and values.get("href"):
             self.links.append(values["href"])
         if tag == "script" and values.get("type") == "application/ld+json":
@@ -48,10 +52,27 @@ class PageParser(HTMLParser):
         if tag == "script" and self._json_ld_parts is not None:
             self.json_ld.append("".join(self._json_ld_parts).strip())
             self._json_ld_parts = None
+        if tag == "title" and self._title_parts is not None:
+            self.titles.append("".join(self._title_parts).strip())
+            self._title_parts = None
 
     def handle_data(self, data):
         if self._json_ld_parts is not None:
             self._json_ld_parts.append(data)
+        if self._title_parts is not None:
+            self._title_parts.append(data)
+
+
+def _schema_types(value):
+    if not isinstance(value, dict):
+        return set()
+    graph = value.get("@graph")
+    nodes = graph if isinstance(graph, list) else [value]
+    return {
+        node.get("@type")
+        for node in nodes
+        if isinstance(node, dict) and isinstance(node.get("@type"), str)
+    }
 
 
 def _output_path(output_dir, url):
@@ -96,6 +117,7 @@ def validate_site(output_dir):
     sitemap = ElementTree.parse(output_dir / "sitemap.xml")
     namespace = {"s": "http://www.sitemaps.org/schemas/sitemap/0.9"}
     sitemap_urls = [node.text for node in sitemap.findall("s:url/s:loc", namespace)]
+    seen_titles = {}
     for url in sitemap_urls:
         page_path = _output_path(output_dir, url)
         if page_path is None or not page_path.is_file():
@@ -118,13 +140,24 @@ def validate_site(output_dir):
             errors.append(f"canonicalがURLと一致しません: {url} {parser.canonicals}")
         if len(parser.descriptions) != 1 or not parser.descriptions[0]:
             errors.append(f"meta descriptionが一つではありません: {url}")
+        if len(parser.titles) != 1 or not parser.titles[0]:
+            errors.append(f"titleが一つではありません: {url}")
+        elif parser.titles[0] in seen_titles:
+            errors.append(f"titleが重複しています: {url} {seen_titles[parser.titles[0]]}")
+        else:
+            seen_titles[parser.titles[0]] = url
         if parser.h1_count != 1:
             errors.append(f"h1が一つではありません: {url} ({parser.h1_count})")
+        schema_types = set()
         for value in parser.json_ld:
             try:
-                json.loads(value)
+                schema_types.update(_schema_types(json.loads(value)))
             except json.JSONDecodeError as exc:
                 errors.append(f"JSON-LDが不正です: {url} ({exc})")
+        if url == SITE_URL and "WebSite" not in schema_types:
+            errors.append("トップページにWebSite構造化データがありません。")
+        if url != SITE_URL and "BreadcrumbList" not in schema_types:
+            errors.append(f"下層ページにBreadcrumbList構造化データがありません: {url}")
         for href in parser.links:
             if href.startswith(("#", "mailto:", "tel:", "javascript:")):
                 continue

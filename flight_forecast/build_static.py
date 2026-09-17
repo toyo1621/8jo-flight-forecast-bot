@@ -7,6 +7,7 @@ from flask import render_template
 
 from flight_forecast.access_stats import load_access_stats
 from flight_forecast.app_config import (
+    FLIGHTS,
     FORECAST_CONFIG_VERSION,
     JST,
     LOW_PROBABILITY_THRESHOLD,
@@ -38,11 +39,46 @@ GUIDE_URL = f"{SITE_URL}guide/"
 HISTORY_URL = f"{SITE_URL}history/"
 ABOUT_URL = f"{SITE_URL}about/"
 PRIVACY_URL = f"{SITE_URL}privacy/"
+FLIGHTS_URL = f"{SITE_URL}flights/"
 DEFAULT_TITLE = "八丈島の飛行機運航目安｜羽田便の天気・過去実績"
 DEFAULT_DESCRIPTION = (
     "羽田空港から八丈島空港へ向かうANA便の運航目安を、JMA主予報、"
     "GFS・ECMWF、台風影響度、過去実績から確認できます。"
 )
+
+
+def breadcrumb_schema(*items):
+    return {
+        "@context": "https://schema.org",
+        "@type": "BreadcrumbList",
+        "itemListElement": [
+            {
+                "@type": "ListItem",
+                "position": position,
+                "name": name,
+                **({"item": url} if url else {}),
+            }
+            for position, (name, url) in enumerate(items, start=1)
+        ],
+    }
+
+
+def page_schema(page_type, name, url, description, breadcrumbs, **extra):
+    page = {
+        "@type": page_type,
+        "name": name,
+        "url": url,
+        "description": description,
+        "inLanguage": "ja-JP",
+        "isPartOf": {"@type": "WebSite", "name": "八丈島の飛行機運航目安", "url": SITE_URL},
+        **extra,
+    }
+    breadcrumb = breadcrumb_schema(*breadcrumbs)
+    breadcrumb.pop("@context")
+    return {
+        "@context": "https://schema.org",
+        "@graph": [page, breadcrumb],
+    }
 
 
 def _sitemap_entry(entry):
@@ -179,12 +215,51 @@ def build_site(output_dir=DIST_DIR, current_time=None, now_provider=None):
         )
         for day in historical_days
     ]
+    flight_pages = []
+    for position, flight_spec in enumerate(FLIGHTS, start=1):
+        number = flight_spec["number"]
+        slug = number.lower()
+        page_url = f"{FLIGHTS_URL}{slug}/"
+        forecasts = []
+        for day in display_days:
+            flight = next(
+                (item for item in day["flights"] if item.get("raw_number") == number),
+                None,
+            )
+            if flight:
+                forecasts.append({"day": day, "flight": flight})
+        records = [
+            {"day": day, "flight": flight}
+            for day in historical_days
+            for flight in day["flights"]
+            if flight["number"] == number
+        ]
+        confirmed_records = [item for item in records if item["flight"]["outcome_confirmed"]]
+        operated_count = sum(
+            item["flight"]["outcome_class"] == "operated" for item in confirmed_records
+        )
+        flight_pages.append(
+            {
+                "path": output_dir / "flights" / slug / "index.html",
+                "url": page_url,
+                "number": number,
+                "label": f"{number}（{position}便）",
+                "position": position,
+                "arrival_time": flight_spec["time"],
+                "forecasts": forecasts,
+                "records": records[:12],
+                "confirmed_count": len(confirmed_records),
+                "operated_count": operated_count,
+                "disrupted_count": len(confirmed_records) - operated_count,
+            }
+        )
     page_urls = [
         {"url": SITE_URL, "last_modified": bundle.get("data_updated_at")},
         {"url": GUIDE_URL},
         {"url": HISTORY_URL, "last_modified": historical_days[0]["date"] if historical_days else None},
         {"url": ABOUT_URL},
         {"url": PRIVACY_URL},
+        *({"url": page["url"], "last_modified": bundle.get("data_updated_at")} for page in flight_pages),
         *(
             {"url": page_url, "last_modified": bundle.get("data_updated_at")}
             for _, page_url, _ in date_pages
@@ -216,19 +291,49 @@ def build_site(output_dir=DIST_DIR, current_time=None, now_provider=None):
             forecast_code_version=identity["code_version"],
             forecast_config_version=config_version,
             forecast_snapshot_count=snapshot_count,
+            flight_pages=flight_pages,
+            structured_data={
+                "@context": "https://schema.org",
+                "@graph": [
+                    {
+                        "@type": "WebSite",
+                        "name": "八丈島の飛行機運航目安",
+                        "alternateName": "八丈島便 運航の目安",
+                        "url": SITE_URL,
+                        "inLanguage": "ja-JP",
+                    },
+                    {
+                        "@type": "WebApplication",
+                        "name": "八丈島の飛行機運航目安",
+                        "description": DEFAULT_DESCRIPTION,
+                        "url": SITE_URL,
+                        "applicationCategory": "TravelApplication",
+                        "operatingSystem": "Web",
+                        "inLanguage": "ja-JP",
+                        "isAccessibleForFree": True,
+                    },
+                ],
+            },
         )
         guide_html = render_template(
             "guide.html",
             site_url=SITE_URL,
             page_url=GUIDE_URL,
+            structured_data=page_schema(
+                "WebPage",
+                "八丈島便の欠航リスク・運航目安の見方",
+                GUIDE_URL,
+                "八丈島便の運航参考スコア、JMA・GFS・ECMWF、台風接近リスクの見方を説明します。",
+                (("トップ", SITE_URL), ("見方・計算方法", None)),
+            ),
         )
-        archive_structured_data = {
-            "@context": "https://schema.org",
-            "@type": "CollectionPage",
-            "name": "過去の予測と運航結果",
-            "url": HISTORY_URL,
-            "inLanguage": "ja-JP",
-        }
+        archive_structured_data = page_schema(
+            "CollectionPage",
+            "過去の予測と運航結果",
+            HISTORY_URL,
+            "八丈島便の公開時予測と実際の運航結果を日付ごとに保存したアーカイブです。",
+            (("トップ", SITE_URL), ("過去の予測と運航結果", None)),
+        )
         history_html = render_template(
             "history.html",
             archive_days=historical_days,
@@ -275,13 +380,13 @@ def build_site(output_dir=DIST_DIR, current_time=None, now_provider=None):
                     "info_page.html",
                     page_url=page_url,
                     access_stats=access_stats,
-                    structured_data={
-                        "@context": "https://schema.org",
-                        "@type": "AboutPage" if slug == "about" else "WebPage",
-                        "name": context["title"],
-                        "url": page_url,
-                        "inLanguage": "ja-JP",
-                    },
+                    structured_data=page_schema(
+                        "AboutPage" if slug == "about" else "WebPage",
+                        context["title"],
+                        page_url,
+                        context["description"],
+                        (("トップ", SITE_URL), (context["title"], None)),
+                    ),
                     **context,
                 ),
             )
@@ -302,11 +407,11 @@ def build_site(output_dir=DIST_DIR, current_time=None, now_provider=None):
                         site_url=SITE_URL,
                         page_url=page_url,
                         page_title=(
-                            f"{day['date_label']}の八丈島便運航目安｜羽田便の天気・過去実績"
+                            f"{day['date'].replace('-', '/')}の八丈島便運航目安｜ANA羽田発3便"
                         ),
                         page_description=(
-                            f"{day['date_label']}の羽田空港→八丈島空港ANA便について、"
-                            "JMA主予報、GFS・ECMWF、台風影響度、過去実績から運航目安を確認できます。"
+                            f"{day['date'].replace('-', '/')}の羽田発八丈島行きANA1891・ANA1893・"
+                            "ANA1895便の運航目安、欠航リスク、天気、JMA・GFS・ECMWF比較を確認できます。"
                         ),
                         page_heading=f"{day['date_label']}の八丈島便 運航目安",
                         page_variant="date",
@@ -317,6 +422,15 @@ def build_site(output_dir=DIST_DIR, current_time=None, now_provider=None):
                         forecast_code_version=identity["code_version"],
                         forecast_config_version=config_version,
                         forecast_snapshot_count=snapshot_count,
+                        flight_pages=flight_pages,
+                        structured_data=page_schema(
+                            "WebPage",
+                            f"{day['date']}の八丈島便運航目安",
+                            page_url,
+                            f"{day['date']}の羽田発八丈島行きANA3便の運航目安と天気です。",
+                            (("トップ", SITE_URL), (f"{day['date']}の運航目安", None)),
+                            dateModified=generated_at,
+                        ),
                     ),
                     asset_prefix="../../",
                 ),
@@ -332,24 +446,53 @@ def build_site(output_dir=DIST_DIR, current_time=None, now_provider=None):
                         day=day,
                         page_url=page_url,
                         access_stats=access_stats,
-                        structured_data={
-                            "@context": "https://schema.org",
-                            "@type": "Article",
-                            "headline": f"{day['long_date_label']}の八丈島便 公開時予測と運航結果",
-                            "datePublished": day["date"],
-                            "dateModified": (
+                        structured_data=page_schema(
+                            "Article",
+                            f"{day['long_date_label']}の八丈島便 公開時予測と運航結果",
+                            page_url,
+                            "羽田発八丈島行きANA3便の公開時スコア、天気、実際の運航結果です。",
+                            (
+                                ("トップ", SITE_URL),
+                                ("過去の予測と運航結果", HISTORY_URL),
+                                (day["long_date_label"], None),
+                            ),
+                            headline=f"{day['long_date_label']}の八丈島便 公開時予測と運航結果",
+                            datePublished=day["date"],
+                            dateModified=(
                                 day["last_modified"].isoformat()
                                 if hasattr(day.get("last_modified"), "isoformat")
                                 else str(day.get("last_modified") or day["date"])
                             ),
-                            "url": page_url,
-                            "inLanguage": "ja-JP",
-                        },
+                            mainEntityOfPage=page_url,
+                        ),
                     ),
                     asset_prefix="../../",
                 ),
             )
             for page_path, page_url, day in archive_date_pages
+        ]
+        rendered_flight_pages = [
+            (
+                page["path"],
+                render_template(
+                    "flight_page.html",
+                    page=page,
+                    page_url=page["url"],
+                    site_url=SITE_URL,
+                    access_stats=access_stats,
+                    structured_data=page_schema(
+                        "WebPage",
+                        f"{page['label']} 羽田発八丈島行きの運航目安・過去実績",
+                        page["url"],
+                        f"{page['number']}便の直近11日間の運航目安、天気リスク、過去の運航結果を確認できます。",
+                        (
+                            ("トップ", SITE_URL),
+                            (page["label"], None),
+                        ),
+                    ),
+                ),
+            )
+            for page in flight_pages
         ]
         not_found_html = render_template("404.html")
 
@@ -376,7 +519,11 @@ def build_site(output_dir=DIST_DIR, current_time=None, now_provider=None):
     output_dir.joinpath("404.html").write_text(
         add_brand_assets(not_found_html), encoding="utf-8"
     )
-    for page_path, page_html in [*rendered_date_pages, *rendered_archive_pages]:
+    for page_path, page_html in [
+        *rendered_date_pages,
+        *rendered_archive_pages,
+        *rendered_flight_pages,
+    ]:
         page_path.parent.mkdir(parents=True, exist_ok=True)
         page_path.write_text(page_html, encoding="utf-8")
     shutil.copytree(BASE_DIR / "static", output_dir / "static", dirs_exist_ok=True)

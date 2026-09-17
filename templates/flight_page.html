@@ -1,0 +1,73 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="{{ page.number }}便の直近11日間の運航目安、天気リスク、過去の運航結果を確認できます。">
+  <meta name="robots" content="index,follow">
+  <meta name="theme-color" content="#071c2c">
+  <link rel="canonical" href="{{ page_url }}">
+  <meta property="og:type" content="website">
+  <meta property="og:site_name" content="八丈島の飛行機運航目安">
+  <meta property="og:title" content="{{ page.label }}｜羽田発八丈島行きの運航目安・過去実績">
+  <meta property="og:description" content="{{ page.number }}便の直近予報と、保存された過去の運航結果を確認できます。">
+  <meta property="og:url" content="{{ page_url }}">
+  <title>{{ page.label }}｜羽田発八丈島行きの運航目安・過去実績</title>
+  <script type="application/ld+json">{{ structured_data|tojson }}</script>
+  <link rel="stylesheet" href="../../static/styles.css?v=20260909-history-1">
+</head>
+<body>
+  {% set asset_prefix = "../../" %}
+  <main class="container container--minimal archive-page">
+    <header class="header header--minimal">
+      <p class="page-nav"><a href="../../">トップページへ｜今日の八丈島便の運航目安を見る</a></p>
+      <p class="about-label">FLIGHT GUIDE</p>
+      <h1>{{ page.label }}の運航目安・過去実績</h1>
+      <p class="lead">羽田空港から八丈島空港へ向かう{{ page.number }}便（{{ page.arrival_time }}着）の直近予報と、公開後に確認できた運航結果です。</p>
+    </header>
+
+    <section class="archive-note" aria-labelledby="flight-note-title">
+      <h2 id="flight-note-title">確認するときの注意</h2>
+      <p>表示は過去実績と天気リスクによる参考スコアで、航空会社が発表する運航確率ではありません。搭乗前は必ずANA公式の運航状況をご確認ください。</p>
+    </section>
+
+    <section aria-labelledby="current-forecast-title">
+      <h2 id="current-forecast-title">{{ page.number }}便の直近の運航目安</h2>
+      {% if page.forecasts %}
+        <ol class="archive-index">
+          {% for item in page.forecasts %}
+            <li><a href="../../forecast/{{ item.day.date }}/#flight-{{ item.day.date }}-{{ page.number }}">
+              <time datetime="{{ item.day.date }}">{{ item.day.date_label }}（{{ item.day.weekday }}）{{ page.arrival_time }}着</time>
+              <span>{% if item.flight.calculation_status == "available" %}{{ item.flight.probability_symbol }} {{ item.flight.probability }} / 100{% else %}算出不可{% endif %}{% if item.flight.warning_msg and item.flight.warning_msg not in ["なし", "特になし"] %}｜{{ item.flight.warning_msg }}{% endif %}</span>
+            </a></li>
+          {% endfor %}
+        </ol>
+      {% else %}
+        <p class="archive-note">現在公開中の予報はありません。</p>
+      {% endif %}
+    </section>
+
+    <section class="flight-history-summary" aria-labelledby="flight-history-title">
+      <h2 id="flight-history-title">保存された過去の運航結果</h2>
+      {% if page.confirmed_count %}
+        <p>結果確認済み{{ page.confirmed_count }}件：運航{{ page.operated_count }}件・欠航または引き返し{{ page.disrupted_count }}件</p>
+      {% else %}
+        <p>結果確認済みの記録はまだありません。</p>
+      {% endif %}
+      {% if page.records %}
+        <ol class="archive-index">
+          {% for item in page.records %}
+            <li><a href="../../forecast/{{ item.day.date }}/">
+              <time datetime="{{ item.day.date }}">{{ item.day.long_date_label }}（{{ item.day.weekday }}）</time>
+              <span>公開時 {% if item.flight.score is not none %}{{ item.flight.score }} / 100{% else %}算出不可{% endif %}｜{{ item.flight.outcome_label }}</span>
+            </a></li>
+          {% endfor %}
+        </ol>
+      {% endif %}
+      <p class="archive-back"><a class="secondary-link" href="../../history/">全便の過去予測と運航結果を見る</a></p>
+    </section>
+
+    {% include "_site_footer.html" %}
+  </main>
+</body>
+</html>

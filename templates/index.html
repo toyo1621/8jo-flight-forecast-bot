@@ -31,24 +31,7 @@
   <meta name="twitter:title" content="{{ page_title }}">
   <meta name="twitter:description" content="{{ page_description }}">
   <title>{{ page_title }}</title>
-  <script type="application/ld+json">
-    {
-      "@context": "https://schema.org",
-      "@type": "WebApplication",
-      "name": "八丈島の飛行機運航目安",
-      "description": {{ page_description|tojson }},
-      "url": {{ page_url|tojson }},
-      "applicationCategory": "TravelApplication",
-      "operatingSystem": "Web",
-      "inLanguage": "ja-JP",
-      "isAccessibleForFree": true,
-      "offers": {
-        "@type": "Offer",
-        "price": "0",
-        "priceCurrency": "JPY"
-      }
-    }
-  </script>
+  <script type="application/ld+json">{{ structured_data|default({})|tojson }}</script>
   <link rel="stylesheet" href="{{ asset_prefix }}static/styles.css?v=20260623-13">
   <script src="{{ asset_prefix }}static/app.js?v=20260619-1" defer></script>
   <!-- Cloudflare Web Analytics: privacy-first pageview measurement without cookies. -->
@@ -148,6 +131,20 @@
         <div class="forecast-index-links">
           {% for day in days %}
             <a href="#date-{{ day.date }}">{{ day.date_label }}<span>({{ day.weekday }})</span></a>
+          {% endfor %}
+        </div>
+      </nav>
+    {% endif %}
+
+    {% if page_variant != "date" and flight_pages %}
+      <nav class="forecast-index" aria-labelledby="flight-index-title">
+        <div>
+          <p class="summary-kicker">FLIGHT GUIDE</p>
+          <h2 id="flight-index-title">便ごとの運航目安と過去実績</h2>
+        </div>
+        <div class="forecast-index-links">
+          {% for page in flight_pages %}
+            <a href="flights/{{ page.number|lower }}/">{{ page.number }}<span>({{ page.position }}便・{{ page.arrival_time }}着)</span></a>
           {% endfor %}
         </div>
       </nav>
