@@ -1,6 +1,7 @@
 """One strict candidate set for scoring and the ten-row explanation."""
 import math
 
+from flight_forecast.app_config import MIN_MATCHING_HISTORY_ROWS
 from flight_forecast.flight_metadata import VALID_STORED_STATUSES, normalize_status
 
 ANGLE_LIMIT = 20.0
@@ -48,11 +49,11 @@ def select_history_with_metadata(history, flight_number, weather):
     stages = ((20, 3, 5), (20, 5, 8), (30, 5, 8), (45, 5, 8))
     for index, limits in enumerate(stages):
         rows = select_candidates(history, flight_number, weather, limits)
-        required = 5 if index == 0 else 6
-        if len(rows) >= required or not valid_wind(weather):
+        target = MIN_MATCHING_HISTORY_ROWS if index == 0 else 6
+        if len(rows) >= target or not valid_wind(weather):
             break
     return rows, {
-        "step": index + 1, "minimum": required, "expanded": index > 0,
+        "step": index + 1, "minimum": MIN_MATCHING_HISTORY_ROWS, "expanded": index > 0,
         "angle": limits[0], "speed": limits[1], "gust": limits[2],
         "label": f"風向差±{limits[0]}°・平均風速差±{limits[1]}m/s・最大瞬間風速差±{limits[2]}m/s",
     }

@@ -48,11 +48,20 @@ def test_four_records_expand_to_at_least_six_and_details_match():
     assert result["history_selection"] == metadata
 
 
-def test_expanded_five_is_not_enough_and_angles_are_bounded():
+def test_expanded_five_is_enough_after_all_stages_are_checked():
     history = [row()] * 4 + [row(wind_speed=10)] + [row(wind_direction=180)] * 20
     result = predict_flight_probability(350, 6, 13, 20, 15, flight_number="ANA1891", history=history)
-    assert result["probability"] is None
+    assert result["probability"] is not None
+    assert result["data_count"] == 5
+    assert result["history_selection"]["minimum"] == 5
     assert result["history_selection"]["angle"] == 45
+
+
+def test_expanded_four_remains_unavailable():
+    history = [row()] * 4 + [row(wind_direction=180)] * 20
+    result = predict_flight_probability(350, 6, 13, 20, 15, flight_number="ANA1891", history=history)
+    assert result["probability"] is None
+    assert result["data_count"] == 4
 
 
 @pytest.mark.parametrize("direction,step", [(20, 3), (35, 4)])
