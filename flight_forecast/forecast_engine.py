@@ -143,7 +143,6 @@ def predict_flight_probability(
     history_rows, selection = select_history_with_metadata(source_history, flight_number, weather)
     history_fingerprint = _history_fingerprint(history_rows)
     if len(history_rows) < selection["minimum"]:
-        scope = f"{flight_number}の" if flight_number else ""
         reason_code = "similar_history_below_minimum" if valid_wind(weather) else "required_wind_missing_or_invalid"
         return {
             "probability": None,
@@ -153,12 +152,12 @@ def predict_flight_probability(
             "calculation_status": "insufficient_history" if valid_wind(weather) else "weather_missing",
             "reason_code": reason_code,
             "alert_required": False,
-            "warning_msg": (f"{scope}条件に合う過去実績が{len(history_rows)}件のため、算出できません。"
+            "warning_msg": (f"対象3便共通の条件に合う過去実績が{len(history_rows)}件のため、算出できません。"
                             if valid_wind(weather) else "風向・平均風速・最大瞬間風速が欠測または不正のため算出できません。"),
             "data_count": len(history_rows),
             "step_used": 0,
             "history_selection": selection,
-            "history_flight_number": flight_number,
+            "history_flight_number": "all_flights",
             "history_fingerprint": history_fingerprint,
         }
         
@@ -283,7 +282,7 @@ def predict_flight_probability(
         "warning_msg": warning_msg,
         "data_count": len(matching_rows),
         "step_used": step_used,
-        "history_flight_number": flight_number,
+        "history_flight_number": "all_flights",
         "history_selection": selection,
         "history_fingerprint": history_fingerprint,
     }

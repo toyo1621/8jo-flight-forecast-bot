@@ -4,7 +4,7 @@
 [![Pages](https://github.com/toyo1621/8jo-flight-forecast-bot/actions/workflows/pages.yml/badge.svg)](https://github.com/toyo1621/8jo-flight-forecast-bot/actions/workflows/pages.yml)
 [![Data Collection](https://github.com/toyo1621/8jo-flight-forecast-bot/actions/workflows/data_collection.yml/badge.svg)](https://github.com/toyo1621/8jo-flight-forecast-bot/actions/workflows/data_collection.yml)
 
-羽田空港から八丈島空港へ向かうANA便について、同じ便の過去の運航実績と気象情報、現在の気象予報を組み合わせ、運航統計参考値を表示するプロジェクトです。
+羽田空港から八丈島空港へ向かうANA便について、対象3便の過去の運航実績と気象情報、現在の気象予報を組み合わせ、運航統計参考値を表示するプロジェクトです。
 
 **公開サイト:** [八丈島便 運航の目安](https://toyo1621.github.io/8jo-flight-forecast-bot/)
 
@@ -22,7 +22,7 @@
 - 運航統計参考値に「◎」「〇」「△」「×」の記号を付与
 - GFS・ECMWF・JMAはSVG旗アイコン付きで表示
 - 風向、風速、最大瞬間風速、低層雲量、視程、降水量、気圧を考慮
-- 各便の「詳しく見る(運航実績・気象情報)」から、詳しい気象情報と同じ便の類似気象条件における過去実績10件を表示
+- 各便の「詳しく見る(運航実績・気象情報)」から、詳しい気象情報と対象3便共通の類似気象条件における過去実績10件を表示
 - GFS・ECMWFアンサンブル予報による天候信頼度A〜Eを表示
 - 気象庁(JMA)のGSM・MSM予報を主予報として統計参考値を計算
 - 日本周辺の短期予報ではJMAを主軸としつつ、GFS・ECMWFも比較材料として表示
@@ -119,13 +119,13 @@ Pagesの静的生成時には、JMA・GFS・ECMWFの各統計参考値と予測�
 
 ## 運航統計参考値の計算
 
-`flight_forecast/forecast_engine.py`は、対象便と同じ便の中から、予報された風向・風速に近い過去レコードを段階的に検索します。3便を混ぜた集計は行いません。
+`flight_forecast/forecast_engine.py`は、対象3便共通の実績から、予報された風向・平均風速・最大瞬間風速に近い過去レコードを段階的に検索します。過去便の便番号は候補の絞り込みに使いません。
 
 画面の主予報にはOpen-Meteo経由のJMA GSM・MSMモデルを使用します。便カードと詳細画面の比較欄にはGFS・ECMWF・JMAを併記し、JMA欄は主予報と同じ値を表示します。コード上の`probability`は既存互換のフィールド名であり、統計的に校正された確率を意味しません。
 
 1. 風向差30度以内、風速差3 m/s以内
 2. 該当データが5件未満なら、風向差45度以内、風速差5 m/s以内
-3. 有効な同便履歴が5件未満なら、統計参考値を算出せず「算出不可」と表示
+3. 条件を最大まで広げても有効な履歴が5件未満なら、統計参考値を算出せず「算出不可」と表示
 
 運航結果を次の重みで集計します。
 
@@ -177,7 +177,7 @@ Open-MeteoのGFS・ECMWFアンサンブル予報をモデル別に扱い、複�
 - 詳細画面は`詳しく見る(運航実績・気象情報)`から開きます。
 - 「南風注意」「強風注意」「突風注意」「低層雲の影響注意」などの警告表示と、カードの色は別々に判定します。
 - 当日の便は到着予定時刻から30分を過ぎると「終了」として表示し、次の便や別日の予測を「今日」と誤表示しません。
-- 詳細画面の類似過去実績は同じ便だけを対象にし、強風・突風・低層雲・低視程など、主予報で悪化している条件を重く評価して10件選びます。欠測項目がある過去データにはペナルティを付けます。
+- 詳細画面の類似過去実績は対象3便共通で選び、計算と同じ候補から風向差・平均風速差・最大瞬間風速差・日付降順で最大10件を表示します。
 
 ## 気象業務法への配慮
 
@@ -306,7 +306,7 @@ GitHub Actionsでは、BigQuery上の重複、未知ステータス、未知便�
 | `flight_forecast/app_config.py` | 予報日数、確率しきい値、補正倍率などの共通設定 |
 | `flight_forecast/forecast_cache.py` | Open-Meteo取得失敗時に使う前回予報キャッシュ |
 | `flight_forecast/presentation.py` | 便カード・詳細画面向けの表示用データ整形 |
-| `flight_forecast/forecast_engine.py` | 同じ便の過去実績に基づく運航統計参考値の計算 |
+| `flight_forecast/forecast_engine.py` | 対象3便共通の過去実績に基づく運航統計参考値の計算 |
 | `flight_forecast/build_static.py` | GitHub Pages用の静的HTML生成 |
 | `flight_forecast/data_collector.py` | 当日の運航・気象情報の収集 |
 | `flight_forecast/bigquery_storage.py` | BigQueryの読み書き |
