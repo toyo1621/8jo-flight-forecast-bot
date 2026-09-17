@@ -7,6 +7,22 @@ from flight_forecast.build_static import add_brand_assets, build_site
 from flight_forecast.validate_static_site import validate_site
 
 
+@pytest.fixture(autouse=True)
+def stub_detailed_history():
+    history = [
+        {
+            "date": "2026-08-23",
+            "flight_number": "ANA1891",
+            "status": "運航",
+            "wind_direction": 180.0,
+            "wind_speed": 5.0,
+            "wind_gusts": 12.0,
+        }
+    ]
+    with patch("flight_forecast.build_static.fetch_detailed_history", return_value=history):
+        yield history
+
+
 def test_completed_today_routes_to_saved_prediction_and_result(tmp_path):
     from flight_forecast.web_app import build_daily_forecasts
 
@@ -103,6 +119,7 @@ def test_build_site_persists_prediction_snapshots_before_rendering(tmp_path):
     assert '"@type": "WebSite"' in html
     assert (tmp_path / "guide" / "index.html").exists()
     assert (tmp_path / "history" / "index.html").exists()
+    assert (tmp_path / "wind" / "index.html").exists()
     assert (tmp_path / "about" / "index.html").exists()
     assert (tmp_path / "privacy" / "index.html").exists()
     for number in ("ana1891", "ana1893", "ana1895"):
@@ -136,6 +153,10 @@ def test_build_site_persists_prediction_snapshots_before_rendering(tmp_path):
     assert 'name="forecast-artifact-id"' in html
     sitemap = (tmp_path / "sitemap.xml").read_text(encoding="utf-8")
     assert "https://toyo1621.github.io/8jo-flight-forecast-bot/flights/ana1891/" in sitemap
+    assert "https://toyo1621.github.io/8jo-flight-forecast-bot/wind/" in sitemap
+    wind_html = (tmp_path / "wind" / "index.html").read_text(encoding="utf-8")
+    assert "風向・風速別の欠航傾向" in wind_html
+    assert "風が原因と確認された欠航率ではありません" in wind_html
 
 
 def test_build_site_records_generation_after_source_retrieval(tmp_path):
