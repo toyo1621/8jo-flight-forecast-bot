@@ -1,3 +1,5 @@
+from unittest.mock import patch
+
 import pytest
 
 from flight_forecast.forecast_engine import (
@@ -84,3 +86,19 @@ def test_order_is_direction_then_speed_then_gust_then_date():
 def test_missing_forecast_gust_is_not_zero_and_old_tuples_are_not_inferred():
     assert predict_flight_probability(350, 6, None, 20, 15, history=[row()] * 5)["calculation_status"] == "weather_missing"
     assert select_history([("運航", 350, 6)] * 5, "ANA1891", row()) == []
+
+
+def test_injected_history_keeps_domain_logic_independent_from_bigquery():
+    history = [row()] * 5
+    with (
+        patch("flight_forecast.forecast_engine.load_history", side_effect=AssertionError("BigQuery called")),
+        patch("flight_forecast.forecast_engine.load_detailed_history", side_effect=AssertionError("BigQuery called")),
+    ):
+        prediction = predict_flight_probability(
+            350, 6, 13, 20, 15, flight_number="ANA1891", history=history,
+        )
+        details = find_similar_flights("ANA1891", row(), history=history)
+
+    assert prediction["calculation_status"] == "available"
+    assert prediction["probability"] == 97
+    assert details[0]["date"] == "2026-09-01"
