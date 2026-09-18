@@ -255,11 +255,11 @@
                     <div><dt>視程</dt><dd>{% if flight.visibility is defined and flight.visibility is not none %}{{ flight.visibility }} km{% else %}欠測{% endif %}</dd></div>
                     <div><dt>降水量</dt><dd>{% if flight.precipitation is defined and flight.precipitation is not none %}{{ flight.precipitation }} mm/h{% else %}欠測{% endif %}</dd></div>
                     <div><dt>気圧</dt><dd>{% if flight.pressure_msl is defined and flight.pressure_msl is not none %}{{ flight.pressure_msl }} hPa{% else %}欠測{% endif %}</dd></div>
-                    <div><dt>主予報(JMA)での統計参考値（運航参考スコア）</dt><dd>{% if flight.calculation_status == "available" %}<span class="probability-inline-symbol">{{ flight.probability_symbol }}</span>{{ flight.probability }} / 100{% else %}{{ '予測表示終了' if flight.calculation_status == 'expired' else '算出不可' }}{% endif %}</dd></div>
+                    <div><dt>主予報(JMA)での統計参考値（運航参考スコア）</dt><dd>{% if flight.calculation_status == "available" %}<span class="{% if flight.service_announcement and flight.service_announcement.status == 'cancelled' %}score-value--cancelled{% endif %}"><span class="probability-inline-symbol">{{ '×' if flight.service_announcement and flight.service_announcement.status == 'cancelled' else flight.probability_symbol }}</span>{{ flight.probability }} / 100</span>{% else %}{{ '予測表示終了' if flight.calculation_status == 'expired' else '算出不可' }}{% endif %}</dd></div>
                     <div><dt>過去実績の集計対象</dt><dd>対象3便共通 / {{ flight.data_count }}件</dd></div>
                     <div><dt>実績の選定条件</dt><dd>対象3便共通・{% if flight.history_selection is defined %}{{ flight.history_selection.label }}{% if flight.history_selection.expanded %}（実績不足のため条件を拡大）{% endif %}{% else %}条件記録なし{% endif %}</dd></div>
                     {% for model in flight.model_probabilities %}
-                      <div><dt>{{ model.label }}予報での統計参考値（運航参考スコア）</dt><dd><span class="probability-inline-symbol">{{ model.symbol }}</span>{{ model.probability }} / 100</dd></div>
+                      <div><dt>{{ model.label }}予報での統計参考値（運航参考スコア）</dt><dd><span class="{% if flight.service_announcement and flight.service_announcement.status == 'cancelled' %}score-value--cancelled{% endif %}"><span class="probability-inline-symbol">{{ '×' if flight.service_announcement and flight.service_announcement.status == 'cancelled' else model.symbol }}</span>{{ model.probability }} / 100</span></dd></div>
                     {% endfor %}
                   </dl>
                 </section>

@@ -148,6 +148,8 @@ def test_announced_cancellations_keep_scores_and_mark_all_three_flights():
     assert body.count('class="score-value score-value--cancelled"') == 3
     assert body.count('<span class="probability-symbol">×</span>') == 3
     assert body.count('<span class="probability-inline-symbol">×</span>') >= 3
+    assert '<span class="probability-inline-symbol">△</span>' not in body
+    assert '<span class="probability-inline-symbol">〇</span>' not in body
     assert "flight--service-cancelled" in body
 
 
