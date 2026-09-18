@@ -32,7 +32,7 @@
   <meta name="twitter:description" content="{{ page_description }}">
   <title>{{ page_title }}</title>
   <script type="application/ld+json">{{ structured_data|default({})|tojson }}</script>
-  <link rel="stylesheet" href="{{ asset_prefix }}static/styles.css?v=20260623-13">
+  <link rel="stylesheet" href="{{ asset_prefix }}static/styles.css?v=20260918-announcement-1">
   <script src="{{ asset_prefix }}static/app.js?v=20260619-1" defer></script>
   <!-- Cloudflare Web Analytics: privacy-first pageview measurement without cookies. -->
   <script type="module" src="https://static.cloudflareinsights.com/beacon.min.js" data-cf-beacon='{"token": "afc2a7c7ee1a4ab2a9738a04695321b9"}'></script>
@@ -80,6 +80,13 @@
           <time datetime="{{ today.date }}">{{ today.date_label }} ({{ today.weekday }})</time>
         </div>
         {% if today.flights %}
+          {% if today.service_announcement %}
+            <aside class="service-announcement" role="status">
+              <strong>{{ today.service_announcement.label }}</strong>
+              <span>{{ today.service_announcement.message }}</span>
+              <a href="{{ today.service_announcement.source_url }}" target="_blank" rel="noopener noreferrer">ANA公式で確認</a>
+            </aside>
+          {% endif %}
           {% if today.flights|rejectattr('calculation_status', 'equalto', 'expired')|list|length == 0 %}
             <p class="today-empty">本日の全便は予測の表示対象時刻を過ぎました。実際の運航結果は公式の運航状況をご確認ください。</p>
           {% endif %}
@@ -91,6 +98,9 @@
                   <span>{{ flight.time }} 着</span>
                 </span>
                 <span class="today-flight-score">
+                  {% if flight.service_announcement %}
+                    <span class="service-status">{{ flight.service_announcement.flight_label }}</span>
+                  {% endif %}
                   {% if flight.calculation_status == "available" %}
                     <span class="probability-symbol">{{ flight.probability_symbol }}</span>
                     <strong>{{ flight.probability }}</strong><span class="score-unit"> / 100</span>
@@ -181,6 +191,13 @@
               </div>
             {% endif %}
           </div>
+          {% if day.service_announcement %}
+            <aside class="service-announcement service-announcement--day" role="status">
+              <strong>{{ day.service_announcement.label }}</strong>
+              <span>{{ day.service_announcement.message }}</span>
+              <a href="{{ day.service_announcement.source_url }}" target="_blank" rel="noopener noreferrer">ANA公式で確認</a>
+            </aside>
+          {% endif %}
           {% if day.confidence.source in ["ensemble", "ensemble_partial"] %}
             <p class="confidence-note">モデル別 {{ day.confidence.available_models|join("・") }} / 有効{{ day.confidence.valid_member_count }}・期待{{ day.confidence.expected_member_count }}通り / 最大{{ day.confidence.spread }}pt{% if day.confidence.caution %}。{{ day.confidence.caution }}{% endif %}</p>
             <p class="confidence-note confidence-note--models">{% for model_name, model in day.confidence.models.items() %}{{ model.label }}: {{ model.valid_member_count }}/{{ model.expected_member_count }}通り{% if model.spread is not none %}・{{ model.spread }}pt{% endif %}{% if not loop.last %} / {% endif %}{% endfor %}</p>
@@ -193,6 +210,9 @@
                 <div class="flight-meta">
                   <p class="flight-number">{{ flight.number }}</p>
                   <p class="flight-time">{{ flight.time }} 着</p>
+                  {% if flight.service_announcement %}
+                    <p class="service-status">{{ flight.service_announcement.flight_label }}</p>
+                  {% endif %}
                 </div>
                 <p class="probability">
                   {% if flight.calculation_status == "available" %}

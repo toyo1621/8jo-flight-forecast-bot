@@ -94,6 +94,58 @@ def test_build_daily_forecasts():
     assert days[0]["confidence"]["source"] == "lead_time_caution"
 
 
+def test_announced_cancellations_keep_scores_and_mark_all_three_flights():
+    weather = {
+        f"2026-09-20T{hour:02d}:00": {
+            "wind_direction": 180.0,
+            "wind_speed": 8.0,
+            "wind_gusts": 15.0,
+            "cloud_cover_low": 40.0,
+            "visibility": 10.0,
+            "precipitation": 0.0,
+        }
+        for hour in (8, 13, 17)
+    }
+    result = {
+        "probability": 72.0,
+        "alert_required": False,
+        "warning_msg": "なし",
+        "data_count": 10,
+        "step_used": 1,
+    }
+    with (
+        patch("flight_forecast.web_app.predict_flight_probability", return_value=result),
+        patch("flight_forecast.web_app.find_similar_flights", return_value=[]),
+    ):
+        days = build_daily_forecasts(
+            weather,
+            reference_date=date(2026, 9, 18),
+            current_time=datetime(2026, 9, 18, 12, 0, tzinfo=JST),
+        )
+
+    assert days[0]["service_announcement"]["label"] == "全便欠航（発表済み）"
+    assert len(days[0]["flights"]) == 3
+    assert [flight["probability"] for flight in days[0]["flights"]] == [72.0] * 3
+    assert {
+        flight["service_announcement"]["flight_label"]
+        for flight in days[0]["flights"]
+    } == {"欠航（発表済み）"}
+
+    with app.test_request_context("/"):
+        body = render_template(
+            "index.html",
+            days=days,
+            today_day=None,
+            error=None,
+            updated_at="2026/09/18 12:00",
+        )
+
+    assert "全便欠航（発表済み）" in body
+    assert body.count("欠航（発表済み）") == 4
+    assert body.count("72.0") >= 3
+    assert "参考スコアは予測値として残しています。" in body
+
+
 def test_build_daily_forecasts_evaluates_each_ensemble_member_once():
     members = [
         {"_model": "gfs_seamless", "_member_id": "gfs_seamless:01", "wind_speed": 5.0},
