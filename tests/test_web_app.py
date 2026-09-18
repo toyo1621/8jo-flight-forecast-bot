@@ -151,6 +151,8 @@ def test_announced_cancellations_keep_scores_and_mark_all_three_flights():
     assert '<span class="probability-inline-symbol">△</span>' not in body
     assert '<span class="probability-inline-symbol">〇</span>' not in body
     assert "flight--service-cancelled" in body
+    stylesheet = (BASE_DIR / "static" / "styles.css").read_text(encoding="utf-8")
+    assert "text-decoration: line-through" not in stylesheet
 
 
 def test_build_daily_forecasts_evaluates_each_ensemble_member_once():
