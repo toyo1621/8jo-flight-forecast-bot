@@ -126,6 +126,7 @@ def test_announced_cancellations_keep_scores_and_mark_all_three_flights():
     assert days[0]["service_announcement"]["label"] == "全便欠航（発表済み）"
     assert len(days[0]["flights"]) == 3
     assert [flight["probability"] for flight in days[0]["flights"]] == [72.0] * 3
+    assert [flight["probability_symbol"] for flight in days[0]["flights"]] == ["△"] * 3
     assert {
         flight["service_announcement"]["flight_label"]
         for flight in days[0]["flights"]
@@ -144,6 +145,10 @@ def test_announced_cancellations_keep_scores_and_mark_all_three_flights():
     assert body.count("欠航（発表済み）") == 4
     assert body.count("72.0") >= 3
     assert "参考スコアは予測値として残しています。" in body
+    assert body.count('class="score-value score-value--cancelled"') == 3
+    assert body.count('<span class="probability-symbol">×</span>') == 3
+    assert body.count('<span class="probability-inline-symbol">×</span>') >= 3
+    assert "flight--service-cancelled" in body
 
 
 def test_build_daily_forecasts_evaluates_each_ensemble_member_once():
