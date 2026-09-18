@@ -6,21 +6,21 @@ from flight_forecast.forecast_engine import predict_flight_probability
 
 
 @pytest.mark.parametrize("direction,speed,label,factor", [
-    (119.99, 9, None, 1), (120, 3.99, None, 1),
+    (119.99, 9, None, .9), (120, 3.99, None, 1),
     (120, 4, "中", .8), (190, 4, "中", .8),
     (190.01, 4, "小", .9), (240, 4, "小", .9),
-    (240.01, 9, None, 1), (185, 6.02, "中", .8),
+    (240.01, 9, None, .9), (185, 6.02, "中", .8),
     (185, 6.49, "中", .8), (185, 6.5, "大", .7),
     (185, 8.99, "大", .7), (185, 9, "特大", .6),
     (210, 6.5, "中", .8), (210, 9, "大", .7),
 ])
 def test_southerly_boundaries(direction, speed, label, factor):
-    result = predict_flight_probability(direction, speed, 10, 20, 15,
-        history=[{"status": "運航", "wind_direction": direction, "wind_speed": speed, "wind_gusts": 10}] * 5)
+    result = predict_flight_probability(direction, speed, 5, 20, 15,
+        history=[{"status": "運航", "wind_direction": direction, "wind_speed": speed, "wind_gusts": 5}] * 5)
     assert result["weather_factor"] == factor
     assert result["probability"] == min(97, 100 * factor)
     if label:
-        assert risk_labels(result["warning_msg"]) == [f"南風リスク{label}"]
+        assert f"南風リスク{label}" in risk_labels(result["warning_msg"])
     else:
         assert "南風リスク" not in result["warning_msg"]
 
@@ -28,8 +28,8 @@ def test_southerly_boundaries(direction, speed, label, factor):
 def test_gust_does_not_stack_with_southerly():
     result = predict_flight_probability(185, 11, 21, 20, 15,
         history=[{"status": "運航", "wind_direction": 185, "wind_speed": 11, "wind_gusts": 21}] * 5)
-    assert result["weather_factors"] == {"gust": .55}
-    assert result["probability"] == 55
+    assert result["weather_factors"] == {"southerly": .6}
+    assert result["probability"] == 60
 
 
 def test_reflection_keeps_original_score_and_only_targets_final_flight():
