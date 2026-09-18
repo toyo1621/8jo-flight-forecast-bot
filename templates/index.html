@@ -32,7 +32,7 @@
   <meta name="twitter:description" content="{{ page_description }}">
   <title>{{ page_title }}</title>
   <script type="application/ld+json">{{ structured_data|default({})|tojson }}</script>
-  <link rel="stylesheet" href="{{ asset_prefix }}static/styles.css?v=20260918-announcement-1">
+  <link rel="stylesheet" href="{{ asset_prefix }}static/styles.css?v=20260918-announcement-2">
   <script src="{{ asset_prefix }}static/app.js?v=20260619-1" defer></script>
   <!-- Cloudflare Web Analytics: privacy-first pageview measurement without cookies. -->
   <script type="module" src="https://static.cloudflareinsights.com/beacon.min.js" data-cf-beacon='{"token": "afc2a7c7ee1a4ab2a9738a04695321b9"}'></script>
@@ -92,7 +92,7 @@
           {% endif %}
           <div class="today-flight-list">
             {% for flight in today.flights %}
-              <a class="today-flight" href="#flight-{{ today.date }}-{{ flight.raw_number }}">
+              <a class="today-flight{% if flight.service_announcement and flight.service_announcement.status == 'cancelled' %} today-flight--service-cancelled{% endif %}" href="#flight-{{ today.date }}-{{ flight.raw_number }}">
                 <span class="today-flight-main">
                   <strong>{{ flight.number }}</strong>
                   <span>{{ flight.time }} 着</span>
@@ -102,8 +102,10 @@
                     <span class="service-status">{{ flight.service_announcement.flight_label }}</span>
                   {% endif %}
                   {% if flight.calculation_status == "available" %}
-                    <span class="probability-symbol">{{ flight.probability_symbol }}</span>
-                    <strong>{{ flight.probability }}</strong><span class="score-unit"> / 100</span>
+                    <span class="score-value{% if flight.service_announcement and flight.service_announcement.status == 'cancelled' %} score-value--cancelled{% endif %}">
+                      <span class="probability-symbol">{{ '×' if flight.service_announcement and flight.service_announcement.status == 'cancelled' else flight.probability_symbol }}</span>
+                      <strong>{{ flight.probability }}</strong><span class="score-unit"> / 100</span>
+                    </span>
                   {% else %}
                     <strong>{{ '予測表示終了' if flight.calculation_status == 'expired' else '算出不可' }}</strong>
                   {% endif %}
@@ -206,7 +208,7 @@
           {% endif %}
           <div class="flights">
             {% for flight in day.flights %}
-              <article id="flight-{{ day.date }}-{{ flight.raw_number }}" class="flight{% if flight.is_low_probability %} flight--low-probability{% endif %}" role="button" tabindex="0" aria-haspopup="dialog" data-dialog="detail-{{ day.date }}-{{ flight.raw_number }}">
+              <article id="flight-{{ day.date }}-{{ flight.raw_number }}" class="flight{% if flight.is_low_probability %} flight--low-probability{% endif %}{% if flight.service_announcement and flight.service_announcement.status == 'cancelled' %} flight--service-cancelled{% endif %}" role="button" tabindex="0" aria-haspopup="dialog" data-dialog="detail-{{ day.date }}-{{ flight.raw_number }}">
                 <div class="flight-meta">
                   <p class="flight-number">{{ flight.number }}</p>
                   <p class="flight-time">{{ flight.time }} 着</p>
@@ -216,7 +218,7 @@
                 </div>
                 <p class="probability">
                   {% if flight.calculation_status == "available" %}
-                    <span class="probability-symbol">{{ flight.probability_symbol }}</span><strong>{{ flight.probability }}</strong><span class="probability-unit"> / 100</span>
+                    <span class="score-value{% if flight.service_announcement and flight.service_announcement.status == 'cancelled' %} score-value--cancelled{% endif %}"><span class="probability-symbol">{{ '×' if flight.service_announcement and flight.service_announcement.status == 'cancelled' else flight.probability_symbol }}</span><strong>{{ flight.probability }}</strong><span class="probability-unit"> / 100</span></span>
                   {% else %}
                     <span class="probability-unavailable" role="status">{{ '予測表示終了' if flight.calculation_status == 'expired' else '算出不可' }}</span>
                   {% endif %}
@@ -225,7 +227,7 @@
                 <div class="model-probabilities" aria-label="モデル別の運航参考スコア">
                   {% for model in flight.model_probabilities %}
                     <p class="model-probability model-probability--{{ model.tone }}">
-                      <span><img class="model-flag" src="{{ asset_prefix }}{{ model.flag_path }}" alt="{{ model.flag_alt }}">{{ model.label }}</span><strong><span class="probability-inline-symbol">{{ model.symbol }}</span>{{ model.probability }}<span class="score-unit"> / 100</span></strong>
+                      <span><img class="model-flag" src="{{ asset_prefix }}{{ model.flag_path }}" alt="{{ model.flag_alt }}">{{ model.label }}</span><strong class="{% if flight.service_announcement and flight.service_announcement.status == 'cancelled' %}score-value--cancelled{% endif %}"><span class="probability-inline-symbol">{{ '×' if flight.service_announcement and flight.service_announcement.status == 'cancelled' else model.symbol }}</span>{{ model.probability }}<span class="score-unit"> / 100</span></strong>
                     </p>
                   {% endfor %}
                 </div>

@@ -1,5 +1,7 @@
 from copy import deepcopy
 
+# Announcements are display-only overlays. Add future full or partial cancellations
+# here without changing forecast values, snapshots, or recorded flight outcomes.
 SERVICE_ANNOUNCEMENTS = {
     "2026-09-20": {
         "status": "cancelled",

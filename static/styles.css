@@ -191,6 +191,12 @@ h1 {
 .service-announcement--day { margin: 14px 0 4px; }
 .service-status { display: inline-block; color: #ffd08b; font-size: .7rem; font-weight: 800; line-height: 1.35; }
 .today-flight-score .service-status { display: block; margin-bottom: 3px; text-align: right; }
+.score-value { color: inherit; }
+.score-value--cancelled { color: #8e99a3 !important; text-decoration: line-through; text-decoration-color: #aab2b9; text-decoration-thickness: 2px; text-shadow: none !important; }
+.score-value--cancelled .probability-symbol, .score-value--cancelled .probability-inline-symbol, .score-value--cancelled .score-unit { color: inherit; text-shadow: none; }
+.today-flight--service-cancelled .today-flight-score { flex-direction: column; align-items: flex-end; color: #8e99a3; }
+.flight--service-cancelled .probability { color: #8e99a3; }
+.flight--service-cancelled .model-probability { border-color: rgba(142, 153, 163, .24); }
 .today-actions, .guide-links { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 14px; margin-top: 16px; }
 .official-link, .secondary-link {
   display: inline-flex;
