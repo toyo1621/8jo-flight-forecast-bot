@@ -185,6 +185,12 @@ h1 {
 .score-unit { color: #fff; font-size: .72rem; font-weight: 700; letter-spacing: 0; }
 .today-flight-action { color: var(--blue); font-size: .68rem; font-weight: 800; white-space: nowrap; }
 .today-summary-note, .today-empty { margin: 14px 0 0; color: #fff; font-size: .75rem; line-height: 1.65; }
+.service-announcement { display: grid; gap: 5px; margin: 16px 0 0; padding: 13px 15px; border: 1px solid rgba(255, 174, 76, .55); border-left: 4px solid #ffae4c; border-radius: 6px; background: rgba(106, 48, 6, .34); color: #fff3df; font-size: .78rem; line-height: 1.55; }
+.service-announcement strong { color: #ffd08b; font-size: .9rem; }
+.service-announcement a { width: fit-content; color: #fff; font-weight: 700; }
+.service-announcement--day { margin: 14px 0 4px; }
+.service-status { display: inline-block; color: #ffd08b; font-size: .7rem; font-weight: 800; line-height: 1.35; }
+.today-flight-score .service-status { display: block; margin-bottom: 3px; text-align: right; }
 .today-actions, .guide-links { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 14px; margin-top: 16px; }
 .official-link, .secondary-link {
   display: inline-flex;
@@ -326,6 +332,7 @@ h1 {
 .flight--low-probability { border-color: rgba(255, 196, 94, .35); }
 .flight-meta { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; white-space: nowrap; }
 .flight-number, .flight-time, .probability, .warning { margin: 0; }
+.flight-meta .service-status { margin: 7px 0 0; }
 .flight-number { color: #eaf7ff; font-size: .98rem; font-weight: 750; letter-spacing: .03em; }
 .flight-time { color: #fff; font-size: .86rem; flex: 0 0 auto; }
 

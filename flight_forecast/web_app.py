@@ -56,6 +56,7 @@ from flight_forecast.presentation import (
     active_forecast_days,
     decorate_flight_for_display,
 )
+from flight_forecast.service_announcements import service_announcement
 from flight_forecast.typhoon_impact import has_factor_breakdown, typhoon_risk_level
 
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -561,25 +562,28 @@ def build_daily_forecasts(
     for date_string in dates:
         date = datetime.strptime(date_string, "%Y-%m-%d").replace(tzinfo=JST)
         typhoon_impact = typhoon_impacts_by_date.get(date_string)
+        day_announcement = service_announcement(date_string)
         flights = []
         for flight in FLIGHTS:
             if date.date() == current_time.date() and _flight_display_expired(
                 date_string, flight["time"], current_time
             ):
-                flights.append(
-                    decorate_flight_for_display(
-                        {
-                            **flight,
-                            "number": flight_display_name(flight["number"]),
-                            "raw_number": flight["number"],
-                            "probability": None,
-                            "calculation_status": "expired",
-                            "calculation_unavailable_reason": "便の表示時刻を過ぎています。",
-                            "warning_msg": "便の表示時刻を過ぎています。",
-                            "similar_history": [],
-                        }
-                    )
+                decorated = decorate_flight_for_display(
+                    {
+                        **flight,
+                        "number": flight_display_name(flight["number"]),
+                        "raw_number": flight["number"],
+                        "probability": None,
+                        "calculation_status": "expired",
+                        "calculation_unavailable_reason": "便の表示時刻を過ぎています。",
+                        "warning_msg": "便の表示時刻を過ぎています。",
+                        "similar_history": [],
+                    }
                 )
+                decorated["service_announcement"] = service_announcement(
+                    date_string, flight["number"]
+                )
+                flights.append(decorated)
                 continue
             timestamp = f"{date_string}T{flight['forecast_hour']:02d}:00"
             weather = weather_by_time.get(timestamp)
@@ -588,22 +592,24 @@ def build_daily_forecasts(
                 or weather.get("wind_direction") is None
                 or weather.get("wind_speed") is None
             ):
-                flights.append(
-                    decorate_flight_for_display(
-                        {
-                            **flight,
-                            "number": flight_display_name(flight["number"]),
-                            "raw_number": flight["number"],
-                            "probability": None,
-                            "calculation_status": "weather_missing",
-                            "calculation_unavailable_reason": (
-                                "必須気象データが欠測のため算出できません。"
-                            ),
-                            "warning_msg": "必須気象データが欠測しています。",
-                            "similar_history": [],
-                        }
-                    )
+                decorated = decorate_flight_for_display(
+                    {
+                        **flight,
+                        "number": flight_display_name(flight["number"]),
+                        "raw_number": flight["number"],
+                        "probability": None,
+                        "calculation_status": "weather_missing",
+                        "calculation_unavailable_reason": (
+                            "必須気象データが欠測のため算出できません。"
+                        ),
+                        "warning_msg": "必須気象データが欠測しています。",
+                        "similar_history": [],
+                    }
                 )
+                decorated["service_announcement"] = service_announcement(
+                    date_string, flight["number"]
+                )
+                flights.append(decorated)
                 continue
             result = predict_flight_probability(
                 **_prediction_weather(weather),
@@ -646,30 +652,32 @@ def build_daily_forecasts(
                 }
                 for evaluation in ensemble_evaluation.members
             ]
-            flights.append(
-                decorate_flight_for_display(
-                    {
-                        **flight,
-                        **weather,
-                        **result,
-                        "number": flight_display_name(flight["number"]),
-                        "raw_number": flight["number"],
-                        "similar_history": find_similar_flights(
-                            flight["number"], weather, history=history
-                        ),
-                        "gfs_probability": model_probabilities.get("gfs_seamless"),
-                        "gfs_risk": model_risks.get("gfs_seamless"),
-                        "ecmwf_probability": model_probabilities.get("ecmwf_ifs025"),
-                        "ecmwf_risk": model_risks.get("ecmwf_ifs025"),
-                        "jma_probability": result.get("probability"),
-                        "jma_risk": deterministic_risk_summary(result),
-                        "confidence": confidence,
-                        "_model_calculation_statuses": model_statuses,
-                        "_ensemble_member_inputs": member_inputs,
-                        "wind_direction_label": wind_direction_label(weather["wind_direction"]),
-                    }
-                )
+            decorated = decorate_flight_for_display(
+                {
+                    **flight,
+                    **weather,
+                    **result,
+                    "number": flight_display_name(flight["number"]),
+                    "raw_number": flight["number"],
+                    "similar_history": find_similar_flights(
+                        flight["number"], weather, history=history
+                    ),
+                    "gfs_probability": model_probabilities.get("gfs_seamless"),
+                    "gfs_risk": model_risks.get("gfs_seamless"),
+                    "ecmwf_probability": model_probabilities.get("ecmwf_ifs025"),
+                    "ecmwf_risk": model_risks.get("ecmwf_ifs025"),
+                    "jma_probability": result.get("probability"),
+                    "jma_risk": deterministic_risk_summary(result),
+                    "confidence": confidence,
+                    "_model_calculation_statuses": model_statuses,
+                    "_ensemble_member_inputs": member_inputs,
+                    "wind_direction_label": wind_direction_label(weather["wind_direction"]),
+                }
             )
+            decorated["service_announcement"] = service_announcement(
+                date_string, flight["number"]
+            )
+            flights.append(decorated)
         if flights:
             confidence_values = [
                 flight.get("confidence")
@@ -694,6 +702,7 @@ def build_daily_forecasts(
                     "date_label": f"{date.month}/{date.day}",
                     "weekday": "月火水木金土日"[date.weekday()],
                     "flights": flights,
+                    "service_announcement": day_announcement,
                     "confidence": day_confidence,
                     "available_flight_count": sum(
                         flight.get("calculation_status") == "available" for flight in flights
