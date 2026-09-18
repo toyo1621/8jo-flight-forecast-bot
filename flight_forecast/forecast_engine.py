@@ -4,12 +4,17 @@ import json
 from flight_forecast.app_config import (
     EXTREME_VISIBILITY_PROBABILITY_MULTIPLIER,
     EXTREME_VISIBILITY_RISK_KM,
+    GUST_PROBABILITY_MULTIPLIER,
     GUST_RISK_MS,
     LOW_CLOUD_PROBABILITY_MULTIPLIER,
     LOW_CLOUD_RISK_PERCENT,
     MAX_PROBABILITY,
+    MODERATE_GUST_PROBABILITY_MULTIPLIER,
+    MODERATE_GUST_RISK_MS,
     MODERATE_VISIBILITY_PROBABILITY_MULTIPLIER,
     MODERATE_VISIBILITY_RISK_KM,
+    MODERATE_WIND_PROBABILITY_MULTIPLIER,
+    MODERATE_WIND_RISK_MS,
     PRECIPITATION_PROBABILITY_MULTIPLIER,
     PRECIPITATION_RISK_MM,
     SEVERE_GUST_PROBABILITY_MULTIPLIER,
@@ -27,10 +32,12 @@ from flight_forecast.app_config import (
     SOUTHERLY_UPGRADE_MAX_DEGREES,
     SOUTHERLY_WIND_MAX_DEGREES,
     SOUTHERLY_WIND_MIN_DEGREES,
+    STRONG_WIND_PROBABILITY_MULTIPLIER,
     STRONG_WIND_RISK_MS,
     VISIBILITY_PROBABILITY_MULTIPLIER,
     VISIBILITY_RISK_KM,
     WIND_PROBABILITY_MULTIPLIER,
+    WIND_RISK_MS,
 )
 from flight_forecast.bigquery_storage import fetch_detailed_history
 from flight_forecast.flight_metadata import OPERATED_STATUSES
@@ -221,12 +228,14 @@ def predict_flight_probability(
     if precipitation is not None and precipitation >= PRECIPITATION_RISK_MM:
         if precipitation >= SEVERE_PRECIPITATION_RISK_MM:
             factor = SEVERE_PRECIPITATION_PROBABILITY_MULTIPLIER
+            label = "強"
         else:
             factor = PRECIPITATION_PROBABILITY_MULTIPLIER
+            label = "弱"
         prob *= factor
         weather_factor *= factor
         weather_factors["precipitation"] = factor
-        warnings.append(f"降水注意 (予報降水量: {precipitation} mm/h)")
+        warnings.append(f"降水注意{label} (予報降水量: {precipitation} mm/h)")
 
     if cloud_cover_low is not None and cloud_cover_low > LOW_CLOUD_RISK_PERCENT:
         if cloud_cover_low >= SEVERE_LOW_CLOUD_RISK_PERCENT:
@@ -243,16 +252,29 @@ def predict_flight_probability(
     if wind_gusts is not None and wind_gusts >= GUST_RISK_MS:
         if wind_gusts >= SEVERE_GUST_RISK_MS:
             factor = SEVERE_GUST_PROBABILITY_MULTIPLIER
+            label = "大"
+        elif wind_gusts >= MODERATE_GUST_RISK_MS:
+            factor = MODERATE_GUST_PROBABILITY_MULTIPLIER
+            label = "中"
         else:
-            factor = WIND_PROBABILITY_MULTIPLIER
+            factor = GUST_PROBABILITY_MULTIPLIER
+            label = "小"
         wind_factors["gust"] = factor
         is_windy = True
-        warnings.append(f"突風注意 (予報突風: {wind_gusts} m/s)")
-    elif wind_speed is not None and wind_speed >= STRONG_WIND_RISK_MS:
-        factor = WIND_PROBABILITY_MULTIPLIER
+        warnings.append(f"突風注意{label} (予報突風: {wind_gusts} m/s)")
+    if wind_speed is not None and wind_speed >= WIND_RISK_MS:
+        if wind_speed >= STRONG_WIND_RISK_MS:
+            factor = STRONG_WIND_PROBABILITY_MULTIPLIER
+            label = "大"
+        elif wind_speed >= MODERATE_WIND_RISK_MS:
+            factor = MODERATE_WIND_PROBABILITY_MULTIPLIER
+            label = "中"
+        else:
+            factor = WIND_PROBABILITY_MULTIPLIER
+            label = "小"
         wind_factors["wind"] = factor
         is_windy = True
-        warnings.append(f"強風注意 (予報風速: {wind_speed} m/s)")
+        warnings.append(f"強風注意{label} (予報風速: {wind_speed} m/s)")
         
     if is_windy:
         alert_required = True

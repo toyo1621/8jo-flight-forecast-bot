@@ -12,8 +12,8 @@ from flight_forecast.forecast_engine import predict_flight_probability
     (5, None, 1), (10, None, 1), (None, None, 1),
 ])
 def test_visibility_tiers(visibility, label, factor):
-    result = predict_flight_probability(90, 5, 8, 20, visibility,
-        history=[{"status": "運航", "wind_direction": 90, "wind_speed": 5, "wind_gusts": 8}] * 5)
+    result = predict_flight_probability(90, 3, 8, 20, visibility,
+        history=[{"status": "運航", "wind_direction": 90, "wind_speed": 3, "wind_gusts": 8}] * 5)
     assert result["weather_factor"] == factor
     assert result["probability"] == min(97, factor * 100)
     if label:

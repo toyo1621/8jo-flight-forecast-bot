@@ -753,7 +753,10 @@ def test_low_cloud_warning_uses_precise_wording():
     with patch("flight_forecast.forecast_engine.load_history", return_value=[{"status": "通常", "wind_direction": 180.0, "wind_speed": 5.0, "wind_gusts": 10.0}] * 5):
         result = predict_flight_probability(180.0, 5.0, 8.0, 100.0, 15.0)
 
-    assert result["warning_msg"] == "南風リスク中、低層雲の影響注意 (低層雲量 100.0%)"
+    assert result["warning_msg"] == (
+        "南風リスク中、低層雲の影響注意 (低層雲量 100.0%)、"
+        "強風注意小 (予報風速: 5.0 m/s)"
+    )
 
 
 def test_probability_without_history_is_unavailable():
@@ -821,7 +824,7 @@ def test_visibility_low_cloud_and_gust_adjustments_are_tiered():
     assert moderate_visibility["probability"] == 81.0
     assert clear_visibility["probability"] == 90.0
     assert severe_low_cloud["probability"] == 67.5
-    assert severe_gust["probability"] == 55.0
+    assert severe_gust["probability"] == 60.0
 
 
 def test_adjusted_visibility_factor_keeps_heavy_rain_and_gust_penalties():
@@ -839,16 +842,16 @@ def test_adjusted_visibility_factor_keeps_heavy_rain_and_gust_penalties():
     assert result["weather_factors"] == {
         "visibility": 0.8,
         "precipitation": 0.7,
-        "gust": 0.9,
+        "gust": 0.8,
     }
-    assert result["weather_factor"] == 0.504
-    assert result["probability"] == 50.4
+    assert result["weather_factor"] == 0.448
+    assert result["probability"] == 44.8
 
 
 def test_precipitation_from_two_mm_adds_rain_risk():
     history = [{"status": "通常", "wind_direction": 180.0, "wind_speed": 5.0, "wind_gusts": 10.0}] * 10
     with patch("flight_forecast.forecast_engine.load_history", return_value=history):
-        dry = predict_flight_probability(180.0, 5.0, 8.0, 20.0, 15.0, precipitation=1.9)
+        dry = predict_flight_probability(180.0, 5.0, 8.0, 20.0, 15.0, precipitation=1.49)
         rainy = predict_flight_probability(180.0, 5.0, 8.0, 20.0, 15.0, precipitation=2.0)
 
     assert dry["probability"] == 80.0
