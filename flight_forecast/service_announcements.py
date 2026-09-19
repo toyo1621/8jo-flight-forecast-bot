@@ -13,7 +13,18 @@ SERVICE_ANNOUNCEMENTS = {
         ),
         "flight_numbers": ("ANA1891", "ANA1893", "ANA1895"),
         "source_url": "https://www.ana.co.jp/fs/dom/jp/",
-    }
+    },
+    "2026-09-21": {
+        "status": "cancelled",
+        "label": "全便欠航（発表済み）",
+        "flight_label": "欠航（発表済み）",
+        "message": (
+            "9/21（月）はANA1891・ANA1893・ANA1895の全便欠航が発表されています。"
+            "参考スコアは予測値として残しています。"
+        ),
+        "flight_numbers": ("ANA1891", "ANA1893", "ANA1895"),
+        "source_url": "https://www.ana.co.jp/fs/dom/jp/",
+    },
 }
 
 
