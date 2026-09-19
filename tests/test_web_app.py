@@ -3,6 +3,7 @@ import re
 from datetime import date, datetime, timedelta, timezone
 from unittest.mock import Mock, patch
 
+import pytest
 from flask import render_template
 
 from flight_forecast.app_config import LOW_PROBABILITY_THRESHOLD
@@ -94,9 +95,10 @@ def test_build_daily_forecasts():
     assert days[0]["confidence"]["source"] == "lead_time_caution"
 
 
-def test_announced_cancellations_keep_scores_and_mark_all_three_flights():
+@pytest.mark.parametrize("day,weekday", [(20, "日"), (21, "月")])
+def test_announced_cancellations_keep_scores_and_mark_all_three_flights(day, weekday):
     weather = {
-        f"2026-09-20T{hour:02d}:00": {
+        f"2026-09-{day}T{hour:02d}:00": {
             "wind_direction": 180.0,
             "wind_speed": 8.0,
             "wind_gusts": 15.0,
@@ -142,6 +144,7 @@ def test_announced_cancellations_keep_scores_and_mark_all_three_flights():
         )
 
     assert "全便欠航（発表済み）" in body
+    assert f"9/{day}（{weekday}）はANA1891・ANA1893・ANA1895の全便欠航" in body
     assert body.count("欠航（発表済み）") == 4
     assert body.count("72.0") >= 3
     assert "参考スコアは予測値として残しています。" in body
