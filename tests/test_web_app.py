@@ -1091,7 +1091,8 @@ def test_probability_symbol_thresholds_render_in_template():
     assert "JMA" in body
 
 
-def test_insufficient_probability_renders_as_unavailable_without_percent():
+@pytest.mark.parametrize("cancelled", [False, True])
+def test_insufficient_probability_renders_as_unavailable_without_percent(cancelled):
     flight = decorate_flight_for_display(
         {
             "date": "2026-06-20",
@@ -1112,6 +1113,11 @@ def test_insufficient_probability_renders_as_unavailable_without_percent():
             "similar_history": [],
         }
     )
+    if cancelled:
+        flight["service_announcement"] = {
+            "status": "cancelled",
+            "flight_label": "欠航（発表済み）",
+        }
     day = {
         "date": "2026-06-20",
         "date_label": "6/20",
@@ -1123,8 +1129,36 @@ def test_insufficient_probability_renders_as_unavailable_without_percent():
         body = render_template("index.html", days=[day], error=None, updated_at="2026/06/20 00:00")
 
     assert 'class="probability-unavailable"' in body
+    if cancelled:
+        assert 'class="flight flight--service-cancelled"' in body
+        stylesheet = (BASE_DIR / "static" / "styles.css").read_text(encoding="utf-8")
+        assert ".flight--service-cancelled .probability-unavailable { color: #8e99a3; }" in stylesheet
+    else:
+        assert 'class="flight flight--service-cancelled"' not in body
     assert "算出不可" in body
     assert "None%" not in body
+
+
+def test_cancelled_unavailable_score_is_gray_on_flight_page():
+    flight = {
+        "service_announcement": {"status": "cancelled", "flight_label": "欠航（発表済み）"},
+        "calculation_status": "insufficient_history",
+        "warning_msg": "なし",
+    }
+    page = {
+        "number": "ANA1893",
+        "label": "ANA1893(2便)",
+        "arrival_time": "13:10",
+        "forecasts": [{"day": {"date": "2026-09-21", "date_label": "9/21", "weekday": "月"}, "flight": flight}],
+        "confirmed_count": 0,
+        "records": [],
+    }
+    with app.test_request_context("/flight/ANA1893/"):
+        body = render_template(
+            "flight_page.html", page=page, page_url="https://example.com/", structured_data={}
+        )
+
+    assert '<span class="score-value--cancelled">算出不可</span>' in body
 
 
 def test_flag_icon_assets_exist():

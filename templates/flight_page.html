@@ -14,7 +14,7 @@
   <meta property="og:url" content="{{ page_url }}">
   <title>{{ page.label }}｜羽田発八丈島行きの運航目安・過去実績</title>
   <script type="application/ld+json">{{ structured_data|tojson }}</script>
-  <link rel="stylesheet" href="../../static/styles.css?v=20260918-announcement-3">
+  <link rel="stylesheet" href="../../static/styles.css?v=20260920-announcement-4">
 </head>
 <body>
   {% set asset_prefix = "../../" %}
@@ -38,7 +38,7 @@
           {% for item in page.forecasts %}
             <li><a href="../../forecast/{{ item.day.date }}/#flight-{{ item.day.date }}-{{ page.number }}">
               <time datetime="{{ item.day.date }}">{{ item.day.date_label }}（{{ item.day.weekday }}）{{ page.arrival_time }}着</time>
-              <span>{% if item.flight.service_announcement %}<strong class="service-status">{{ item.flight.service_announcement.flight_label }}</strong>｜{% endif %}{% if item.flight.calculation_status == "available" %}<span class="{% if item.flight.service_announcement and item.flight.service_announcement.status == 'cancelled' %}score-value--cancelled{% endif %}">{{ '×' if item.flight.service_announcement and item.flight.service_announcement.status == 'cancelled' else item.flight.probability_symbol }} {{ item.flight.probability }} / 100</span>{% else %}算出不可{% endif %}{% if item.flight.warning_msg and item.flight.warning_msg not in ["なし", "特になし"] %}｜{{ item.flight.warning_msg }}{% endif %}</span>
+              <span>{% if item.flight.service_announcement %}<strong class="service-status">{{ item.flight.service_announcement.flight_label }}</strong>｜{% endif %}{% if item.flight.calculation_status == "available" %}<span class="{% if item.flight.service_announcement and item.flight.service_announcement.status == 'cancelled' %}score-value--cancelled{% endif %}">{{ '×' if item.flight.service_announcement and item.flight.service_announcement.status == 'cancelled' else item.flight.probability_symbol }} {{ item.flight.probability }} / 100</span>{% else %}<span class="{% if item.flight.service_announcement and item.flight.service_announcement.status == 'cancelled' %}score-value--cancelled{% endif %}">算出不可</span>{% endif %}{% if item.flight.warning_msg and item.flight.warning_msg not in ["なし", "特になし"] %}｜{{ item.flight.warning_msg }}{% endif %}</span>
             </a></li>
           {% endfor %}
         </ol>
