@@ -106,6 +106,17 @@ def _reflection(score, outcome):
     return "参考スコアは中間的な値で、実際は欠航または引き返しでした。"
 
 
+def _review_evidence(primary, outcome):
+    details = _weather_details(primary, outcome)
+    recorded = [f'{cell["label"]} {cell["value"]}' for cell in details["forecast"]
+                if cell["value"] != "記録なし"]
+    return {
+        "forecast": " ／ ".join(recorded) or "公開時の気象入力は記録がありません。",
+        "factors": details["factors"],
+        "reason": outcome.get("status_reason") or "欠航・引き返しの原因を特定できる理由記録はありません。",
+    }
+
+
 def build_archive_days(rows):
     grouped = defaultdict(lambda: defaultdict(dict))
     outcomes = {}
@@ -160,6 +171,7 @@ def build_archive_days(rows):
                     ),
                     "outcome_label": "引き返し" if outcome == "条件付き→引返欠航" else outcome or "結果未取得",
                     "weather": _weather_details(primary or {}, outcome_row),
+                    "review_evidence": _review_evidence(primary or {}, outcome_row),
                     "reflection": (
                         "運営者の確認によると、南風の影響で欠航となりました。"
                         "南風が強い状況でしたが、参考スコアは高い値となっていました。"
