@@ -90,3 +90,14 @@ def test_summary_excludes_invalid_weather_and_unknown_statuses():
     assert summary["sample_count"] == 0
     assert summary["first_date"] is None
     assert summary["last_date"] is None
+    assert summary["excluded_count"] == 5
+    assert summary["well_sampled_directions"] == []
+
+
+def test_direction_summary_prioritizes_sample_size_not_cancellation_rate():
+    summary = build_wind_cancellation_summary(
+        [row()] * 25 + [row(wind_direction=90, status="欠航")] * 20
+        + [row(wind_direction=0, status="欠航")] * 4
+    )
+    assert [r["label"] for r in summary["well_sampled_directions"]] == ["南", "東"]
+    assert summary["well_sampled_directions"][0]["rate"] == 0

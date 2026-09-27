@@ -482,6 +482,7 @@ footer {
 .archive-models dd { margin: 0; color: var(--blue); font-size: .72rem; font-weight: 800; }
 .archive-reflection { margin-top: 14px; padding: 13px 15px; border-left: 2px solid var(--blue); background: rgba(90, 199, 255, .06); }
 .archive-reflection p { margin: 0; color: #fff; font-size: .76rem; line-height: 1.7; }
+.archive-reflection p + p { margin-top: 8px; }
 .archive-back { margin: 22px 0 0; }
 .flight-history-summary { margin-top: 28px; }
 .flight-history-summary > h2,
@@ -523,7 +524,7 @@ footer {
 .wind-page .header h1 { margin: 8px 0 12px; color: #effaff; font-size: clamp(1.8rem, 4vw, 3rem); }
 .wind-page .header .lead { margin: 0; color: #fff; font-size: .9rem; line-height: 1.8; }
 .wind-summary { display: grid; grid-template-columns: minmax(150px, .35fr) minmax(0, 1fr); gap: 7px 28px; padding: 18px 0; border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); }
-.wind-summary h2 { grid-row: 1 / span 2; margin: 0; font-size: 1rem; }
+.wind-summary h2 { grid-row: 1 / span 3; margin: 0; font-size: 1rem; }
 .wind-summary p { margin: 0; color: #e9f7ff; font-size: .78rem; line-height: 1.7; }
 .wind-summary strong { color: var(--cyan); font-size: 1rem; }
 .wind-caution { margin: 24px 0 46px; padding: 15px 18px; border-left: 3px solid var(--amber); background: rgba(255, 196, 94, .07); }
@@ -554,6 +555,9 @@ footer {
 .wind-rate--insufficient strong { color: rgba(255, 255, 255, .52); font-size: .66rem; }
 .wind-reading { margin: 30px 0 0; padding-top: 20px; border-top: 1px solid var(--line); }
 .wind-reading h2 { margin: 0 0 12px; font-size: 1rem; }
+.wind-reading a, .archive-reflection a { color: #b7e8ff; text-underline-offset: 3px; }
+.wind-reading a:hover, .archive-reflection a:hover { color: #fff; }
+.wind-reading a:focus-visible, .archive-reflection a:focus-visible { color: #fff; outline: 2px solid var(--blue); outline-offset: 3px; }
 .wind-reading ul { display: flex; flex-wrap: wrap; gap: 10px 18px; margin: 0; padding: 0; list-style: none; }
 .wind-reading li { display: inline-flex; align-items: center; gap: 7px; color: #effaff; font-size: .68rem; }
 .wind-key { width: 16px; height: 16px; border: 1px solid var(--line); border-radius: 3px; }

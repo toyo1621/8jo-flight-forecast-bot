@@ -167,6 +167,16 @@ def test_build_site_persists_prediction_snapshots_before_rendering(tmp_path):
     wind_html = (tmp_path / "wind" / "index.html").read_text(encoding="utf-8")
     assert "風向・風速別の欠航傾向" in wind_html
     assert "風が原因と確認された欠航率ではありません" in wind_html
+    assert "実績から読み取れること・読み取れないこと" in wind_html
+    import json
+    import re
+    schema = json.loads(re.search(
+        r'<script type="application/ld\+json">(.*?)</script>', wind_html,
+    ).group(1))
+    dataset = schema["@graph"][0]
+    assert len(dataset["description"]) >= 50
+    assert "isPartOf" not in dataset
+    assert dataset["creator"]["name"] == "toyo1621"
 
 
 def test_build_site_records_generation_after_source_retrieval(tmp_path):

@@ -130,8 +130,10 @@ def build_wind_cancellation_summary(history, minimum_sample=MINIMUM_PUBLIC_SAMPL
     included_count = 0
     cancelled_count = 0
     weather_reason_count = 0
+    input_count = 0
 
     for item in history:
+        input_count += 1
         if not isinstance(item, dict):
             continue
         status = normalize_status(item.get("status"))
@@ -185,4 +187,9 @@ def build_wind_cancellation_summary(history, minimum_sample=MINIMUM_PUBLIC_SAMPL
         "first_date": min(included_dates) if included_dates else None,
         "last_date": max(included_dates) if included_dates else None,
         "minimum_sample": minimum_sample,
+        "excluded_count": input_count - included_count,
+        "well_sampled_directions": sorted(
+            (row for row in rows if row["sample_count"] >= LIMITED_SAMPLE),
+            key=lambda row: (-row["sample_count"], row["center_degrees"]),
+        )[:3],
     }

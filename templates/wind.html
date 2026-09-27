@@ -6,7 +6,7 @@
   <meta name="robots" content="index,follow"><link rel="canonical" href="{{ page_url }}">
   <title>風向・風速別の欠航傾向｜八丈島便の運航目安</title>
   <script type="application/ld+json">{{ structured_data|tojson }}</script>
-  <link rel="stylesheet" href="../static/styles.css?v=20260917-wind-1">
+  <link rel="stylesheet" href="../static/styles.css?v=20260927-evidence-1">
 </head>
 <body>{% set asset_prefix = "../" %}<main class="container container--minimal wind-page">
   <header class="header header--minimal">
@@ -20,12 +20,24 @@
     <h2 id="wind-summary-title">集計対象</h2>
     <p><strong>{{ summary.sample_count }}件</strong>（運航系{{ summary.operated_count }}件・欠航／引き返し{{ summary.cancelled_count }}件）</p>
     <p>{{ summary.first_date or '記録なし' }}〜{{ summary.last_date or '記録なし' }}。風向・平均風速・最大瞬間風速がすべて記録された便だけを使用しています。</p>
+    <p>入力のうち{{ summary.excluded_count }}件は、気象の欠測・不正値または運航結果未確定のため除外しています。集計件数は便単位で、同日の3便は最大3件です。</p>
   </section>
 
   <aside class="wind-caution" aria-label="数値の注意点">
     <strong>この割合は、風が原因と確認された欠航率ではありません。</strong>
     <p>機材・運用など別の理由や、理由未確認の欠航も含む「その風のときに発生した全欠航」の割合です。将来の欠航確率や航空会社の判断基準ではありません。各欄は「欠航・引き返し件数／全実績件数」を併記し、{{ summary.minimum_sample }}件未満はデータ不足としています。</p>
   </aside>
+
+  <section class="wind-reading" aria-labelledby="wind-evidence-title">
+    <h2 id="wind-evidence-title">実績から読み取れること・読み取れないこと</h2>
+    {% if summary.well_sampled_directions %}
+      <p>記録が多い風向（20件以上・件数順）は次のとおりです。風速の異なる便も含むため、危険な風向の順位ではありません。</p>
+      <ul>{% for row in summary.well_sampled_directions %}<li>{{ row.label }}：欠航・引き返し{{ row.cancelled_count }}/{{ row.sample_count }}件（{{ row.rate }}%）</li>{% endfor %}</ul>
+    {% else %}<p>20件以上の実績がある風向はまだありません。風向ごとの傾向を断定できる段階ではありません。</p>{% endif %}
+    <p>風向は風が吹いてくる方向です。北は0°、東は90°、南は180°、西は270°で、各方位は中心から±11.25°の範囲です。まず風向を合わせ、次に平均風速と最大瞬間風速を別々に確認してください。</p>
+    <p>5件未満は割合を表示せず、5〜19件は「少数」と表示します。0%でも安全の保証ではなく、100%でも必ず欠航する条件ではありません。視程・降水・機材事情などを揃えた比較ではなく、季節や観測期間の偏りも残ります。</p>
+    <p>具体的な日ごとの予報と結果は、<a href="../history/">過去の予測と実際の運航結果</a>で確認できます。<a href="../guide/">参考スコアの計算方法</a>とは別の集計です。</p>
+  </section>
 
   <section class="wind-matrix" aria-labelledby="speed-matrix-title">
     <div class="wind-matrix-heading">

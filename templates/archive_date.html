@@ -14,7 +14,7 @@
   <meta property="og:url" content="{{ page_url }}">
   <title>{{ day.long_date_label }}の八丈島便｜公開時予測と運航結果</title>
   <script type="application/ld+json">{{ structured_data|tojson }}</script>
-  <link rel="stylesheet" href="../../static/styles.css?v=20260909-history-1">
+  <link rel="stylesheet" href="../../static/styles.css?v=20260927-evidence-1">
 </head>
 <body>
   {% set asset_prefix = "../../" %}
@@ -50,7 +50,14 @@
             <h2>収集時の気象データ</h2><p>観測値と確認できないため、実測としては扱いません。出所・対象時刻の詳細記録がないデータを含みます。</p>
             <dl>{% for cell in flight.weather.collected %}<div><dt>{{ cell.label }}</dt><dd>{{ cell.value }}</dd></div>{% endfor %}</dl>
           </details>
-          <section class="archive-reflection"><h2>振り返り</h2><p>{{ flight.reflection }}</p></section>
+          <section class="archive-reflection">
+            <h2>振り返り</h2><p>{{ flight.reflection }}</p>
+            <p><strong>当時の予報条件:</strong> {{ flight.review_evidence.forecast }}</p>
+            <p><strong>当時の補正:</strong> {{ flight.review_evidence.factors }}</p>
+            {% if flight.outcome_class == 'disrupted' %}<p><strong>保存された理由:</strong> {{ flight.review_evidence.reason }}</p>{% endif %}
+            <p>気象条件は公開時の予報入力であり、実測や欠航原因を示すものではありません。後日の結果から当時のスコアや係数を書き換えていません。</p>
+            <p><a href="../../wind/">同じ風向・風速の過去の欠航傾向を見る</a></p>
+          </section>
         </article>
       {% endfor %}
     </div>
