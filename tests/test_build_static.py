@@ -52,6 +52,9 @@ def test_completed_today_routes_to_saved_prediction_and_result(tmp_path):
     history = (tmp_path / "history/index.html").read_text()
     assert 'id="date-2026-09-06"' not in home
     assert "予測表示終了" not in home
+    assert 'href="wind/">風向・風速別の八丈島便の欠航傾向</a>' in home
+    assert 'href="history/">過去の予測と実際の運航結果</a>' in home
+    assert 'class="evidence-links"' not in result
     assert "実際の運航結果" in result
     assert "公開時の予測" in result
     assert "結果未取得" in result
@@ -111,6 +114,13 @@ def test_build_site_persists_prediction_snapshots_before_rendering(tmp_path):
     ).read_text(encoding="utf-8")
     html = (tmp_path / "index.html").read_text(encoding="utf-8")
     assert 'rel="canonical"' in html
+    assert "<title>八丈島の飛行機運航目安｜羽田便の天気・過去実績</title>" in html
+    assert '<h1>八丈島便 運航の目安</h1>' in html
+    assert (
+        html.index('class="today-summary"')
+        < html.index('class="evidence-links"')
+        < html.index('class="forecast-index"')
+    )
     assert (
         '<meta name="google-site-verification" '
         'content="uqqq0NUofXd_HvVElpSmwF8uGZWy70xdrY71bj7hq6U">'

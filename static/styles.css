@@ -198,6 +198,10 @@ h1 {
 .flight--service-cancelled .probability { color: #8e99a3; }
 .flight--service-cancelled .model-probability { border-color: rgba(142, 153, 163, .24); }
 .today-actions, .guide-links { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 14px; margin-top: 16px; }
+.evidence-links { display: flex; flex-wrap: wrap; align-items: baseline; gap: 8px 20px; margin: -20px 0 34px; font-size: .78rem; line-height: 1.6; }
+.evidence-links span { color: var(--muted); font-weight: 700; }
+.evidence-links a { color: #dff5ff; font-weight: 750; text-underline-offset: 3px; }
+.evidence-links a:hover, .evidence-links a:focus-visible { color: var(--cyan); }
 .official-link, .secondary-link {
   display: inline-flex;
   align-items: center;

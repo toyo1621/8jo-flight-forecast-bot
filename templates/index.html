@@ -134,6 +134,14 @@
       {% endif %}
     </section>
 
+    {% if page_variant == "home" %}
+      <nav class="evidence-links" aria-label="過去実績の確認">
+        <span>過去実績を確認</span>
+        <a href="{{ asset_prefix }}wind/">風向・風速別の八丈島便の欠航傾向</a>
+        <a href="{{ asset_prefix }}history/">過去の予測と実際の運航結果</a>
+      </nav>
+    {% endif %}
+
     {% if page_variant != "date" and days|length > 1 %}
       <nav class="forecast-index" aria-labelledby="forecast-index-title">
         <div>
