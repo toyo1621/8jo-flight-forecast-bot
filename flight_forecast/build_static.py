@@ -76,6 +76,8 @@ def page_schema(page_type, name, url, description, breadcrumbs, **extra):
         "isPartOf": {"@type": "WebSite", "name": "八丈島の飛行機運航目安", "url": SITE_URL},
         **extra,
     }
+    if page_type == "Dataset":
+        page.pop("isPartOf", None)
     breadcrumb = breadcrumb_schema(*breadcrumbs)
     breadcrumb.pop("@context")
     return {
@@ -358,13 +360,14 @@ def build_site(output_dir=DIST_DIR, current_time=None, now_provider=None):
                 "Dataset",
                 "八丈島便の風向・風速別の欠航傾向",
                 WIND_URL,
-                "羽田発八丈島行きANA3便の過去実績を、風向・平均風速・最大瞬間風速ごとに集計した資料です。",
+                "羽田発八丈島行きANA1891・ANA1893・ANA1895便の保存された運航実績を、16方位の風向、平均風速、最大瞬間風速ごとに集計した資料です。欠航・引き返し件数と対象件数を併記し、5件未満はデータ不足として表示します。風が原因と確認された欠航率や将来の欠航確率ではありません。",
                 (("トップ", SITE_URL), ("風向・風速別の欠航傾向", None)),
                 temporalCoverage=(
                     f"{wind_summary['first_date']}/{wind_summary['last_date']}"
                     if wind_summary["first_date"] and wind_summary["last_date"]
                     else None
                 ),
+                creator={"@type": "Person", "name": "toyo1621", "url": ABOUT_URL},
             ),
         )
         info_pages = [
