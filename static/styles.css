@@ -555,6 +555,9 @@ footer {
 .wind-rate--insufficient strong { color: rgba(255, 255, 255, .52); font-size: .66rem; }
 .wind-reading { margin: 30px 0 0; padding-top: 20px; border-top: 1px solid var(--line); }
 .wind-reading h2 { margin: 0 0 12px; font-size: 1rem; }
+.wind-reading a, .archive-reflection a { color: #b7e8ff; text-underline-offset: 3px; }
+.wind-reading a:hover, .archive-reflection a:hover { color: #fff; }
+.wind-reading a:focus-visible, .archive-reflection a:focus-visible { color: #fff; outline: 2px solid var(--blue); outline-offset: 3px; }
 .wind-reading ul { display: flex; flex-wrap: wrap; gap: 10px 18px; margin: 0; padding: 0; list-style: none; }
 .wind-reading li { display: inline-flex; align-items: center; gap: 7px; color: #effaff; font-size: .68rem; }
 .wind-key { width: 16px; height: 16px; border: 1px solid var(--line); border-radius: 3px; }
