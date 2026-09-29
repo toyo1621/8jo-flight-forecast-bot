@@ -198,10 +198,6 @@ h1 {
 .flight--service-cancelled .probability { color: #8e99a3; }
 .flight--service-cancelled .model-probability { border-color: rgba(142, 153, 163, .24); }
 .today-actions, .guide-links { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 14px; margin-top: 16px; }
-.evidence-links { display: flex; flex-wrap: wrap; align-items: baseline; gap: 8px 20px; margin: -20px 0 34px; font-size: .78rem; line-height: 1.6; }
-.evidence-links span { color: var(--muted); font-weight: 700; }
-.evidence-links a { color: #dff5ff; font-weight: 750; text-underline-offset: 3px; }
-.evidence-links a:hover, .evidence-links a:focus-visible { color: var(--cyan); }
 .official-link, .secondary-link {
   display: inline-flex;
   align-items: center;
@@ -400,6 +396,12 @@ h1 {
 .system-flow { margin: 0; padding-left: 1.25rem; }
 .system-flow li + li { margin-top: 7px; }
 .about a { color: var(--blue); text-underline-offset: 3px; }
+.analysis-links { margin-top: 54px; padding-top: 22px; border-top: 1px solid var(--line); }
+.analysis-links h2 { margin: 0 0 12px; font-size: 1.15rem; }
+.analysis-links nav { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px 28px; }
+.analysis-links a { display: block; padding: 10px 0; color: #dff5ff; font-size: .92rem; font-weight: 750; line-height: 1.5; text-underline-offset: 3px; }
+.analysis-links a:hover, .analysis-links a:focus-visible { color: var(--cyan); }
+.analysis-links a:focus-visible { outline: 2px solid var(--blue); outline-offset: 3px; }
 .reference-link { font-size: .76rem !important; }
 
 .guide-page .guide-header { max-width: 900px; margin-bottom: 42px; }
@@ -646,6 +648,7 @@ footer {
   .detail-hint { justify-self: end; width: 100%; margin-top: 2px; text-align: right; }
   .about { grid-template-columns: 1fr; margin-top: 64px; }
   .about > h2, .about-block:nth-of-type(2) { grid-column: auto; grid-row: auto; }
+  .analysis-links nav { grid-template-columns: 1fr; gap: 0; }
   .weather-grid { grid-template-columns: repeat(2, 1fr); }
 }
 

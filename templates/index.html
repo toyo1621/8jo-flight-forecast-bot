@@ -32,7 +32,7 @@
   <meta name="twitter:description" content="{{ page_description }}">
   <title>{{ page_title }}</title>
   <script type="application/ld+json">{{ structured_data|default({})|tojson }}</script>
-  <link rel="stylesheet" href="{{ asset_prefix }}static/styles.css?v=20260920-announcement-4">
+  <link rel="stylesheet" href="{{ asset_prefix }}static/styles.css?v=20260930-analysis-links-1">
   <script src="{{ asset_prefix }}static/app.js?v=20260619-1" defer></script>
   <!-- Cloudflare Web Analytics: privacy-first pageview measurement without cookies. -->
   <script type="module" src="https://static.cloudflareinsights.com/beacon.min.js" data-cf-beacon='{"token": "afc2a7c7ee1a4ab2a9738a04695321b9"}'></script>
@@ -133,15 +133,6 @@
         <p class="today-empty">予報データがないため、公式の運航情報をご確認ください。</p>
       {% endif %}
     </section>
-
-    {% if page_variant == "home" %}
-      <nav class="evidence-links" aria-label="過去実績の確認">
-        <span>過去実績を確認</span>
-        <a href="{{ asset_prefix }}wind/">風向・風速別の八丈島便の欠航傾向</a>
-        <a href="{{ asset_prefix }}visibility/">視程・低層雲量・降水量別の欠航傾向</a>
-        <a href="{{ asset_prefix }}history/">過去の予測と実際の運航結果</a>
-      </nav>
-    {% endif %}
 
     {% if page_variant != "date" and days|length > 1 %}
       <nav class="forecast-index" aria-labelledby="forecast-index-title">
@@ -342,6 +333,16 @@
         <p class="reference-link"><a href="https://www.jma.go.jp/jma/kishou/minkan/kyoka.html" rel="noreferrer">気象業務法・気象予報業務許可について</a></p>
       </article>
     </section>
+
+    {% if page_variant == "home" %}
+      <section class="analysis-links" aria-labelledby="analysis-links-title">
+        <h2 id="analysis-links-title">過去の欠航傾向</h2>
+        <nav aria-label="気象条件別の欠航傾向">
+          <a href="{{ asset_prefix }}wind/">風向・風速別の欠航傾向</a>
+          <a href="{{ asset_prefix }}visibility/">視程・低層雲量・降水量別の欠航傾向</a>
+        </nav>
+      </section>
+    {% endif %}
 
     <footer>
       <img class="footer-logo" src="{{ asset_prefix }}static/logo.svg?v=20260713-2" alt="" aria-hidden="true">
