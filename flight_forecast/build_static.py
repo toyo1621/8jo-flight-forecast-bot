@@ -15,6 +15,7 @@ from flight_forecast.app_config import (
 from flight_forecast.bigquery_storage import (
     fetch_detailed_history,
     fetch_published_forecast_archive,
+    fetch_visibility_history,
     save_prediction_publication_candidates,
     save_prediction_snapshots,
 )
@@ -26,6 +27,7 @@ from flight_forecast.prediction_provenance import (
     runtime_prediction_identity,
 )
 from flight_forecast.presentation import active_forecast_days
+from flight_forecast.visibility_statistics import build_visibility_cancellation_summary
 from flight_forecast.web_app import (
     BASE_DIR,
     app,
@@ -40,6 +42,7 @@ SITE_URL = "https://toyo1621.github.io/8jo-flight-forecast-bot/"
 GUIDE_URL = f"{SITE_URL}guide/"
 HISTORY_URL = f"{SITE_URL}history/"
 WIND_URL = f"{SITE_URL}wind/"
+VISIBILITY_URL = f"{SITE_URL}visibility/"
 ABOUT_URL = f"{SITE_URL}about/"
 PRIVACY_URL = f"{SITE_URL}privacy/"
 FLIGHTS_URL = f"{SITE_URL}flights/"
@@ -191,6 +194,8 @@ def build_site(output_dir=DIST_DIR, current_time=None, now_provider=None):
     print(f"BigQueryから過去日の公開スナップショットを {len(archive_days)} 日分取得しました。")
     wind_summary = build_wind_cancellation_summary(history)
     print(f"風向別の過去実績を {wind_summary['sample_count']} 件集計しました。")
+    visibility_summary = build_visibility_cancellation_summary(fetch_visibility_history())
+    print(f"視程・低層雲量・降水量別に {visibility_summary['confirmed_count']} 件の確定実績を確認しました。")
     access_stats = load_access_stats()
     updated_at = format_forecast_timestamp(bundle.get("data_updated_at")) or "取得時刻不明"
     today_day = next(
@@ -267,6 +272,7 @@ def build_site(output_dir=DIST_DIR, current_time=None, now_provider=None):
         {"url": GUIDE_URL},
         {"url": HISTORY_URL, "last_modified": historical_days[0]["date"] if historical_days else None},
         {"url": WIND_URL, "last_modified": wind_summary["last_date"]},
+        {"url": VISIBILITY_URL, "last_modified": visibility_summary["last_date"]},
         {"url": ABOUT_URL},
         {"url": PRIVACY_URL},
         *({"url": page["url"], "last_modified": bundle.get("data_updated_at")} for page in flight_pages),
@@ -366,6 +372,24 @@ def build_site(output_dir=DIST_DIR, current_time=None, now_provider=None):
                     f"{wind_summary['first_date']}/{wind_summary['last_date']}"
                     if wind_summary["first_date"] and wind_summary["last_date"]
                     else None
+                ),
+                creator={"@type": "Person", "name": "toyo1621", "url": ABOUT_URL},
+            ),
+        )
+        visibility_html = render_template(
+            "visibility.html",
+            summary=visibility_summary,
+            access_stats=access_stats,
+            page_url=VISIBILITY_URL,
+            structured_data=page_schema(
+                "Dataset",
+                "八丈島便の視程・低層雲量・降水量別の欠航傾向",
+                VISIBILITY_URL,
+                "羽田発八丈島行きANA1891・ANA1893・ANA1895便の保存された運航実績について、便の予定時刻付近の気象データを視程・低層雲量・降水量ごとに分けて集計した資料です。条件別の欠航・引き返し件数と対象件数を併記し、5件未満はデータ不足と表示します。気象が原因と確認された欠航率や将来の欠航確率ではありません。",
+                (("トップ", SITE_URL), ("視程・低層雲量・降水量別の欠航傾向", None)),
+                temporalCoverage=(
+                    f"{min(metric['first_date'] for metric in visibility_summary['metrics'] if metric['first_date'])}/{visibility_summary['last_date']}"
+                    if visibility_summary["last_date"] else None
                 ),
                 creator={"@type": "Person", "name": "toyo1621", "url": ABOUT_URL},
             ),
@@ -544,6 +568,11 @@ def build_site(output_dir=DIST_DIR, current_time=None, now_provider=None):
     wind_dir.mkdir(parents=True, exist_ok=True)
     wind_dir.joinpath("index.html").write_text(
         add_brand_assets(wind_html, asset_prefix="../"), encoding="utf-8"
+    )
+    visibility_dir = output_dir / "visibility"
+    visibility_dir.mkdir(parents=True, exist_ok=True)
+    visibility_dir.joinpath("index.html").write_text(
+        add_brand_assets(visibility_html, asset_prefix="../"), encoding="utf-8"
     )
     for page_path, page_html in rendered_info_pages:
         page_path.parent.mkdir(parents=True, exist_ok=True)

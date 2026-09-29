@@ -1,0 +1,57 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="八丈島便3便の過去実績を視程・低層雲量・降水量別に集計。各条件での欠航・引き返し件数と対象件数、データ不足を確認できます。">
+  <meta name="robots" content="index,follow"><link rel="canonical" href="{{ page_url }}">
+  <title>視程・低層雲量・降水量別の欠航傾向｜八丈島便の運航目安</title>
+  <script type="application/ld+json">{{ structured_data|tojson }}</script>
+  <link rel="stylesheet" href="../static/styles.css?v=20260930-visibility-1">
+</head>
+<body>{% set asset_prefix = "../" %}<main class="container container--minimal visibility-page">
+  <header class="header header--minimal">
+    <p class="page-nav"><a href="../">トップページへ｜今日の八丈島便の運航目安を見る</a></p>
+    <p class="about-label">VISIBILITY HISTORY</p>
+    <h1>視程・低層雲量・降水量別の欠航傾向</h1>
+    <p class="lead">羽田発・八丈島行き3便の過去実績を、保存された便の予定時刻付近の気象条件ごとに集計しています。</p>
+  </header>
+
+  <section class="wind-summary" aria-labelledby="visibility-summary-title">
+    <h2 id="visibility-summary-title">集計対象</h2>
+    <p><strong>{{ summary.confirmed_count }}件</strong>の運航結果が確定した便を確認しました。同じ日の3便は最大3件です。</p>
+    <p>気象値が使える件数は指標ごとに異なります。各表の対象・除外件数と対象期間をご確認ください。</p>
+  </section>
+
+  <aside class="wind-caution" aria-label="数値の注意点">
+    <strong>この割合は、視界不良が原因と確認された欠航率ではありません。</strong>
+    <p>機材・運用など別の理由や、理由未確認の欠航も含む「その気象条件のときに発生した全欠航・引き返し」の割合です。気象値は便の予定時刻付近に保存された予報・補完値で、空港の実測値や着陸時の条件を示すものではありません。将来の欠航確率や航空会社の判断基準でもありません。</p>
+  </aside>
+
+  {% for metric in summary.metrics %}
+  <section class="wind-matrix" aria-labelledby="metric-{{ metric.key }}-title">
+    <div class="wind-matrix-heading">
+      <div><p class="about-label">{% if metric.key == 'visibility' %}VISIBILITY{% elif metric.key == 'cloud_cover_low' %}LOW CLOUD{% else %}PRECIPITATION{% endif %}</p><h2 id="metric-{{ metric.key }}-title">{{ metric.label }}別の欠航・引き返し</h2></div>
+      <p>対象{{ metric.sample_count }}件・欠測または不正値により除外{{ metric.excluded_count }}件{% if metric.first_date %}。期間{{ metric.first_date }}〜{{ metric.last_date }}{% endif %}。</p>
+    </div>
+    <div class="wind-table-wrap" role="region" aria-label="{{ metric.label }}別の欠航・引き返し割合" tabindex="0">
+      <table class="wind-trend-table visibility-trend-table">
+        <thead><tr><th scope="col">{{ metric.label }}</th><th scope="col">欠航・引き返し</th><th scope="col">割合</th></tr></thead>
+        <tbody>{% for cell in metric.bands %}<tr>
+          <th scope="row">{{ cell.label }}</th>
+          <td>{{ cell.cancelled_count }}/{{ cell.sample_count }}件</td>
+          <td class="wind-rate wind-rate--{{ cell.tone }}"><strong>{% if cell.evidence == 'insufficient' %}データ不足{% else %}{{ cell.rate }}%{% endif %}</strong>{% if cell.evidence == 'limited' %}<small>少数</small>{% endif %}</td>
+        </tr>{% endfor %}</tbody>
+      </table>
+    </div>
+  </section>
+  {% endfor %}
+
+  <section class="wind-reading" aria-labelledby="visibility-reading-title">
+    <h2 id="visibility-reading-title">読み取るときの注意</h2>
+    <p>{{ summary.minimum_sample }}件未満の区間は割合を表示しません。{{ summary.minimum_sample }}〜{{ summary.limited_sample - 1 }}件は「少数」です。0%でも安全の保証ではなく、100%でも必ず欠航するわけではありません。</p>
+    <p>視程、低層雲量、降水量は別々に集計しています。同じ便が複数の表に入るため、割合を足したり掛けたりしないでください。低層雲量や雨量だけでは空港の視界を決められず、風、台風、機材、季節なども揃えた比較ではありません。</p>
+    <p>風の条件は<a href="../wind/">風向・風速別の欠航傾向</a>、日ごとの予測と結果は<a href="../history/">過去の予測と実際の運航結果</a>で確認できます。</p>
+  </section>
+
+  {% include "_site_footer.html" %}
+</main></body></html>

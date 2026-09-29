@@ -105,6 +105,24 @@ def test_history_cache_expires_without_waiting_for_a_write():
     assert client.query.call_count == 2
 
 
+def test_visibility_history_does_not_require_wind_and_ignores_pending_outcomes():
+    client = Mock(project="hachijo-flight-forecast")
+    client.query.return_value.result.return_value = [{
+        "date": "2026-09-01", "flight_number": "ANA1891",
+        "status": "通常", "visibility": 2.0,
+    }]
+    with patch("flight_forecast.bigquery_storage.bigquery.Client", return_value=client):
+        rows = bigquery_storage.fetch_visibility_history()
+
+    assert rows[0]["status"] == "運航"
+    query = client.query.call_args.args[0]
+    assert "wind_direction IS NOT NULL" not in query
+    assert "wind_speed IS NOT NULL" not in query
+    assert "outcome_state = 'confirmed' OR outcome_state IS NULL" in query
+    assert "date <= CURRENT_DATE('Asia/Tokyo')" in query
+    assert "flight_number IN ('ANA1891', 'ANA1893', 'ANA1895')" in query
+
+
 def test_archive_query_uses_last_preflight_snapshot_and_keeps_missing_outcomes():
     client = Mock(project="hachijo-flight-forecast")
     client.query.return_value.result.return_value = []
