@@ -521,8 +521,8 @@ footer {
 .archive-index time { font-size: .86rem; font-weight: 800; }
 .archive-index span { color: #fff; font-size: .7rem; text-align: right; }
 
-.wind-page .header h1 { margin: 8px 0 12px; color: #effaff; font-size: clamp(1.8rem, 4vw, 3rem); }
-.wind-page .header .lead { margin: 0; color: #fff; font-size: .9rem; line-height: 1.8; }
+.wind-page .header h1, .visibility-page .header h1 { margin: 8px 0 12px; color: #effaff; font-size: clamp(1.8rem, 4vw, 3rem); }
+.wind-page .header .lead, .visibility-page .header .lead { margin: 0; color: #fff; font-size: .9rem; line-height: 1.8; }
 .wind-summary { display: grid; grid-template-columns: minmax(150px, .35fr) minmax(0, 1fr); gap: 7px 28px; padding: 18px 0; border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); }
 .wind-summary h2 { grid-row: 1 / span 3; margin: 0; font-size: 1rem; }
 .wind-summary p { margin: 0; color: #e9f7ff; font-size: .78rem; line-height: 1.7; }
@@ -537,11 +537,13 @@ footer {
 .wind-table-wrap { max-width: 100%; overflow-x: auto; border: 1px solid var(--line); border-radius: 7px; }
 .wind-table-wrap:focus-visible { outline: 2px solid var(--blue); outline-offset: 3px; }
 .wind-trend-table { width: 100%; min-width: 720px; border-collapse: collapse; table-layout: fixed; background: rgba(7, 28, 44, .8); }
+.visibility-trend-table { min-width: 0; }
 .wind-trend-table th, .wind-trend-table td { padding: 10px 8px; border-right: 1px solid var(--line); border-bottom: 1px solid var(--line); text-align: center; }
 .wind-trend-table tr:last-child th, .wind-trend-table tr:last-child td { border-bottom: 0; }
 .wind-trend-table th:last-child, .wind-trend-table td:last-child { border-right: 0; }
 .wind-trend-table thead th { color: #dff5ff; background: rgba(16, 53, 78, .92); font-size: .68rem; line-height: 1.4; }
 .wind-trend-table tbody th { width: 92px; color: #effaff; background: rgba(12, 43, 64, .88); }
+.visibility-trend-table tbody th { width: 42%; }
 .wind-trend-table tbody th strong, .wind-trend-table tbody th small, .wind-rate strong, .wind-rate small { display: block; }
 .wind-trend-table tbody th strong { font-size: .78rem; }
 .wind-trend-table tbody th small { margin-top: 2px; color: #fff; font-size: .6rem; }

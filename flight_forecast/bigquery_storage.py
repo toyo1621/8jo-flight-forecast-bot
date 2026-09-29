@@ -385,6 +385,28 @@ def fetch_detailed_history():
     return _fetch_detailed_history_cached(_history_cache_epoch())
 
 
+def fetch_visibility_history():
+    """Load confirmed flight outcomes without requiring wind observations."""
+    config = settings()
+    client = bigquery.Client(project=config["project"], location=config["location"])
+    accepted_statuses = ", ".join(
+        f"'{status}'" for status in sorted(VALID_HISTORY_STATUSES)
+    )
+    query = f"""
+        SELECT CAST(date AS STRING) AS date, flight_number, status,
+               visibility, cloud_cover_low, precipitation
+        FROM `{table_path(config)}`
+        WHERE flight_number IN ('ANA1891', 'ANA1893', 'ANA1895')
+          AND status IN ({accepted_statuses})
+          AND (outcome_state = 'confirmed' OR outcome_state IS NULL)
+          AND date <= CURRENT_DATE('Asia/Tokyo')
+    """
+    rows = [dict(row.items()) for row in client.query(query).result()]
+    for row in rows:
+        row["status"] = normalize_status(row["status"])
+    return rows
+
+
 @lru_cache(maxsize=2)
 def _fetch_history_cached(cache_epoch):
     return [

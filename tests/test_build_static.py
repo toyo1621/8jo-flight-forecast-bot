@@ -19,7 +19,16 @@ def stub_detailed_history():
             "wind_gusts": 12.0,
         }
     ]
-    with patch("flight_forecast.build_static.fetch_detailed_history", return_value=history):
+    visibility_history = [
+        {"date": "2026-08-23", "flight_number": "ANA1891", "status": "運航",
+         "visibility": 4.3, "cloud_cover_low": 65.0, "precipitation": 0.0},
+        {"date": "2026-08-24", "flight_number": "ANA1893", "status": "欠航",
+         "visibility": 1.3, "cloud_cover_low": 90.0, "precipitation": None},
+    ]
+    with (
+        patch("flight_forecast.build_static.fetch_detailed_history", return_value=history),
+        patch("flight_forecast.build_static.fetch_visibility_history", return_value=visibility_history),
+    ):
         yield history
 
 
@@ -53,6 +62,7 @@ def test_completed_today_routes_to_saved_prediction_and_result(tmp_path):
     assert 'id="date-2026-09-06"' not in home
     assert "予測表示終了" not in home
     assert 'href="wind/">風向・風速別の八丈島便の欠航傾向</a>' in home
+    assert 'href="visibility/">視程・低層雲量・降水量別の欠航傾向</a>' in home
     assert 'href="history/">過去の予測と実際の運航結果</a>' in home
     assert 'class="evidence-links"' not in result
     assert "実際の運航結果" in result
@@ -164,6 +174,12 @@ def test_build_site_persists_prediction_snapshots_before_rendering(tmp_path):
     sitemap = (tmp_path / "sitemap.xml").read_text(encoding="utf-8")
     assert "https://toyo1621.github.io/8jo-flight-forecast-bot/flights/ana1891/" in sitemap
     assert "https://toyo1621.github.io/8jo-flight-forecast-bot/wind/" in sitemap
+    assert "https://toyo1621.github.io/8jo-flight-forecast-bot/visibility/" in sitemap
+    visibility_html = (tmp_path / "visibility" / "index.html").read_text(encoding="utf-8")
+    assert "視程・低層雲量・降水量別の欠航傾向" in visibility_html
+    assert "気象値は便の予定時刻付近に保存された予報・補完値" in visibility_html
+    assert "欠測または不正値により除外1件" in visibility_html
+    assert 'href="../wind/"' in visibility_html
     wind_html = (tmp_path / "wind" / "index.html").read_text(encoding="utf-8")
     assert "風向・風速別の欠航傾向" in wind_html
     assert "風が原因と確認された欠航率ではありません" in wind_html

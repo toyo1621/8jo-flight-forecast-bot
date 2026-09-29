@@ -17,6 +17,7 @@ CI、Pages公開、日次収集、週次評価は`requirements.lock`をconstrain
 - `Daily Flight & Weather Data Collection`: JST 09:23・14:23・18:23・21:23に収集。便別確定結果・気象欠測・未実行を別に確認すること
 - `CodeQL`と`CI`: mainとPull Requestの検査が成功していること
 - [公開サイト](https://toyo1621.github.io/8jo-flight-forecast-bot/): 予報データ取得時刻、11日分の表示、詳細ダイアログを確認すること
+- `/visibility/`: 視程・低層雲量・降水量の対象件数と除外件数を別々に確認し、欠測増加時はBigQueryの保存元・補完処理を調べること。欠測を0mm/hや良好な視程へ置き換えないこと
 - フッターの`過去7日間のアクセス数`: Cloudflare Web Analyticsのページビュー集計が更新されていること
 
 Data Quality Reportの`error`はPagesと日次収集を失敗させます。エラーを無視して公開を更新しません。
