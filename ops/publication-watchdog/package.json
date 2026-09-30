@@ -1,0 +1,11 @@
+{
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "node --test",
+    "validate": "wrangler deploy --dry-run"
+  },
+  "devDependencies": {
+    "wrangler": "4.144.0"
+  }
+}

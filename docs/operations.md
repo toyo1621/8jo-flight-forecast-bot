@@ -20,6 +20,39 @@ CI、Pages公開、日次収集、週次評価は`requirements.lock`をconstrain
 - `/visibility/`: 視程・低層雲量・降水量の対象件数と除外件数を別々に確認し、欠測増加時はBigQueryの保存元・補完処理を調べること。欠測を0mm/hや良好な視程へ置き換えないこと
 - フッターの`過去7日間のアクセス数`: Cloudflare Web Analyticsのページビュー集計が更新されていること
 
+### 公開更新の独立監視
+
+`ops/publication-watchdog/`のCloudflare Workerは、GitHub Actionsのscheduleが遅延・停止しても
+公開サイトの`build-manifest.json`を独立して確認するための予備経路です。GitHubの定期更新は
+維持します。CronはUTCで設定し、JST 06:45〜22:45は2時間ごと、00:45・03:45は3時間間隔
+で確認します（11回/日）。日中は最終生成から2時間30分超、夜間は4時間30分超を更新停止と
+判定します。生成時刻は公開されたmanifestの値を使用し、GitHubのrun成功だけでは更新済みと
+判定しません。
+
+更新停止時はPages workflowの直近runを確認します。実行中、または3時間30分以内に
+`workflow_dispatch`で再実行済みなら重複起動しません。それ以外では`main`の
+`.github/workflows/pages.yml`を`full_quality_checks=false`で起動します。この経路も
+同一SHAのCI成功確認、Data Quality検査、静的検証、公開確認を通ります。manifest取得失敗・
+JSON不正・時刻不正・GitHub API失敗はWorkerのエラーとして残し、予報が新しいと推測したり
+無制限に再実行したりしません。既存の独立した通知監視でも異常を確認してください。
+
+初回導入・更新手順:
+
+1. GitHubで対象リポジトリ**だけ**に`Actions: Read and write`を付けた有効期限付き
+   fine-grained tokenを発行します。広い`repo`権限のPATや既存の`gh`認証トークンを流用
+   しません。トークンを画面やログへ貼らず、Cloudflare Worker Secret
+   `GITHUB_ACTIONS_TOKEN`へ登録します。期限前にローテーションします。
+2. `cd ops/publication-watchdog && npm ci && npm test && npm run validate`で確認します。
+3. 同ディレクトリで`npx wrangler secret put GITHUB_ACTIONS_TOKEN`を実行し、続けて
+   `npx wrangler deploy`します。GitHubのtokenはリポジトリや`wrangler.jsonc`に書きません。
+4. CloudflareのCron Triggersに2本のUTC設定があることを確認し、Worker Logsで
+   `fresh`、`running`、`cooldown`、`dispatched`を確認します。異常系の手動検証は
+   本番Pages workflowを不用意に起動しない隔離環境で行います。
+
+停止する場合は、`wrangler.jsonc`の`triggers.crons`を空配列に変更してデプロイします。
+Workerを削除する前にCronが停止したことを確認します。GitHub本来のscheduleには影響しません。
+Cloudflare側のCron実行失敗や認証期限切れも、Worker Logs/Alertsで別途監視してください。
+
 Data Quality Reportの`error`はPagesと日次収集を失敗させます。エラーを無視して公開を更新しません。
 
 ## アクセス数の集計

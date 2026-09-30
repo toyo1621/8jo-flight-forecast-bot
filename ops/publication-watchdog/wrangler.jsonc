@@ -1,0 +1,17 @@
+{
+  "$schema": "https://json.schemastore.org/wrangler.json",
+  "name": "8jo-flight-publication-watchdog",
+  "account_id": "e04e898ef9b59ba3f3397229de4cff71",
+  "main": "src/index.mjs",
+  "compatibility_date": "2026-09-30",
+  "workers_dev": false,
+  "triggers": {
+    "crons": [
+      "45 1,3,5,7,9,11,13,21,23 * * *",
+      "45 15,18 * * *"
+    ]
+  },
+  "observability": {
+    "enabled": true
+  }
+}
