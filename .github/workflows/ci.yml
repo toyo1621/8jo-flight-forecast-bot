@@ -39,3 +39,29 @@ jobs:
 
       - name: Audit Python dependencies
         run: python -m pip_audit -r requirements.lock
+
+  publication-watchdog:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    defaults:
+      run:
+        working-directory: ops/publication-watchdog
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+
+      - name: Set up Node.js
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: ops/publication-watchdog/package-lock.json
+
+      - name: Install Worker dependencies
+        run: npm ci
+
+      - name: Test Worker scheduling and recovery
+        run: npm test
+
+      - name: Validate Worker bundle
+        run: npm run validate

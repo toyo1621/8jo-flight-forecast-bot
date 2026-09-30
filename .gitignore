@@ -27,3 +27,4 @@ __pycache__/
 
 # Generated GitHub Pages site
 dist/
+node_modules/
