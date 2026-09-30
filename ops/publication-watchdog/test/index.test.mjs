@@ -18,7 +18,7 @@ function fakeFetch({ publishedAt, runs = [], dispatchStatus = 204 } = {}) {
       return Response.json(manifest(publishedAt));
     }
     if (url.includes("/runs?")) {
-      return Response.json({ workflow_runs: runs });
+      return Response.json({ workflow_runs: runs.map((run) => ({ head_branch: "main", ...run })) });
     }
     return dispatchStatus === 200
       ? Response.json({ workflow_run_id: 987 }, { status: 200 })
@@ -73,6 +73,16 @@ test("recent manual dispatch suppresses repeated recovery", async () => {
   const result = await checkPublication({ GITHUB_ACTIONS_TOKEN: "test" }, { now, fetcher });
   assert.equal(result.status, "cooldown");
   assert.equal(calls.length, 2);
+});
+
+test("a run on another branch does not suppress main recovery", async () => {
+  const { calls, fetcher } = fakeFetch({
+    publishedAt: new Date(now - 3 * HOUR).toISOString(),
+    runs: [{ status: "in_progress", event: "workflow_dispatch", head_branch: "feature" }],
+  });
+  const result = await checkPublication({ GITHUB_ACTIONS_TOKEN: "test" }, { now, fetcher });
+  assert.equal(result.status, "dispatched");
+  assert.equal(calls.length, 3);
 });
 
 test("stale manifest dispatches lightweight Pages workflow after CI gate", async () => {

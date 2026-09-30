@@ -1,7 +1,7 @@
 const MANIFEST_URL =
   "https://toyo1621.github.io/8jo-flight-forecast-bot/build-manifest.json";
 const RUNS_URL =
-  "https://api.github.com/repos/toyo1621/8jo-flight-forecast-bot/actions/workflows/pages.yml/runs?branch=main&per_page=20";
+  "https://api.github.com/repos/toyo1621/8jo-flight-forecast-bot/actions/workflows/pages.yml/runs?per_page=20";
 const DISPATCH_URL =
   "https://api.github.com/repos/toyo1621/8jo-flight-forecast-bot/actions/workflows/pages.yml/dispatches";
 const ACTIVE_STATUSES = new Set([
@@ -67,10 +67,11 @@ export async function checkPublication(env, { now = new Date(), fetcher = fetch 
   if (!Array.isArray(runs?.workflow_runs)) {
     throw new Error("GitHub workflow runs response is invalid");
   }
-  if (runs.workflow_runs.some((run) => ACTIVE_STATUSES.has(run.status))) {
+  const mainRuns = runs.workflow_runs.filter((run) => run.head_branch === "main");
+  if (mainRuns.some((run) => ACTIVE_STATUSES.has(run.status))) {
     return { status: "running", ageMs, runId: manifest.run_id ?? null };
   }
-  const recentDispatch = runs.workflow_runs.some((run) => {
+  const recentDispatch = mainRuns.some((run) => {
     const createdAt = Date.parse(run.created_at);
     return (
       run.event === "workflow_dispatch" &&
