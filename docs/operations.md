@@ -55,6 +55,20 @@ Cloudflare側のCron実行失敗や認証期限切れも、Worker Logs/Alertsで
 
 Data Quality Reportの`error`はPagesと日次収集を失敗させます。エラーを無視して公開を更新しません。
 
+### 公開確認だけを再試行する
+
+`Deploy to GitHub Pages`が成功した後に`Confirm the live artifact and publish snapshots`だけが
+失敗した場合は、Pagesの反映遅延と公開成果物の不一致を分けて確認します。通常の公開確認は、
+試行ごとに異なるキャッシュ回避URLを使い、トップHTMLと`build-manifest.json`のartifact IDが
+ともに一致するまで、約2分30秒の上限付きで再試行します。不一致のままなら`candidate`を
+`published`へ変更しません。
+
+反映済みの成果物を再確認する場合は、失敗runの`pages-build-manifest`またはログから
+`artifact_id`を取得し、Actionsの`Retry publication confirmation`を手動実行します。このworkflowは
+サイトを再生成・再デプロイせず、指定された既存成果物の公開確認とBigQuery反映だけを行います。
+処理は同じartifact IDに対して再実行可能です。別のartifact IDを推測で指定したり、公開URLの
+確認を省略して`published`へ変更したりしないでください。
+
 ## アクセス数の集計
 
 - Cloudflare Web Analyticsのページビューを、JSTの暦日単位で直近7日分取得して静的HTMLへ埋め込みます。ユニークユーザー数ではありません。
