@@ -1,6 +1,12 @@
 from pathlib import Path
 
 WORKFLOW = Path(__file__).resolve().parents[1] / ".github" / "workflows" / "pages.yml"
+RETRY_WORKFLOW = (
+    Path(__file__).resolve().parents[1]
+    / ".github"
+    / "workflows"
+    / "retry_publication_confirmation.yml"
+)
 
 
 def test_access_stats_failure_cannot_block_forecast_pages_build():
@@ -54,3 +60,14 @@ def test_pages_artifacts_are_retained_for_thirty_days():
 
     assert workflow.count("retention-days: 30") == 5
     assert "name: Upload static build for diagnostics\n        if: failure()" in workflow
+
+
+def test_publication_confirmation_can_be_retried_without_redeploying():
+    workflow = RETRY_WORKFLOW.read_text(encoding="utf-8")
+
+    assert "workflow_dispatch:" in workflow
+    assert "artifact_id:" in workflow
+    assert "ARTIFACT_ID: ${{ inputs.artifact_id }}" in workflow
+    assert "python -m flight_forecast.publish_prediction_snapshots" in workflow
+    assert "actions/deploy-pages" not in workflow
+    assert "pages: write" not in workflow

@@ -81,7 +81,7 @@ GitHub Actionsが次の処理を行います。
 
 Pagesの静的生成時には、JMA・GFS・ECMWFの各統計参考値と予測時点のデータ来歴を、内容ハッシュで重複排除した不変レコードとしてBigQueryの`prediction_snapshots`へ保存します。HTML生成前の行は`prediction_publications`で`candidate`として記録し、公開URLのHTTP応答とartifact IDを確認できた行だけを`published`へ更新します。取得時刻が分からない旧データは`unknown`として、後続の時系列評価で現在の予報と混ぜません。
 
-公開成果物には`build-manifest.json`を含め、artifact ID、コードSHA、設定版、生成時刻、snapshot ID一覧を確認できます。公開確認の記録が一時的に失敗した場合は、同じartifact IDに対して`python -m flight_forecast.publish_prediction_snapshots --artifact-id <id> --public-url <url>`を再実行します。
+公開成果物には`build-manifest.json`を含め、artifact ID、コードSHA、設定版、生成時刻、snapshot ID一覧を確認できます。公開確認ではキャッシュを避けたURLでトップHTMLと`build-manifest.json`の両方を照合し、Pagesの反映遅延を上限付きで約2分30秒待ちます。それでも一時的に失敗した場合は、Actionsの`Retry publication confirmation`へ同じartifact IDを入力し、再デプロイせずに公開確認とBigQuery反映だけを再実行します。ローカルでは`python -m flight_forecast.publish_prediction_snapshots --artifact-id <id> --public-url <url>`でも同じ処理を実行できます。
 
 週次Actionsで実績と結合した公開値を時系列分割で検証し、モデル別・便別・リード日別のBrier score・信頼度曲線・ベースライン比較をartifactとして保存します。評価データ不足は精度0や推測値に置き換えず、`insufficient_data`として報告します。評価の定義は[`docs/evaluation.md`](docs/evaluation.md)にまとめています。
 
