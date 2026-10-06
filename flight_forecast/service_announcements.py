@@ -3,6 +3,17 @@ from copy import deepcopy
 # Announcements are display-only overlays. Add future full or partial cancellations
 # here without changing forecast values, snapshots, or recorded flight outcomes.
 SERVICE_ANNOUNCEMENTS = {
+    "2026-10-06": {
+        "status": "cancelled",
+        "label": "2便・3便欠航（発表済み）",
+        "flight_label": "欠航（発表済み）",
+        "message": (
+            "10/6（火）はANA1893（2便）・ANA1895（3便）の欠航が発表されています。"
+            "参考スコアは予測値として残しています。"
+        ),
+        "flight_numbers": ("ANA1893", "ANA1895"),
+        "source_url": "https://www.ana.co.jp/fs/dom/jp/",
+    },
     "2026-09-20": {
         "status": "cancelled",
         "label": "全便欠航（発表済み）",
