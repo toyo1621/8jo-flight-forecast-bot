@@ -158,6 +158,39 @@ def test_announced_cancellations_keep_scores_and_mark_all_three_flights(day, wee
     assert "text-decoration: line-through" not in stylesheet
 
 
+def test_partial_cancellation_keeps_first_flight_and_all_prediction_scores():
+    weather = {
+        f"2026-10-06T{hour:02d}:00": {
+            "wind_direction": 180.0, "wind_speed": 8.0, "wind_gusts": 15.0,
+            "cloud_cover_low": 40.0, "visibility": 10.0, "precipitation": 0.0,
+        }
+        for hour in (8, 13, 17)
+    }
+    result = {
+        "probability": 72.0, "alert_required": False, "warning_msg": "なし",
+        "data_count": 10, "step_used": 1,
+    }
+    with (
+        patch("flight_forecast.web_app.predict_flight_probability", return_value=result),
+        patch("flight_forecast.web_app.find_similar_flights", return_value=[]),
+    ):
+        days = build_daily_forecasts(
+            weather, reference_date=date(2026, 10, 6),
+            current_time=datetime(2026, 10, 6, 7, tzinfo=JST),
+        )
+    flights = days[0]["flights"]
+    assert [flight["probability"] for flight in flights] == [72.0] * 3
+    assert flights[0]["service_announcement"] is None
+    assert all(flight["service_announcement"]["status"] == "cancelled" for flight in flights[1:])
+    with app.test_request_context("/"):
+        body = render_template("index.html", days=days, today_day=None, error=None, updated_at="2026/10/06 07:00")
+    assert "2便・3便欠航（発表済み）" in body
+    assert "全便欠航" not in body
+    assert body.count('class="score-value score-value--cancelled"') == 2
+    assert body.count('<span class="probability-symbol">×</span>') == 2
+    assert body.count('<span class="probability-symbol">△</span>') == 1
+
+
 def test_build_daily_forecasts_evaluates_each_ensemble_member_once():
     members = [
         {"_model": "gfs_seamless", "_member_id": "gfs_seamless:01", "wind_speed": 5.0},
