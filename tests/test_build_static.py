@@ -141,6 +141,15 @@ def test_build_site_persists_prediction_snapshots_before_rendering(tmp_path):
     assert (tmp_path / "wind" / "index.html").exists()
     assert (tmp_path / "about" / "index.html").exists()
     assert (tmp_path / "privacy" / "index.html").exists()
+    about_html = (tmp_path / "about" / "index.html").read_text(encoding="utf-8")
+    assert "八丈島で暮らす私にとって" in about_html
+    assert "暮らしの中で繰り返し向き合う課題" in about_html
+    assert "大切にしていること" in about_html
+    assert "今後について" in about_html
+    assert 'href="../guide/"' in about_html
+    assert 'href="../history/"' in about_html
+    assert "将来の運航確率や飛行の安全性を示すものではありません" in about_html
+    assert "実行や公開反映が遅れる場合" in about_html
     for number in ("ana1891", "ana1893", "ana1895"):
         flight_page = tmp_path / "flights" / number / "index.html"
         assert flight_page.exists()

@@ -1521,7 +1521,7 @@ def test_index_renders_forecast():
     assert "比較欄にはGFS・ECMWF・JMAを併記" in body
     assert "主予報は気象庁(JMA)モデルをOpen-Meteo経由で使用しています。" in body
     assert "予報データ取得 " in body
-    assert "(日中は1時間ごと・夜間は3時間ごとに更新)" in body
+    assert "(日中は1時間ごと・夜間は3時間ごとに更新予定)" in body
     assert "青: 参考スコア60以上" in body
     assert "オレンジ: 参考スコア60未満" in body
     assert "主予報: 気象庁(JMA) GSM・MSMモデル (Open-Meteo経由)" in body
@@ -1534,14 +1534,17 @@ def test_index_renders_forecast():
     assert "天気予報の更新で条件が変わると、スコアも上がったり下がったりします" in body
     assert ">雲量<" not in body
     assert "なぜ作ったか" in body
+    assert "八丈島で暮らす私にとって" in body
+    assert "暮らしの中で繰り返し向き合う課題" in body
+    assert 'href="about/">制作の背景・運営方針</a>' in body
     assert "ざっくりどういう仕組みか" in body
     assert "GFS・ECMWFを混ぜずにモデル別" in body
     assert "日本周辺の短期予報を重視してJMAを主予報" in body
     assert "八丈島・東京方面 台風影響目安" in body
-    assert "運航率に0.9・0.8・0.7を掛けます" in body
+    assert "参考スコアに0.9・0.8・0.7を掛けます" in body
     assert "運航参考スコア60未満の便はオレンジ" in body
-    assert "GitHub Actionsで日中は1時間ごと、夜間は3時間ごとに再計算" in body
-    assert "気象業法への配慮" in body
+    assert "GitHub Actionsで日中は1時間ごと、夜間は3時間ごとの再計算を予定" in body
+    assert "気象業務法への配慮" in body
     assert "予報気象情報" in body
     assert "モデル別リスク" in body
     assert "計算対象の過去実績（最大10件）" in body
