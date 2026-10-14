@@ -52,6 +52,7 @@ from flight_forecast.forecast_engine import (
     find_similar_flights,
     predict_flight_probability,
 )
+from flight_forecast.history_selection import valid_wind
 from flight_forecast.presentation import (
     active_forecast_days,
     decorate_flight_for_display,
@@ -72,9 +73,15 @@ PREDICTION_WEATHER_FIELDS = (
 PRIMARY_SUPPLEMENT_FIELDS = ("wind_gusts", "visibility")
 PRIMARY_SUPPLEMENT_STATUS_KEY = "_primary_supplement_status"
 WEATHER_FIELD_SOURCES_KEY = "_weather_field_sources"
+SUPPLEMENT_FORECAST_TIMEOUT_SECONDS = 30
 
 
-def _fetch_deterministic_forecast(model=None, latitude=HACHIJO_AIRPORT_LATITUDE, longitude=HACHIJO_AIRPORT_LONGITUDE):
+def _fetch_deterministic_forecast(
+    model=None,
+    latitude=HACHIJO_AIRPORT_LATITUDE,
+    longitude=HACHIJO_AIRPORT_LONGITUDE,
+    timeout=10,
+):
     return client_fetch_deterministic_forecast(
         model=model,
         latitude=latitude,
@@ -82,13 +89,14 @@ def _fetch_deterministic_forecast(model=None, latitude=HACHIJO_AIRPORT_LATITUDE,
         endpoint=MAIN_FORECAST_URL,
         forecast_days=FORECAST_DAYS,
         request_get=requests.get,
+        timeout=timeout,
     )
 
 
 def fetch_forecast():
     primary = _fetch_deterministic_forecast(JMA_MODEL_NAME)
     try:
-        supplement = _fetch_deterministic_forecast()
+        supplement = _fetch_deterministic_forecast(timeout=SUPPLEMENT_FORECAST_TIMEOUT_SECONDS)
     except (requests.RequestException, ValueError) as exc:
         LOGGER.warning("Open-Meteo supplemental forecast could not be loaded: %s", exc)
         supplement = {}
@@ -418,6 +426,21 @@ def _append_typhoon_factor_notice(notices, impacts):
         )
 
 
+def _has_usable_forecast_weather(weather, current_time=None):
+    current_time = current_time or datetime.now(JST)
+    today = current_time.date().isoformat()
+    pending_times = [
+        f"{date_string}T{flight['forecast_hour']:02d}:00"
+        for date_string in sorted({timestamp[:10] for timestamp in weather})
+        if date_string >= today
+        for flight in FLIGHTS
+        if not _flight_display_expired(date_string, flight["time"], current_time)
+    ]
+    # Completed flights must not mask missing inputs for the remaining forecast.
+    values = [weather.get(timestamp, {}) for timestamp in pending_times] if pending_times else weather.values()
+    return any(valid_wind(item) for item in values)
+
+
 def load_forecast_bundle(logger=None):
     cached = load_cached_forecast_bundle()
     fresh_cached = cached if is_cached_forecast_fresh(cached, source="weather") else None
@@ -431,11 +454,13 @@ def load_forecast_bundle(logger=None):
 
     try:
         weather = fetch_forecast()
+        if not _has_usable_forecast_weather(weather):
+            raise ValueError("主予報の必須気象データが全面欠測です。")
         source_updated_at["weather"] = datetime.now(JST).isoformat()
     except (requests.RequestException, ValueError) as exc:
-        if fresh_cached:
+        if fresh_cached and _has_usable_forecast_weather(fresh_cached["weather"]):
             _log_or_print(logger, "Main forecast unavailable; using cached forecast", exc)
-            notices.append("予報APIに接続できないため、前回取得した予報データを表示しています。")
+            notices.append("予報の取得または必須気象データの補完に失敗したため、前回取得した予報データを表示しています。")
             cached_ensembles = cached_source("ensembles")
             cached_typhoon_impacts = cached_source("typhoon_impacts")
             if not cached_ensembles:
