@@ -262,6 +262,8 @@ def test_main_forecast_uses_jma_and_supplements_unavailable_fields():
     supplemental_response.raise_for_status.assert_called_once()
     assert get.call_args_list[0].kwargs["params"]["models"] == "jma_seamless"
     assert "models" not in get.call_args_list[1].kwargs["params"]
+    assert get.call_args_list[0].kwargs["timeout"] == 10
+    assert get.call_args_list[1].kwargs["timeout"] == 30
     assert result["2026-06-20T08:00"]["wind_speed"] == 5.0
     assert result["2026-06-20T08:00"]["wind_direction"] == 180.0
     assert result["2026-06-20T08:00"]["wind_gusts"] == 8.0

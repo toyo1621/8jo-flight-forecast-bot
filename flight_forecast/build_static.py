@@ -144,6 +144,25 @@ def add_brand_assets(html, asset_prefix=""):
     return html
 
 
+def forecast_publication_quality(days, current_time):
+    pending = [
+        flight
+        for day in days
+        if day["date"] >= current_time.date().isoformat()
+        for flight in day["flights"]
+        if flight.get("calculation_status") != "expired"
+    ]
+    return {
+        "pending_flight_count": len(pending),
+        "weather_missing_flight_count": sum(
+            flight.get("calculation_status") == "weather_missing" for flight in pending
+        ),
+        "available_flight_count": sum(
+            flight.get("calculation_status") == "available" for flight in pending
+        ),
+    }
+
+
 def build_site(output_dir=DIST_DIR, current_time=None, now_provider=None):
     now_provider = now_provider or (lambda: datetime.now(JST))
     current_time = current_time or now_provider()
@@ -158,6 +177,11 @@ def build_site(output_dir=DIST_DIR, current_time=None, now_provider=None):
     )
     if not days:
         raise RuntimeError("予報日が0件です。空の成果物を公開しません。")
+    quality = forecast_publication_quality(days, current_time)
+    if quality["pending_flight_count"] and (
+        quality["weather_missing_flight_count"] == quality["pending_flight_count"]
+    ):
+        raise RuntimeError("未終了便の必須気象データが全面欠測です。前回の公開を維持します。")
 
     # The prediction is generated only after all source data has been retrieved.
     generated_at = now_provider().isoformat()
@@ -656,6 +680,7 @@ def build_site(output_dir=DIST_DIR, current_time=None, now_provider=None):
         "candidate_count": candidate_count,
         "snapshot_ids": sorted({row["snapshot_id"] for row in snapshot_rows}),
         "forecast_day_count": len(days),
+        "forecast_quality": quality,
         "current_date_page_count": len(rendered_date_pages),
         "archive_page_count": len(rendered_archive_pages),
     }

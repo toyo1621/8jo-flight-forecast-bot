@@ -113,6 +113,22 @@ def validate_site(output_dir):
         and manifest["snapshot_count"] != len(snapshot_ids)
     ):
         errors.append("snapshot_countとsnapshot_idsの件数が一致しません。")
+    quality = manifest.get("forecast_quality")
+    quality_fields = (
+        "pending_flight_count", "weather_missing_flight_count", "available_flight_count"
+    )
+    if not isinstance(quality, dict) or any(
+        type(quality.get(field)) is not int or quality[field] < 0 for field in quality_fields
+    ):
+        errors.append("build-manifest.jsonのforecast_qualityが不正です。")
+    else:
+        pending = quality["pending_flight_count"]
+        missing = quality["weather_missing_flight_count"]
+        available = quality["available_flight_count"]
+        if missing + available > pending:
+            errors.append("forecast_qualityの件数が一致しません。")
+        if pending and missing == pending:
+            errors.append("未終了便の必須気象データが全面欠測です。公開できません。")
 
     sitemap = ElementTree.parse(output_dir / "sitemap.xml")
     namespace = {"s": "http://www.sitemaps.org/schemas/sitemap/0.9"}
