@@ -25,11 +25,11 @@ def test_southerly_boundaries(direction, speed, label, factor):
         assert "南風リスク" not in result["warning_msg"]
 
 
-def test_gust_does_not_stack_with_southerly():
+def test_equal_southerly_and_gust_risks_apply_one_full_and_one_half_penalty():
     result = predict_flight_probability(185, 11, 21, 20, 15,
         history=[{"status": "運航", "wind_direction": 185, "wind_speed": 11, "wind_gusts": 21}] * 5)
-    assert result["weather_factors"] == {"southerly": .6}
-    assert result["probability"] == 60
+    assert result["weather_factors"] == {"southerly": .6, "gust": .8}
+    assert result["probability"] == 48
 
 
 def test_reflection_keeps_original_score_and_only_targets_final_flight():

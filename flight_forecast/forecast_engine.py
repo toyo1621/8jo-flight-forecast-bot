@@ -17,6 +17,7 @@ from flight_forecast.app_config import (
     MODERATE_WIND_RISK_MS,
     PRECIPITATION_PROBABILITY_MULTIPLIER,
     PRECIPITATION_RISK_MM,
+    SECONDARY_WIND_PENALTY_WEIGHT,
     SEVERE_GUST_PROBABILITY_MULTIPLIER,
     SEVERE_GUST_RISK_MS,
     SEVERE_LOW_CLOUD_PROBABILITY_MULTIPLIER,
@@ -279,10 +280,21 @@ def predict_flight_probability(
     if is_windy:
         alert_required = True
 
-    # Wind hazards overlap: apply only the strongest reduction once.
-    if wind_factors:
-        key = min(wind_factors, key=wind_factors.get)
-        factor = wind_factors[key]
+    # Southerly and general wind both use mean wind; do not count them twice.
+    mean_wind_factors = {key: value for key, value in wind_factors.items() if key != "gust"}
+    combined_wind_factors = {}
+    if mean_wind_factors:
+        key = min(mean_wind_factors, key=mean_wind_factors.get)
+        combined_wind_factors[key] = mean_wind_factors[key]
+    if "gust" in wind_factors:
+        combined_wind_factors["gust"] = wind_factors["gust"]
+
+    for index, (key, factor) in enumerate(
+        sorted(combined_wind_factors.items(), key=lambda item: item[1])
+    ):
+        # Mean wind and gusts are related, so soften the secondary reduction.
+        if index:
+            factor = 1.0 - (1.0 - factor) * SECONDARY_WIND_PENALTY_WEIGHT
         prob *= factor
         weather_factor *= factor
         weather_factors[key] = factor
