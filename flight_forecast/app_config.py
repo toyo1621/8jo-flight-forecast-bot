@@ -10,7 +10,7 @@ FORECAST_DAYS = 11
 MAIN_FORECAST_URL = "https://api.open-meteo.com/v1/forecast"
 ENSEMBLE_FORECAST_URL = "https://ensemble-api.open-meteo.com/v1/ensemble"
 JMA_MODEL_NAME = "jma_seamless"
-FORECAST_CONFIG_VERSION = "2026-09-18-wind-rain-tiers-1"
+FORECAST_CONFIG_VERSION = "2026-10-28-softened-gust-combination-1"
 
 FLIGHTS = (
     {"number": "ANA1891", "time": "08:30", "forecast_hour": 8},
@@ -71,6 +71,7 @@ SOUTHERLY_UPGRADE_MAX_DEGREES = 190.0
 SOUTHERLY_MEDIUM_WIND_MS = 6.5
 SOUTHERLY_HIGH_WIND_MS = 9.0
 SOUTHERLY_MULTIPLIERS = (0.9, 0.8, 0.7, 0.6)
+SECONDARY_WIND_PENALTY_WEIGHT = 0.5
 
 INITIAL_MATCH_ANGLE_DEGREES = 30.0
 INITIAL_MATCH_WIND_SPEED_MS = 3.0

@@ -1,9 +1,65 @@
 import json
+from datetime import datetime
 
+from flight_forecast.app_config import FORECAST_CONFIG_VERSION, JST
+from flight_forecast.forecast_archive import build_archive_days
 from flight_forecast.prediction_provenance import (
     build_artifact_id,
     build_prediction_snapshot_rows,
 )
+from flight_forecast.web_app import build_daily_forecasts
+
+
+def test_softened_wind_scores_and_effective_factors_survive_snapshot_and_archive():
+    weather = {
+        "wind_direction": 150, "wind_speed": 10, "wind_gusts": 16,
+        "cloud_cover_low": 20, "visibility": 15, "precipitation": 0,
+    }
+    history = [
+        {**weather, "status": "運航" if index < 4 else "欠航"}
+        for index in range(5)
+    ]
+    members = [
+        {**weather, "_model": model, "_member_id": f"{model}:{index:02d}"}
+        for model in ("gfs_seamless", "ecmwf_ifs025")
+        for index in range(10)
+    ]
+    days = build_daily_forecasts(
+        {"2026-10-29T08:00": weather},
+        ensembles_by_time={"2026-10-29T08:00": members},
+        current_time=datetime(2026, 10, 28, 6, tzinfo=JST),
+        typhoon_impacts_by_date={"2026-10-29": "low"},
+        history=history,
+    )
+    rows = build_prediction_snapshot_rows(
+        days, {"source_updated_at": {
+            "weather": "2026-10-28T06:00:00+09:00",
+            "ensembles": "2026-10-28T06:00:00+09:00",
+        }},
+        generated_at="2026-10-28T06:01:00+09:00", run_id="local-test",
+    )
+    first_flight_rows = [row for row in rows if row["flight_number"] == "ANA1891"]
+    assert len(first_flight_rows) == 3
+    assert all(row["probability"] == 43.2 for row in first_flight_rows)
+    assert all(row["config_version"] == FORECAST_CONFIG_VERSION for row in rows)
+    primary = first_flight_rows[0]
+    breakdown = json.loads(primary["factor_breakdown_json"])
+    assert primary["base_probability"] == 80
+    assert primary["weather_factor"] == 0.54
+    assert breakdown["weather_factors"] == {"southerly": 0.6, "gust": 0.9}
+    assert breakdown["ablation"]["weather_only"] == 43.2
+
+    legacy = {
+        **primary, "forecast_target_date": "2026-10-27", "probability": 48,
+        "config_version": "2026-09-18-wind-rain-tiers-1",
+        "factor_breakdown_json": json.dumps({"weather_factors": {"southerly": 0.6}}),
+    }
+    archive = build_archive_days([primary, legacy])
+    flights = {day["date"]: day["flights"][0] for day in archive}
+    assert flights["2026-10-29"]["score"] == 43
+    assert "突風 ×0.9" in flights["2026-10-29"]["review_evidence"]["factors"]
+    assert flights["2026-10-27"]["score"] == 48
+    assert flights["2026-10-27"]["review_evidence"]["factors"] == "南風 ×0.6"
 
 
 def test_artifact_identity_includes_the_snapshot_set():
@@ -168,11 +224,20 @@ def test_snapshot_identity_deduplicates_same_content_but_changes_with_input():
     changed_rows = build_prediction_snapshot_rows(
         [changed], bundle, generated_at="2026-08-24T02:00:00+09:00", run_id="run-1"
     )
+    changed_config_rows = build_prediction_snapshot_rows(
+        [day], {**bundle, "config_version": FORECAST_CONFIG_VERSION},
+        generated_at="2026-08-24T02:00:00+09:00", run_id="run-1"
+    )
 
     assert [row["snapshot_id"] for row in first] == [row["snapshot_id"] for row in resent]
     assert first[0]["run_id"] == "run-1"
     assert resent[0]["run_id"] == "run-2"
     assert first[0]["snapshot_id"] != changed_rows[0]["snapshot_id"]
+    assert [row["probability"] for row in first] == [row["probability"] for row in changed_config_rows]
+    assert all(
+        old["snapshot_id"] != new["snapshot_id"]
+        for old, new in zip(first, changed_config_rows)
+    )
     assert json.loads(first[1]["weather_json"])["members"][0]["weather"]["wind_speed"] == 5.0
     assert json.loads(first[0]["weather_json"])["model"] == "jma_seamless"
 

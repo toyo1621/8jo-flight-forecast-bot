@@ -30,5 +30,5 @@ def test_visibility_tiers(visibility, label, factor):
 def test_visibility_multiplies_southerly_risk():
     result = predict_flight_probability(185, 6.02, 13, 20, 2.3,
         history=[{"status": "運航", "wind_direction": 185, "wind_speed": 6.02, "wind_gusts": 13}] * 5)
-    assert result["weather_factors"] == {"visibility": .8, "southerly": .8}
-    assert result["probability"] == 64
+    assert result["weather_factors"] == {"visibility": .8, "southerly": .8, "gust": .975}
+    assert result["probability"] == 62.4

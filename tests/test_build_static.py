@@ -137,6 +137,10 @@ def test_build_site_persists_prediction_snapshots_before_rendering(tmp_path):
     assert '"@type": "WebApplication"' in html
     assert '"@type": "WebSite"' in html
     assert (tmp_path / "guide" / "index.html").exists()
+    guide_html = (tmp_path / "guide" / "index.html").read_text(encoding="utf-8")
+    assert "もう一方は減点幅を半分にして掛けます" in guide_html
+    assert "合成で×0.54" in guide_html
+    assert "最も厳しい係数だけを適用します" not in guide_html
     assert (tmp_path / "history" / "index.html").exists()
     assert (tmp_path / "wind" / "index.html").exists()
     assert (tmp_path / "about" / "index.html").exists()
