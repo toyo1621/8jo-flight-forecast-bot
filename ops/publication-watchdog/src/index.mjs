@@ -12,6 +12,7 @@ const ACTIVE_STATUSES = new Set([
   "waiting",
 ]);
 const DISPATCH_COOLDOWN_MS = 3.5 * 60 * 60 * 1000;
+const DAYTIME_RUN_INTERVAL_MS = 55 * 60 * 1000;
 
 function jstHour(now) {
   return (now.getUTCHours() + 9) % 24;
@@ -59,7 +60,9 @@ export async function checkPublication(env, { now = new Date(), fetcher = fetch 
   const generatedAt = parseGeneratedAt(manifest, now);
   const ageMs = now.getTime() - generatedAt;
   const thresholdMs = staleThresholdMs(now);
-  if (ageMs <= thresholdMs) {
+  const hour = jstHour(now);
+  const hourlyRefresh = hour >= 6 && hour < 23;
+  if (!hourlyRefresh && ageMs <= thresholdMs) {
     return { status: "fresh", ageMs, runId: manifest.run_id ?? null };
   }
 
@@ -71,16 +74,18 @@ export async function checkPublication(env, { now = new Date(), fetcher = fetch 
   if (mainRuns.some((run) => ACTIVE_STATUSES.has(run.status))) {
     return { status: "running", ageMs, runId: manifest.run_id ?? null };
   }
-  const recentDispatch = mainRuns.some((run) => {
+  // Use run start time so build duration cannot turn an hourly refresh into two hours.
+  const cooldownMs = hourlyRefresh ? DAYTIME_RUN_INTERVAL_MS : DISPATCH_COOLDOWN_MS;
+  const recentRun = mainRuns.some((run) => {
     const createdAt = Date.parse(run.created_at);
     return (
-      run.event === "workflow_dispatch" &&
+      (hourlyRefresh || run.event === "workflow_dispatch") &&
       Number.isFinite(createdAt) &&
       createdAt <= now.getTime() &&
-      now.getTime() - createdAt < DISPATCH_COOLDOWN_MS
+      now.getTime() - createdAt < cooldownMs
     );
   });
-  if (recentDispatch) {
+  if (recentRun) {
     return { status: "cooldown", ageMs, runId: manifest.run_id ?? null };
   }
   if (!env.GITHUB_ACTIONS_TOKEN) {
@@ -102,6 +107,7 @@ export async function checkPublication(env, { now = new Date(), fetcher = fetch 
   const dispatch = response.status === 200 ? await response.json() : null;
   return {
     status: "dispatched",
+    reason: hourlyRefresh ? "hourly-refresh" : "stale-recovery",
     ageMs,
     runId: manifest.run_id ?? null,
     dispatchedRunId: dispatch?.workflow_run_id ?? null,
