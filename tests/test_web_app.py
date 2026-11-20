@@ -841,9 +841,9 @@ def test_low_cloud_and_softened_secondary_wind_adjustments():
         result = predict_flight_probability(210.0, 18.09, 18.5, 85.0, 12.2)
 
     assert result["data_count"] == 9
-    assert result["probability"] == 18.9
-    assert result["weather_factors"] == {"low_cloud": 0.9, "southerly": 0.7, "gust": 0.9}
-    assert result["weather_factor"] == 0.567
+    assert result["probability"] == 19.4
+    assert result["weather_factors"] == {"low_cloud": 0.9, "southerly": 0.7, "gust": 0.925}
+    assert result["weather_factor"] == 0.58275
 
 
 def test_visibility_low_cloud_and_gust_adjustments_are_tiered():
@@ -880,11 +880,11 @@ def test_adjusted_visibility_factor_keeps_heavy_rain_and_gust_penalties():
     assert result["weather_factors"] == {
         "visibility": 0.8,
         "precipitation": 0.7,
-        "gust": 0.8,
+        "gust": 0.85,
         "wind": 0.95,
     }
-    assert result["weather_factor"] == 0.4256
-    assert result["probability"] == 42.6
+    assert result["weather_factor"] == 0.4522
+    assert result["probability"] == 45.2
 
 
 def test_precipitation_from_two_mm_adds_rain_risk():

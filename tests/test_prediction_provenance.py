@@ -40,14 +40,14 @@ def test_softened_wind_scores_and_effective_factors_survive_snapshot_and_archive
     )
     first_flight_rows = [row for row in rows if row["flight_number"] == "ANA1891"]
     assert len(first_flight_rows) == 3
-    assert all(row["probability"] == 43.2 for row in first_flight_rows)
+    assert all(row["probability"] == 44.4 for row in first_flight_rows)
     assert all(row["config_version"] == FORECAST_CONFIG_VERSION for row in rows)
     primary = first_flight_rows[0]
     breakdown = json.loads(primary["factor_breakdown_json"])
     assert primary["base_probability"] == 80
-    assert primary["weather_factor"] == 0.54
-    assert breakdown["weather_factors"] == {"southerly": 0.6, "gust": 0.9}
-    assert breakdown["ablation"]["weather_only"] == 43.2
+    assert primary["weather_factor"] == 0.555
+    assert breakdown["weather_factors"] == {"southerly": 0.6, "gust": 0.925}
+    assert breakdown["ablation"]["weather_only"] == 44.4
 
     legacy = {
         **primary, "forecast_target_date": "2026-10-27", "probability": 48,
@@ -56,8 +56,8 @@ def test_softened_wind_scores_and_effective_factors_survive_snapshot_and_archive
     }
     archive = build_archive_days([primary, legacy])
     flights = {day["date"]: day["flights"][0] for day in archive}
-    assert flights["2026-10-29"]["score"] == 43
-    assert "突風 ×0.9" in flights["2026-10-29"]["review_evidence"]["factors"]
+    assert flights["2026-10-29"]["score"] == 44
+    assert "突風 ×0.925" in flights["2026-10-29"]["review_evidence"]["factors"]
     assert flights["2026-10-27"]["score"] == 48
     assert flights["2026-10-27"]["review_evidence"]["factors"] == "南風 ×0.6"
 
