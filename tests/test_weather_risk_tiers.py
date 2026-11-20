@@ -22,8 +22,8 @@ def history(wind_speed, wind_gusts):
         (9.99, 1.0, None),
         (10.0, 0.95, "突風注意小"),
         (14.99, 0.95, "突風注意小"),
-        (15.0, 0.8, "突風注意中"),
-        (19.99, 0.8, "突風注意中"),
+        (15.0, 0.85, "突風注意中"),
+        (19.99, 0.85, "突風注意中"),
         (20.0, 0.6, "突風注意大"),
     ],
 )
@@ -109,11 +109,11 @@ def test_gust_and_wind_show_both_labels_with_half_secondary_penalty():
 @pytest.mark.parametrize(
     "direction,speed,gust,factors,combined",
     [
-        (150, 10, 16, {"southerly": 0.6, "gust": 0.9}, 0.54),
+        (150, 10, 16, {"southerly": 0.6, "gust": 0.925}, 0.555),
         (210, 5, 21, {"gust": 0.6, "southerly": 0.95}, 0.57),
         (90, 6.5, 20, {"gust": 0.6, "wind": 0.95}, 0.57),
         (150, 10, 21, {"southerly": 0.6, "gust": 0.8}, 0.48),
-        (90, 10, 16, {"wind": 0.8, "gust": 0.9}, 0.72),
+        (90, 10, 16, {"wind": 0.8, "gust": 0.925}, 0.74),
         (150, 10, 9.99, {"southerly": 0.6}, 0.6),
         (90, 3.99, 20, {"gust": 0.6}, 0.6),
         (90, 3.99, 9.99, {}, 1.0),
