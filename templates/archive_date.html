@@ -3,24 +3,32 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#071c2c">
+  <title>{{ day.long_date_label }}の八丈島便｜公開時予測と運航結果</title>
+  {% if private_archive %}
+  <meta name="robots" content="noindex,nofollow">
+  {% else %}
   <meta name="description" content="{{ day.long_date_label }}の羽田発八丈島行きANA3便について、公開時の運航参考スコア、実際の運航結果、振り返りを確認できます。">
   <meta name="robots" content="index,follow">
-  <meta name="theme-color" content="#071c2c">
   <link rel="canonical" href="{{ page_url }}">
   <meta property="og:type" content="article">
   <meta property="og:site_name" content="八丈島の飛行機運航目安">
   <meta property="og:title" content="{{ day.long_date_label }}の八丈島便｜公開時予測と運航結果">
-  <meta property="og:description" content="公開時の運航参考スコアと実際の運航結果を3便分記録した恒久アーカイブです。">
+  <meta property="og:description" content="八丈島便3便の公開時の運航参考スコアと実際の運航結果を掲載しています。">
   <meta property="og:url" content="{{ page_url }}">
-  <title>{{ day.long_date_label }}の八丈島便｜公開時予測と運航結果</title>
   <script type="application/ld+json">{{ structured_data|tojson }}</script>
+  {% endif %}
   <link rel="stylesheet" href="../../static/styles.css?v=20260927-evidence-1">
 </head>
 <body>
   {% set asset_prefix = "../../" %}
   <main class="container container--minimal archive-page">
     <header class="header header--minimal">
-      <p class="page-nav"><a href="../../">トップページへ｜今日の八丈島便の運航目安を見る</a></p>
+      {% if private_archive %}
+        <p class="page-nav"><a href="../../history/index.html">管理者向け履歴一覧へ</a></p>
+      {% else %}
+        <p class="page-nav"><a href="../../">トップページへ｜今日の八丈島便の運航目安を見る</a></p>
+      {% endif %}
       <p class="about-label">FORECAST ARCHIVE</p>
       <h1>{{ day.long_date_label }}の公開時予測と運航結果</h1>
       <p class="lead">羽田発・八丈島行きANA3便について、公開していた参考スコアと、その後確認できた運航結果を残しています。</p>
@@ -56,13 +64,13 @@
             <p><strong>当時の補正:</strong> {{ flight.review_evidence.factors }}</p>
             {% if flight.outcome_class == 'disrupted' %}<p><strong>保存された理由:</strong> {{ flight.review_evidence.reason }}</p>{% endif %}
             <p>気象条件は公開時の予報入力であり、実測や欠航原因を示すものではありません。後日の結果から当時のスコアや係数を書き換えていません。</p>
-            <p><a href="../../wind/">同じ風向・風速の過去の欠航傾向を見る</a></p>
+            {% if not private_archive %}<p><a href="../../wind/">同じ風向・風速の過去の欠航傾向を見る</a></p>{% endif %}
           </section>
         </article>
       {% endfor %}
     </div>
-    <p class="archive-back"><a class="secondary-link" href="../../history/">過去の予測と結果一覧へ</a></p>
-    {% include "_site_footer.html" %}
+    <p class="archive-back"><a class="secondary-link" href="../../history/{% if private_archive %}index.html{% endif %}">過去の予測と結果一覧へ</a></p>
+    {% if not private_archive %}{% include "_site_footer.html" %}{% endif %}
   </main>
 </body>
 </html>

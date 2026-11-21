@@ -1,9 +1,10 @@
 import json
+from datetime import date
 
 import pytest
 from jinja2 import Environment, FileSystemLoader
 
-from flight_forecast.forecast_archive import build_archive_days
+from flight_forecast.forecast_archive import build_archive_days, public_archive_days
 
 
 def history_fixture():
@@ -39,6 +40,14 @@ def test_history_counts_and_rendering():
     assert "南風 ×0.8" in detail
     assert "0 km" in detail
     assert "観測値と確認できない" in detail
+
+
+def test_public_history_window_rolls_over_the_year():
+    days = [{"date": day} for day in (
+        "2027-01-01", "2026-12-31", "2026-11-01", "2026-10-31",
+    )]
+    assert public_archive_days(days, date(2027, 1, 1)) == days[1:3]
+    assert public_archive_days(days, date(2027, 1, 31)) == days[1:3]
 
 
 @pytest.mark.parametrize("value", [None, "broken", "[]", '{"weather":null}', '{"weather":{"visibility":true}}'])

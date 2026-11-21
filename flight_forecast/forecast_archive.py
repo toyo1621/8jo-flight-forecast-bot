@@ -1,7 +1,7 @@
 import json
 import math
 from collections import defaultdict
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 
 from flight_forecast.app_config import FLIGHTS, JST, probability_symbol
 from flight_forecast.flight_metadata import (
@@ -115,6 +115,15 @@ def _review_evidence(primary, outcome):
         "factors": details["factors"],
         "reason": outcome.get("status_reason") or "欠航・引き返しの原因を特定できる理由記録はありません。",
     }
+
+
+def public_archive_days(days, today):
+    """Keep the previous two complete calendar months for Pages."""
+    end = today.replace(day=1)
+    previous_month = (end - timedelta(days=1)).replace(day=1)
+    start = (previous_month - timedelta(days=1)).replace(day=1)
+    start_iso, end_iso = start.isoformat(), end.isoformat()
+    return [day for day in days if start_iso <= day["date"] < end_iso]
 
 
 def build_archive_days(rows):

@@ -133,6 +133,10 @@ def validate_site(output_dir):
     sitemap = ElementTree.parse(output_dir / "sitemap.xml")
     namespace = {"s": "http://www.sitemaps.org/schemas/sitemap/0.9"}
     sitemap_urls = [node.text for node in sitemap.findall("s:url/s:loc", namespace)]
+    sitemap_files = {_output_path(output_dir, url) for url in sitemap_urls}
+    for path in sorted((output_dir / "forecast").glob("*/index.html")):
+        if path not in sitemap_files:
+            errors.append(f"公開対象外の日別ファイルが残っています: {path.relative_to(output_dir)}")
     seen_titles = {}
     for url in sitemap_urls:
         page_path = _output_path(output_dir, url)
