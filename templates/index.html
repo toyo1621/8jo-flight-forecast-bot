@@ -32,7 +32,7 @@
   <meta name="twitter:description" content="{{ page_description }}">
   <title>{{ page_title }}</title>
   <script type="application/ld+json">{{ structured_data|default({})|tojson }}</script>
-  <link rel="stylesheet" href="{{ asset_prefix }}static/styles.css?v=20260930-analysis-links-1">
+  <link rel="stylesheet" href="{{ asset_prefix }}static/styles.css?v=20261121-compact-home-header-1">
   <script src="{{ asset_prefix }}static/app.js?v=20260619-1" defer></script>
   <!-- Cloudflare Web Analytics: privacy-first pageview measurement without cookies. -->
   <script type="module" src="https://static.cloudflareinsights.com/beacon.min.js" data-cf-beacon='{"token": "afc2a7c7ee1a4ab2a9738a04695321b9"}'></script>
@@ -45,27 +45,29 @@
   {% if today and page_variant != "date" %}
     {% set today = dict(today, flights=today.flights|rejectattr('calculation_status', 'equalto', 'expired')|list) %}
   {% endif %}
-  <main class="container{% if page_variant == "date" %} container--minimal{% endif %}">
-    <header class="header{% if page_variant == "date" %} header--minimal{% endif %}">
+  <main class="container{% if page_variant == "date" %} container--minimal{% else %} container--home{% endif %}">
+    <header class="header{% if page_variant == "date" %} header--minimal{% else %} header--home{% endif %}">
       {% if page_variant == "date" %}
         <h1 class="visually-hidden">{{ page_heading }}</h1>
         <p class="page-nav"><a href="{{ asset_prefix }}">トップページへ｜今日の八丈島便の運航目安を見る</a></p>
       {% else %}
         <p class="eyebrow">HND / HAC</p>
         <h1>{{ page_heading }}</h1>
-        <p class="lead">羽田空港から八丈島空港へ向かうANA1891・ANA1893・ANA1895便の運航目安を、天気・台風影響度・過去の運航実績から確認できます。</p>
-        <p class="updated">予報データ取得 {{ updated_at }} (日中は1時間ごと・夜間は3時間ごとに更新予定)</p>
-        <p class="forecast-source">主予報は気象庁(JMA)モデルをOpen-Meteo経由で使用しています。</p>
-        <div class="status-legend" aria-label="表示色の説明">
-          <span><i class="legend-dot legend-dot--blue" aria-hidden="true"></i>青: 参考スコア{{ low_threshold }}以上</span>
-          <span><i class="legend-dot legend-dot--orange" aria-hidden="true"></i>オレンジ: 参考スコア{{ low_threshold }}未満</span>
-        </div>
+        <p class="lead">羽田発ANA3便｜天気・台風・過去実績</p>
+        <p class="updated">予報取得 {{ updated_at }}</p>
         <details class="quick-guide">
-          <summary>数値の見方</summary>
+          <summary>
+            数値の見方
+            <span class="status-legend">
+              <span><i class="legend-dot legend-dot--blue" aria-hidden="true"></i>青：{{ low_threshold }}以上</span>
+              <span><i class="legend-dot legend-dot--orange" aria-hidden="true"></i>オレンジ：{{ low_threshold }}未満</span>
+            </span>
+          </summary>
           <p><strong>見方:</strong> ◎95以上 / 〇75以上 / △35以上 / ×35未満。表示する数値は、対象3便の類似実績とリスクから算出した統計参考値で、将来の運航確率ではありません。比較欄にはGFS・ECMWF・JMAを併記しています。</p>
           <p><strong>計算の考え方:</strong> 対象3便の類似した過去実績から基礎値を作り、視程不良、降水、低層雲、強風・突風、台風接近などのリスクに応じて0.9や0.8などの係数を掛けます。そのため、リスクがある日は、表示スコアが過去実績から求めた基礎値より低くなります。</p>
           <p><strong>先の日程:</strong> 天気予報の更新で条件が変わると、スコアも上がったり下がったりします。搭乗日が近づいたら改めて確認してください。</p>
           <p>予報シナリオの一致度は、GFS・ECMWFそれぞれのmemberのばらつきを示します。運航結果の正確さや信頼区間ではありません。</p>
+          <p><strong>予報データ:</strong> 主予報は気象庁（JMA）モデルをOpen-Meteo経由で使用。日中は1時間ごと・夜間は3時間ごとに更新予定です。</p>
         </details>
       {% endif %}
     </header>

@@ -1519,14 +1519,14 @@ def test_index_renders_forecast():
     assert "運航参考スコア" in body
     assert "88.0 / 100" in body
     assert ">88.0%</strong>" not in body
-    assert "羽田空港から八丈島空港へ向かうANA1891・ANA1893・ANA1895便の運航目安を、天気・台風影響度・過去の運航実績から確認できます。" in body
+    assert "羽田発ANA3便｜天気・台風・過去実績" in body
     assert "天候信頼度は、Open-Meteo APIからオープンデータ" not in body
     assert "比較欄にはGFS・ECMWF・JMAを併記" in body
-    assert "主予報は気象庁(JMA)モデルをOpen-Meteo経由で使用しています。" in body
-    assert "予報データ取得 " in body
-    assert "(日中は1時間ごと・夜間は3時間ごとに更新予定)" in body
-    assert "青: 参考スコア60以上" in body
-    assert "オレンジ: 参考スコア60未満" in body
+    assert "主予報は気象庁（JMA）モデルをOpen-Meteo経由で使用" in body
+    assert "予報取得 " in body
+    assert "日中は1時間ごと・夜間は3時間ごとに更新予定" in body
+    assert "青：60以上" in body
+    assert "オレンジ：60未満" in body
     assert "主予報: 気象庁(JMA) GSM・MSMモデル (Open-Meteo経由)" in body
     assert "主予報(JMA)での統計参考値" in body
     assert "予報シナリオの一致度" in body
