@@ -32,7 +32,7 @@ def stub_detailed_history():
         yield history
 
 
-def test_completed_today_routes_to_saved_prediction_and_result(tmp_path):
+def test_completed_today_does_not_publish_this_months_saved_result(tmp_path):
     from flight_forecast.web_app import build_daily_forecasts
 
     now = datetime(2026, 9, 6, 22, tzinfo=timezone(timedelta(hours=9)))
@@ -67,11 +67,10 @@ def test_completed_today_routes_to_saved_prediction_and_result(tmp_path):
     assert home.index('class="forecast-index"') < home.index('class="analysis-links"')
     assert 'href="history/">過去の予測と結果</a>' in home
     assert 'class="analysis-links"' not in result
-    assert "実際の運航結果" in result
-    assert "公開時の予測" in result
-    assert "結果未取得" in result
-    assert "運航" in result
-    assert "forecast/2026-09-06/" in history
+    assert "<h2>実際の運航結果</h2>" not in result
+    assert "公開時の予測" not in result
+    assert "予測表示終了" in result
+    assert "forecast/2026-09-06/" not in history
 
 
 def test_add_brand_assets_recognizes_current_site_title():
@@ -383,7 +382,7 @@ def test_build_site_writes_shareable_date_pages(tmp_path):
         patch("flight_forecast.build_static.fetch_published_forecast_archive", return_value=[]),
         patch("flight_forecast.build_static.load_access_stats", return_value={"days": []}),
     ):
-        build_site(tmp_path)
+        build_site(tmp_path, current_time=datetime(2026, 8, 24, tzinfo=timezone.utc))
 
     date_page = tmp_path / "forecast" / "2026-08-25" / "index.html"
     assert date_page.exists()
@@ -409,13 +408,13 @@ def test_build_site_writes_shareable_date_pages(tmp_path):
     ).read_text(encoding="utf-8")
 
 
-def test_build_site_keeps_historical_date_with_prediction_outcome_and_reflection(tmp_path):
+def test_build_site_publishes_only_previous_two_months_of_history(tmp_path):
     bundle = {
         "weather": {},
         "ensembles": {},
         "typhoon_impacts": {},
         "notices": [],
-        "data_updated_at": "2026-09-05T00:00:00+09:00",
+        "data_updated_at": "2026-11-01T00:00:00+09:00",
     }
     archive_rows = []
     for flight_number in ("ANA1891", "ANA1893", "ANA1895"):
@@ -437,6 +436,10 @@ def test_build_site_keeps_historical_date_with_prediction_outcome_and_reflection
                     "status_reason": None,
                 }
             )
+    for day in ("2026-08-31", "2026-09-01", "2026-10-31", "2026-11-01"):
+        archive_rows.append({
+            **archive_rows[0], "snapshot_id": day, "forecast_target_date": day,
+        })
     rows = [{"snapshot_id": "snapshot-1", "code_version": "sha", "config_version": "cfg"}]
     with (
         patch("flight_forecast.build_static.load_forecast_bundle", return_value=bundle),
@@ -444,12 +447,13 @@ def test_build_site_keeps_historical_date_with_prediction_outcome_and_reflection
             "flight_forecast.build_static.build_daily_forecasts",
             return_value=[
                 {
-                    "date": "2026-09-05",
-                    "date_label": "9/5",
-                    "weekday": "土",
+                    "date": day,
+                    "date_label": day,
+                    "weekday": "日",
                     "flights": [],
                     "confidence": {"grade": None, "label": "評価不可", "lead_days": 0},
                 }
+                for day in ("2026-08-31", "2026-10-31", "2026-11-01", "2026-11-02")
             ],
         ),
         patch("flight_forecast.build_static.build_prediction_snapshot_rows", return_value=rows),
@@ -460,7 +464,7 @@ def test_build_site_keeps_historical_date_with_prediction_outcome_and_reflection
         ),
         patch("flight_forecast.build_static.load_access_stats", return_value={"days": []}),
     ):
-        build_site(tmp_path)
+        build_site(tmp_path, current_time=datetime(2026, 10, 31, 15, tzinfo=timezone.utc))
 
     page = tmp_path / "forecast" / "2026-09-04" / "index.html"
     html = page.read_text(encoding="utf-8")
@@ -470,7 +474,24 @@ def test_build_site_keeps_historical_date_with_prediction_outcome_and_reflection
     assert "実際の運航結果" in html
     assert "振り返り" in html
     assert "参考スコアは高めで、実際も運航しました。" in html
-    assert "forecast/2026-09-04/" in (
-        tmp_path / "history" / "index.html"
-    ).read_text(encoding="utf-8")
+    history = (tmp_path / "history/index.html").read_text(encoding="utf-8")
+    flight_page = (tmp_path / "flights/ana1891/index.html").read_text(encoding="utf-8")
+    sitemap = (tmp_path / "sitemap.xml").read_text(encoding="utf-8")
+    for day in ("2026-09-01", "2026-09-04", "2026-10-31"):
+        url = f"forecast/{day}/"
+        assert all(url in html for html in (history, flight_page, sitemap))
+        assert (tmp_path / url / "index.html").is_file()
+    assert "forecast/2026-08-31/" not in history + flight_page + sitemap
+    assert not (tmp_path / "forecast/2026-08-31/index.html").exists()
+    assert "forecast/2026-11-01/" not in history
+    assert "forecast/2026-11-01/" in sitemap
+    assert "公開時の予測" not in (tmp_path / "forecast/2026-11-01/index.html").read_text()
+    assert (tmp_path / "forecast/2026-11-02/index.html").exists()
     assert validate_site(tmp_path) == []
+
+    stale_page = tmp_path / "forecast/2026-08-31/index.html"
+    stale_page.parent.mkdir()
+    stale_page.write_text("old build")
+    assert validate_site(tmp_path) == [
+        "公開対象外の日別ファイルが残っています: forecast/2026-08-31/index.html"
+    ]

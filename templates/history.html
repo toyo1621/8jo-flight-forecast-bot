@@ -2,14 +2,22 @@
 <html lang="ja">
 <head>
   <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="description" content="八丈島便について、公開時の運航参考スコア、実際の運航結果、振り返りを日付ごとに保存したアーカイブです。">
+  {% if private_archive %}
+  <meta name="robots" content="noindex,nofollow">
+  {% else %}
+  <meta name="description" content="八丈島便の前月・前々月の運航参考スコア、実際の運航結果、振り返りを掲載しています。">
   <meta name="robots" content="index,follow"><link rel="canonical" href="{{ page_url }}">
-  <title>過去の予測と運航結果｜八丈島便の運航目安</title>
   <script type="application/ld+json">{{ structured_data|tojson }}</script>
+  {% endif %}
+  <title>過去の予測と運航結果｜八丈島便の運航目安</title>
   <link rel="stylesheet" href="../static/styles.css?v=20260909-history-1">
 </head>
 <body>{% set asset_prefix = "../" %}<main class="container container--minimal archive-page">
-  <header class="header header--minimal"><p class="page-nav"><a href="../">トップページへ｜今日の八丈島便の運航目安を見る</a></p><p class="about-label">HISTORY</p><h1>過去の予測と運航結果</h1><p class="lead">公開時の参考スコアを実際の結果に合わせて書き換えず、日付ごとに残しています。</p></header>
+  <header class="header header--minimal">
+    {% if not private_archive %}<p class="page-nav"><a href="../">トップページへ｜今日の八丈島便の運航目安を見る</a></p>{% endif %}
+    <p class="about-label">HISTORY</p><h1>過去の予測と運航結果</h1>
+    <p class="lead">{% if private_archive %}管理者向け・保存されている全期間{% else %}公開範囲は前月・前々月です。公開時の参考スコアは運航結果に合わせて書き換えません。{% endif %}</p>
+  </header>
   {% if archive_days %}
   <section class="history-controls" aria-label="履歴の絞り込み">
     <label>対象月<select id="history-month"><option value="">すべての月</option>{% for month in archive_days|map(attribute='month')|unique %}<option value="{{ month }}">{{ month }}</option>{% endfor %}</select></label>
@@ -18,17 +26,18 @@
   <p id="history-total" role="status" aria-live="polite">{{ archive_days|length }}日間・結果確認済み{{ archive_days|sum(attribute='confirmed_count') }}便：運航{{ archive_days|sum(attribute='operated_count') }}便・欠航{{ archive_days|sum(attribute='cancelled_count') }}便・引き返し{{ archive_days|sum(attribute='returned_count') }}便（結果未取得{{ archive_days|sum(attribute='missing_count') }}便）</p>
   <ol class="history-days">
   {% for day in archive_days %}
+    {% set detail_url = '../forecast/' ~ day.date ~ '/' ~ ('index.html' if private_archive else '') %}
     <li data-month="{{ day.date[:7] }}" data-confirmed="{{ day.confirmed_count }}" data-operated="{{ day.operated_count }}" data-cancelled="{{ day.cancelled_count }}" data-returned="{{ day.returned_count }}" data-missing="{{ day.missing_count }}">
-      <header><h2><a href="../forecast/{{ day.date }}/"><time datetime="{{ day.date }}">{{ day.long_date_label }} ({{ day.weekday }})</time></a></h2>
+      <header><h2><a href="{{ detail_url }}"><time datetime="{{ day.date }}">{{ day.long_date_label }} ({{ day.weekday }})</time></a></h2>
       <p class="outcome-{{ day.result_class }}">運航{{ day.operated_count }}便・欠航{{ day.cancelled_count }}便{% if day.returned_count %}・引き返し{{ day.returned_count }}便{% endif %}{% if day.missing_count %}・結果未取得{{ day.missing_count }}便{% endif %}</p></header>
       <table class="history-comparison"><caption class="visually-hidden">{{ day.long_date_label }}の便別比較</caption><thead><tr><th scope="col">便</th><th scope="col">公開時スコア</th><th scope="col">運航結果</th></tr></thead><tbody>
       {% for flight in day.flights %}<tr><th scope="row">{{ loop.index }}便 <small>{{ flight.number }}</small></th><td>{% if flight.score is not none %}{{ flight.score }} / 100{% else %}算出不可{% endif %}</td><td class="outcome-{{ flight.outcome_class }}">{{ flight.outcome_label }}</td></tr>{% endfor %}
       </tbody></table>
       {% if not day.publicly_confirmed %}<p class="history-legacy">旧保存データ・公開確認記録なし</p>{% endif %}
-      <a class="history-detail-link" href="../forecast/{{ day.date }}/">天気・予測・振り返りを見る →</a>
+      <a class="history-detail-link" href="{{ detail_url }}">天気・予測・振り返りを見る →</a>
     </li>
   {% endfor %}</ol><p id="history-empty" hidden>条件に一致する日付はありません。</p>
   <script src="../static/history.js" defer></script>
-  {% else %}<p class="archive-note">公開時予測を保存した過去日はまだありません。</p>{% endif %}
-  {% include "_site_footer.html" %}
+  {% else %}<p class="archive-note">対象期間の予測記録はありません。</p>{% endif %}
+  {% if not private_archive %}{% include "_site_footer.html" %}{% endif %}
 </main></body></html>

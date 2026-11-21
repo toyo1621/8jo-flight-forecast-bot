@@ -19,7 +19,7 @@ from flight_forecast.bigquery_storage import (
     save_prediction_publication_candidates,
     save_prediction_snapshots,
 )
-from flight_forecast.forecast_archive import build_archive_days
+from flight_forecast.forecast_archive import build_archive_days, public_archive_days
 from flight_forecast.forecast_cache import format_forecast_timestamp
 from flight_forecast.prediction_provenance import (
     build_artifact_id,
@@ -165,7 +165,9 @@ def forecast_publication_quality(days, current_time):
 
 def build_site(output_dir=DIST_DIR, current_time=None, now_provider=None):
     now_provider = now_provider or (lambda: datetime.now(JST))
-    current_time = current_time or now_provider()
+    current_time = (current_time or now_provider()).astimezone(JST)
+    today = current_time.date()
+    today_iso = today.isoformat()
     bundle = load_forecast_bundle(print)
     history = fetch_detailed_history()
     days = build_daily_forecasts(
@@ -214,37 +216,27 @@ def build_site(output_dir=DIST_DIR, current_time=None, now_provider=None):
     )
     print(f"BigQueryに予測スナップショットを {snapshot_count} 件保存しました。")
     print(f"公開候補を {candidate_count} 件記録しました: {artifact_id}")
-    archive_days = build_archive_days(fetch_published_forecast_archive())
-    print(f"BigQueryから過去日の公開スナップショットを {len(archive_days)} 日分取得しました。")
+    historical_days = public_archive_days(
+        build_archive_days(fetch_published_forecast_archive()), today
+    )
+    print(f"公開対象の過去スナップショットは {len(historical_days)} 日分です。")
     wind_summary = build_wind_cancellation_summary(history)
     print(f"風向別の過去実績を {wind_summary['sample_count']} 件集計しました。")
     visibility_summary = build_visibility_cancellation_summary(fetch_visibility_history())
     print(f"視程・低層雲量・降水量別に {visibility_summary['confirmed_count']} 件の確定実績を確認しました。")
     access_stats = load_access_stats()
     updated_at = format_forecast_timestamp(bundle.get("data_updated_at")) or "取得時刻不明"
-    today_day = next(
-        (day for day in days if day.get("date") == current_time.date().isoformat()),
-        None,
-    )
-    display_days = active_forecast_days(days)
-    completed_dates = {
-        day["date"] for day in days
-        if day["flights"] and all(
-            f.get("calculation_status") == "expired" for f in day["flights"]
-        )
-    }
-    archived_dates = {day["date"] for day in archive_days}
+    current_days = [day for day in days if day["date"] >= today_iso]
+    today_day = next((day for day in current_days if day["date"] == today_iso), None)
+    display_days = active_forecast_days(current_days)
     date_pages = [
         (
             output_dir / "forecast" / day["date"] / "index.html",
             f"{SITE_URL}forecast/{day['date']}/",
             day,
         )
-        for day in days
-        if day["date"] not in completed_dates & archived_dates
+        for day in current_days
     ]
-    current_dates = {day["date"] for _, _, day in date_pages}
-    historical_days = [day for day in archive_days if day["date"] not in current_dates]
     archive_date_pages = [
         (
             output_dir / "forecast" / day["date"] / "index.html",
@@ -371,7 +363,7 @@ def build_site(output_dir=DIST_DIR, current_time=None, now_provider=None):
             "CollectionPage",
             "過去の予測と運航結果",
             HISTORY_URL,
-            "八丈島便の公開時予測と実際の運航結果を日付ごとに保存したアーカイブです。",
+            "八丈島便の前月・前々月の公開時予測と実際の運航結果を確認できます。",
             (("トップ", SITE_URL), ("過去の予測と運航結果", None)),
         )
         history_html = render_template(
